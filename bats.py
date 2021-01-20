@@ -2,6 +2,7 @@ from graph_tool import Graph
 import numpy as np
 from tqdm import trange
 from modelling.dynamics_construction import train_ensemble
+from modelling.policy_construction import train_policy
 
 
 class BATSTrainer:
@@ -17,12 +18,22 @@ class BATSTrainer:
         self.dataset_size = self.dataset['observations'].shape[0]
 
         # set up the parameters for the dynamics model training
+        self.dynamics_ensemble = None
         self.dynamics_train_params = {}
         self.dynamics_train_params['n_members'] = kwargs.get('dynamics_n_members', 7)
         self.dynamics_train_params['n_elites'] = kwargs.get('dynamics_n_elites', 5)
         self.dynamics_train_params['save_dir'] = str(output_dir)
         self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 100)
         self.dynamics_train_params['cuda_device'] = kwargs.get('cuda_device', '')
+
+        # set up the parameters for behavior cloning
+        self.policy = None
+        self.bc_params = {}
+        self.bc_params['save_dir'] = str(output_dir)
+        self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
+        self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
+        # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
+
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighors', 0.1)
         # set up graph
@@ -59,7 +70,7 @@ class BATSTrainer:
         self.evaluate()
 
     def train_dynamics(self):
-        train_ensemble(self.dataset, **self.dynamics_train_params)
+        self.dynamics_ensemble = train_ensemble(self.dataset, **self.dynamics_train_params)
 
     def add_neighbor_edges(self):
         raise NotImplementedError()
@@ -109,8 +120,10 @@ class BATSTrainer:
             action = np.array(self.G.ep.action[e])
             actions.append(action)
         actions = np.stack(actions)
-        # TODO: we have self.unique_observations and actions, just need to behavior-clone a policy now
-        raise NotImplementedError()
+        dataset = {'observations': self.unique_obs,
+                   'actions': actions}
+        # TODO: we have self.unique_obs and actions, just need to behavior-clone a policy now
+        self.policy = train_policy(dataset, **self.bc_params)
 
     def evaluate():
         # we have util.rollout ready for this purpose
