@@ -107,3 +107,18 @@ def rollout(policy, environment):
         infos.append(info)
     episode = dict(observations=observations, actions=actions, rewards=rewards, infos=infos)
     return episode
+
+
+def dict_append(d, k, v):
+    """Append item to list if already exists, otherwise make new list."""
+    if k in d:
+        d[k].append(v)
+    else:
+        d[k] = [v]
+
+
+def s2i(string):
+    """Make a comma separated string of ints into a list of ints."""
+    if ',' not in string:
+        return []
+    return [int(s) for s in string.split(',')]
