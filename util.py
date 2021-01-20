@@ -30,7 +30,7 @@ def make_output_dir(name, overwrite, args):
 
 def get_offline_env(name):
     env = gym.make(name)
-    dataset = env.get_dataset()
+    dataset = d4rl.qlearning_dataset(env)
     return env, dataset
 
 

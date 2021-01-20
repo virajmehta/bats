@@ -20,9 +20,8 @@ def parse_arguments():
 def main(args):
     output_dir = util.make_output_dir(args.name, args.overwrite, args)
     env, dataset = util.get_offline_env(args.env_name)
-    flat_dataset = util.flatten_dataset(dataset, tqdm=args.tqdm)
     args = vars(args)
-    bats = BATSTrainer(flat_dataset, env, output_dir, **args)
+    bats = BATSTrainer(dataset, env, output_dir, **args)
     bats.train()
 
 
