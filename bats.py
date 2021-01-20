@@ -1,6 +1,7 @@
 from graph_tool import Graph
 import numpy as np
 from tqdm import trange
+from modelling.dynamics_construction import train_ensemble
 
 
 class BATSTrainer:
@@ -14,6 +15,14 @@ class BATSTrainer:
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
         self.dataset_size = self.dataset['observations'].shape[0]
+
+        # set up the parameters for the dynamics model training
+        self.dynamics_train_params = {}
+        self.dynamics_train_params['n_members'] = kwargs.get('dynamics_n_members', 7)
+        self.dynamics_train_params['n_elites'] = kwargs.get('dynamics_n_elites', 5)
+        self.dynamics_train_params['save_dir'] = str(output_dir)
+        self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 100)
+        self.dynamics_train_params['cuda_device'] = kwargs.get('cuda_device', '')
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighors', 0.1)
         # set up graph
@@ -50,7 +59,7 @@ class BATSTrainer:
         self.evaluate()
 
     def train_dynamics(self):
-        raise NotImplementedError()
+        train_ensemble(self.dataset, **self.dynamics_train_params)
 
     def add_neighbor_edges(self):
         raise NotImplementedError()
