@@ -5,6 +5,7 @@ from tqdm import trange
 import numpy as np
 import d4rl  # NOQA
 import gym
+import torch
 
 DATA_DIR = 'experiments'
 
@@ -107,3 +108,25 @@ def rollout(policy, environment):
         infos.append(info)
     episode = dict(observations=observations, actions=actions, rewards=rewards, infos=infos)
     return episode
+
+
+def train_mlp(X, Y, val_X=None, val_Y=None, **kwargs):
+    '''
+    X: numpy array (examples, feature_dim)
+    Y: numpy array (examples, target_dim)
+    val_X: same
+    val_Y: same
+    '''
+    X = torch.Tensor(X)
+    Y = torch.Tensor(Y)
+    train_dataset = torch.utils.data.TensorDataset(X, Y)
+    train_loader = torch.utils.data.DataLoader(train_dataset)
+    if val_X and val_Y:
+        val_X = torch.Tensor(val_X)
+        val_Y = torch.Tensor(val_Y)
+        val_dataset = torch.utils.data.TensorDataset(val_X, val_Y)
+        val_loader = torch.utils.data.DataLoader(val_dataset)
+    else:
+        val_loader = None
+
+
