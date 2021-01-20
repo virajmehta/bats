@@ -9,6 +9,7 @@ class BATSTrainer:
         self.env = env
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
+        self.n_val_iterations = kwargs.get('n_val_iterations', 100)
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
@@ -24,6 +25,7 @@ class BATSTrainer:
         # the values associated with each node
         self.G.vp.value = self.G.new_vertex_property("float")
         self.G.vp.get_array()[:] = 0
+        self.G.vp.best_neighbor = self.G.new_vertex_property("int")
         # the actions are gonna be associated with each edge
         self.G.ep.action = self.G.new_edge_property("vector<float>")
         # we also associate the rewards with each edge
@@ -73,9 +75,29 @@ class BATSTrainer:
         return nonduplicate_possible_neighbors_list
 
     def value_iteration(self):
-        raise NotImplementedError()
+        iterator = self.get_iterator(self.n_val_iterations)
+        for _ in iterator:
+            for v in self.G.iter_vertices():
+                # should be a (num_neighbors, 2) ndarray where the first col is indices and second is values
+                neighbors = self.G.get_out_neighbors(v, vprops=[self.G.vp.value])
+                edges = self.G.get_out_edges(v, eprops=[self.G.ep.reward])
+                rewards = edges[:, 1]
+                values = neighbors[:, 1]
+                backups = rewards + self.gamma * values
+                best_arm = np.argmax(backups)
+                value = backups[best_arm]
+                self.G.vp.value[v] = value
+                self.G.vp.best_neighbor[v] = neighbors[best_arm, 0]
 
-    def train_bc():
+    def train_bc(self):
+        actions = []
+        for v in self.G.iter_vertices():
+            best_neighbor = self.G.best_neighbor[v]
+            e = self.G.edge(v, best_neighbor)
+            action = np.array(self.G.ep.action[e])
+            actions.append(action)
+        actions = np.stack(actions)
+        # TODO: we have self.unique_observations and actions, just need to behavior-clone a policy now
         raise NotImplementedError()
 
     def evaluate():
