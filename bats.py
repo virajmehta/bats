@@ -52,6 +52,9 @@ class BATSTrainer:
     def train_dynamics(self):
         raise NotImplementedError()
 
+    def add_neighbor_edges(self):
+        raise NotImplementedError()
+
     def add_dataset_edges(self):
         print(f"Adding {self.dataset_size} initial edges to our graph")
         iterator = self.get_iterator(self.dataset_size)
