@@ -101,4 +101,5 @@ class BATSTrainer:
         raise NotImplementedError()
 
     def evaluate():
+        # we have util.rollout ready for this purpose
         raise NotImplementedError()

@@ -88,3 +88,22 @@ def flatten_dataset(dataset, tqdm=True):
             }
 
     return new_dataset
+
+
+def rollout(policy, environment):
+    observations = []
+    actions = []
+    rewards = []
+    infos = []
+    done = False
+    obs = environment.reset()
+    observations.append(obs)
+    while not done:
+        action = policy(obs)
+        actions.append(action)
+        obs, reward, done, info = environment.step(action)
+        observations.append(obs)
+        rewards.append(reward)
+        infos.append(info)
+    episode = dict(observations=observations, actions=actions, rewards=rewards, infos=infos)
+    return episode
