@@ -6,7 +6,7 @@ import numpy as np
 from scipy import stats
 import d4rl
 import gym
-from modelling.dynamics_construction import prepare_model_inputs
+import torch
 
 DATA_DIR = 'experiments'
 
@@ -128,6 +128,10 @@ def s2i(string):
     if ',' not in string:
         return []
     return [int(s) for s in string.split(',')]
+
+
+def prepare_model_inputs(obs, actions):
+    return torch.Tensor(np.hstack([obs, actions]))
 
 
 def CEM(start_state, end_state, init_action, ensemble, epsilon, quantile, **kwargs):

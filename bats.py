@@ -24,14 +24,14 @@ class BATSTrainer:
         self.dynamics_train_params['n_members'] = kwargs.get('dynamics_n_members', 7)
         self.dynamics_train_params['n_elites'] = kwargs.get('dynamics_n_elites', 5)
         self.dynamics_train_params['save_dir'] = str(output_dir)
-        self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 100)
+        self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 2)
         self.dynamics_train_params['cuda_device'] = kwargs.get('cuda_device', '')
 
         # set up the parameters for behavior cloning
         self.policy = None
         self.bc_params = {}
         self.bc_params['save_dir'] = str(output_dir)
-        self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
+        self.bc_params['epochs'] = kwargs.get('bc_epochs', 2)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
@@ -45,7 +45,7 @@ class BATSTrainer:
         self.vertices = {obs.tobytes(): i for i, obs in enumerate(self.unique_obs)}
         # the values associated with each node
         self.G.vp.value = self.G.new_vertex_property("float")
-        self.G.vp.get_array()[:] = 0
+        self.G.vp.value.get_array()[:] = 0
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
         # the actions are gonna be associated with each edge
         self.G.ep.action = self.G.new_edge_property("vector<float>")
@@ -114,8 +114,8 @@ class BATSTrainer:
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
             e = self.G.add_edge(v_from, v_to)
-            self.e_action[e] = action.tolist()
-            self.e_reward[e] = reward
+            self.G.ep.action[e] = action.tolist()
+            self.G.ep.reward[e] = reward
 
     def find_possible_neighbors(self):
         print("finding possible neighbors")
