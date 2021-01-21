@@ -4,6 +4,8 @@ import numpy as np
 from tqdm import trange, tqdm
 from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import train_policy
+from sklearn.neighbors import radius_neighbors_graph
+from ipdb import set_trace as db  # NOQA
 
 
 class BATSTrainer:
@@ -65,9 +67,9 @@ class BATSTrainer:
             return range(n)
 
     def train(self):
+        possible_neighbors = self.find_possible_neighbors()
         self.add_dataset_edges()
         self.train_dynamics()
-        possible_neighbors = self.find_possible_neighbors()
         self.add_neighbor_edges(possible_neighbors)
         self.value_iteration()
         self.train_bc()
@@ -119,13 +121,28 @@ class BATSTrainer:
 
     def find_possible_neighbors(self):
         print("finding possible neighbors")
+        '''
+        This way would work except it requires 62TiB of memory for 1 million datapoints. Sad!
         pairwise_distances = np.sqrt(np.sum((self.unique_obs[None, :] - self.unique_obs[:, None]) ** 2, axis=-1))
         possible_neighbors = pairwise_distances < self.epsilon_neighbors
         possible_neighbors_list = np.argwhere(possible_neighbors)
         nonduplicates = possible_neighbors_list[:, 0] != possible_neighbors_list[:, 1]
         nonduplicate_possible_neighbors_list = np.compress(nonduplicates, possible_neighbors_list, axis=0)
-        print(f"found {nonduplicate_possible_neighbors_list.shape[0]} possible neighbors")
-        return nonduplicate_possible_neighbors_list
+        '''
+        '''
+        Another attempt with pairwise_distances_chunked
+        possible_neighbors = []
+        find_neighbors = partial(util.find_neighbors, epsilon=self.epsilon_neighbors)
+        for chunk in pairwise_distances_chunked(self.unique_obs, reduce_func=find_neighbors, n_jobs=-1):
+            db()
+            possible_neighbors.append(chunk)
+        '''
+        neighbors = radius_neighbors_graph(self.unique_obs, self.epsilon_neighbors, n_jobs=-1)
+        db()
+
+        # print(f"found {nonduplicate_possible_neighbors_list.shape[0]} possible neighbors")
+
+        return None
 
     def value_iteration(self):
         iterator = self.get_iterator(self.n_val_iterations)
