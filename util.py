@@ -105,7 +105,10 @@ def rollout(policy, environment):
     obs = environment.reset()
     observations.append(obs)
     while not done:
-        action = policy(obs)
+        obs = torch.Tensor(obs)
+        with torch.no_grad():
+            action = policy(obs)
+            action = action.cpu().numpy()
         actions.append(action)
         obs, reward, done, info = environment.step(action)
         observations.append(obs)
@@ -161,7 +164,7 @@ def CEM(start_state, end_state, init_action, ensemble, epsilon, quantile, **kwar
         samples = X.rvs(size=[popsize, action_dim]) * np.sqrt(constrained_var) + mean
         start_states = np.tile(start_state, (popsize, 1))
         input_data = prepare_model_inputs(start_states, samples)
-        model_outputs = np.stack([member(input_data) for member in ensemble])
+        model_outputs = np.stack([member.get_mean_logvar(input_data)[0].cpu() for member in ensemble])
         # this is because the dynamics models are written to predict the reward in the first component of the output
         # and the next state in all the following components
         state_outputs = model_outputs[:, :, 1:]
