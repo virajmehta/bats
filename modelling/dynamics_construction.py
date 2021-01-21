@@ -193,6 +193,10 @@ def prepare_data_for_dyn_training(dataset):
     return x_data, y_data
 
 
+def prepare_model_inputs(obs, actions):
+    return torch.Tensor(np.hstack([obs, actions]))
+
+
 def get_tr_val_data(
         x_data,
         y_data,
