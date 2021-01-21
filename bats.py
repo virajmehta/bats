@@ -1,6 +1,7 @@
 from graph_tool import Graph
+import util
 import numpy as np
-from tqdm import trange
+from tqdm import trange, tqdm
 from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import train_policy
 
@@ -51,6 +52,9 @@ class BATSTrainer:
         # we also associate the rewards with each edge
         self.G.ep.reward = self.G.new_edge_property("float")
 
+        # parameters for evaluation
+        self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
+
     def get_vertex(self, obs):
         return self.G.vertex(self.vertices[obs.tobytes()])
 
@@ -70,10 +74,34 @@ class BATSTrainer:
         self.evaluate()
 
     def train_dynamics(self):
+        print("training ensemble of dynamics models")
         self.dynamics_ensemble = train_ensemble(self.dataset, **self.dynamics_train_params)
 
-    def add_neighbor_edges(self):
-        raise NotImplementedError()
+    def add_neighbor_edges(self, possible_neighbors):
+        '''
+        '''
+        edges_to_add = []
+        for row in possible_neighbors:
+            adding_neighbor = row[0]
+            receiving_neighbor = row[1]
+            receiving_obs = self.unique_obs[receiving_neighbor, :]
+            add_vertex = self.G.vertex(adding_neighbor)
+            for edge in add_vertex.iter_out_edges():
+                action = np.array(self.G.ep.action[edge])
+                target_vertex = edge.target()
+                obs_index = self.G.vertex_index[target_vertex]
+                target_obs = self.unique_obs[obs_index, :]
+                # need to run MPC to go from recieving_obs to target_obs with action initialized at action
+                # could also add kwargs to adjust the CEM parameters like max_iters, popsize, etc.
+                best_action, predicted_reward = util.CEM(receiving_obs, target_obs, action, self.dynamics_ensemble,
+                                                         self.epsilon_planning, self.planning_quantile)
+                if best_action is not None:
+                    edges_to_add.append((receiving_neighbor, obs_index, best_action, predicted_reward))
+        print(f"adding {len(edges_to_add)} edges to graph")
+        for start, end, action, reward in edges_to_add:
+            e = self.G.add_edge(start, end)
+            self.G.ep.action[e] = action
+            self.G.ep.reward[e] = reward
 
     def add_dataset_edges(self):
         print(f"Adding {self.dataset_size} initial edges to our graph")
@@ -90,11 +118,13 @@ class BATSTrainer:
             self.e_reward[e] = reward
 
     def find_possible_neighbors(self):
+        print("finding possible neighbors")
         pairwise_distances = np.sqrt(np.sum((self.unique_obs[None, :] - self.unique_obs[:, None]) ** 2, axis=-1))
         possible_neighbors = pairwise_distances < self.epsilon_neighbors
         possible_neighbors_list = np.argwhere(possible_neighbors)
         nonduplicates = possible_neighbors_list[:, 0] != possible_neighbors_list[:, 1]
         nonduplicate_possible_neighbors_list = np.compress(nonduplicates, possible_neighbors_list, axis=0)
+        print(f"found {nonduplicate_possible_neighbors_list.shape[0]} possible neighbors")
         return nonduplicate_possible_neighbors_list
 
     def value_iteration(self):
@@ -122,9 +152,18 @@ class BATSTrainer:
         actions = np.stack(actions)
         dataset = {'observations': self.unique_obs,
                    'actions': actions}
-        # TODO: we have self.unique_obs and actions, just need to behavior-clone a policy now
         self.policy = train_policy(dataset, **self.bc_params)
 
-    def evaluate():
+    def evaluate(self):
         # we have util.rollout ready for this purpose
-        raise NotImplementedError()
+        print("evaluating cloned policy")
+        episodes = []
+        returns = []
+        for i in self.get_iterator(self.num_eval_episodes):
+            episode = util.rollout(self.policy, self.env)
+            episodes.append(episode)
+            ep_return = util.get_return(episode)
+            returns.append(ep_return)
+        return_mean = np.mean(returns)
+        return_std = np.std(returns)
+        tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f}")
