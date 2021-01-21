@@ -12,6 +12,7 @@ class BATSTrainer:
     def __init__(self, dataset, env, output_dir, **kwargs):
         self.dataset = dataset
         self.env = env
+        self.output_dir = output_dir
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
         self.n_val_iterations = kwargs.get('n_val_iterations', 100)
@@ -38,7 +39,7 @@ class BATSTrainer:
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
         # could do it this way or with knn, this is simpler to implement for now
-        self.epsilon_neighbors = kwargs.get('epsilon_neighors', 2)  # no idea what this should be
+        self.epsilon_neighbors = kwargs.get('epsilon_neighors', 0.5)  # no idea what this should be
         # set up graph
         self.G = Graph()
         # add a vertex for each state
@@ -78,6 +79,7 @@ class BATSTrainer:
         self.train_dynamics()
         self.add_neighbor_edges(possible_neighbors)
         self.value_iteration()
+        self.G.save(str(output_dir / 'mdp.gt'))
         self.train_bc()
         self.evaluate()
 
