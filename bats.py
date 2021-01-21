@@ -38,7 +38,7 @@ class BATSTrainer:
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
         # could do it this way or with knn, this is simpler to implement for now
-        self.epsilon_neighbors = kwargs.get('epsilon_neighors', 0.1)
+        self.epsilon_neighbors = kwargs.get('epsilon_neighors', 2)
         # set up graph
         self.G = Graph()
         # add a vertex for each state
@@ -67,8 +67,8 @@ class BATSTrainer:
             return range(n)
 
     def train(self):
-        possible_neighbors = self.find_possible_neighbors()
         self.add_dataset_edges()
+        possible_neighbors = self.find_possible_neighbors()
         self.train_dynamics()
         self.add_neighbor_edges(possible_neighbors)
         self.value_iteration()
@@ -121,28 +121,8 @@ class BATSTrainer:
 
     def find_possible_neighbors(self):
         print("finding possible neighbors")
-        '''
-        This way would work except it requires 62TiB of memory for 1 million datapoints. Sad!
-        pairwise_distances = np.sqrt(np.sum((self.unique_obs[None, :] - self.unique_obs[:, None]) ** 2, axis=-1))
-        possible_neighbors = pairwise_distances < self.epsilon_neighbors
-        possible_neighbors_list = np.argwhere(possible_neighbors)
-        nonduplicates = possible_neighbors_list[:, 0] != possible_neighbors_list[:, 1]
-        nonduplicate_possible_neighbors_list = np.compress(nonduplicates, possible_neighbors_list, axis=0)
-        '''
-        '''
-        Another attempt with pairwise_distances_chunked
-        possible_neighbors = []
-        find_neighbors = partial(util.find_neighbors, epsilon=self.epsilon_neighbors)
-        for chunk in pairwise_distances_chunked(self.unique_obs, reduce_func=find_neighbors, n_jobs=-1):
-            db()
-            possible_neighbors.append(chunk)
-        '''
         neighbors = radius_neighbors_graph(self.unique_obs, self.epsilon_neighbors, n_jobs=-1)
-        db()
-
-        # print(f"found {nonduplicate_possible_neighbors_list.shape[0]} possible neighbors")
-
-        return None
+        return np.column_stack(neighbors.nonzero())
 
     def value_iteration(self):
         iterator = self.get_iterator(self.n_val_iterations)
