@@ -1,5 +1,5 @@
 import json
-from pathlib import Path
+from pathlib import Path, PosixPath
 from shutil import rmtree
 from tqdm import trange
 import numpy as np
@@ -25,6 +25,9 @@ def make_output_dir(name, overwrite, args):
     dir_path.mkdir()
     args_path = dir_path / 'args.json'
     args = vars(args)
+    for k, v in args.items():
+        if type(v) is PosixPath:
+            args[k] = str(v)
     with args_path.open('w') as f:
         json.dump(args, f)
     return dir_path
