@@ -89,7 +89,6 @@ class BATSTrainer:
             neighbors_path = kwargs['load_neighbors'] / 'possible_neighbors.np'
             self.possible_neighbors = np.load(neighbors_path)
         if kwargs['load_model'] is not None:
-            db()
             self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']), self.obs_dim, self.action_dim,
                                                    self.dynamics_train_params['cuda_device'])
 
@@ -118,7 +117,7 @@ class BATSTrainer:
         self.evaluate()
 
     def train_dynamics(self):
-        if self.dynamics_ensemble or self.G:
+        if self.dynamics_ensemble or self.graph_stitching_done:
             print('skipping dynamics ensemble training')
             return
         print("training ensemble of dynamics models")
