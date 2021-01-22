@@ -30,9 +30,14 @@ def make_output_dir(name, overwrite, args):
     return dir_path
 
 
-def get_offline_env(name):
+def get_offline_env(name, dataset_fraction):
     env = gym.make(name)
     dataset = d4rl.qlearning_dataset(env)
+    for name in dataset:
+        item = dataset[name]
+        size = item.shape[0]
+        keep = int(size * dataset_fraction)
+        dataset[name] = item[:keep, ...]
     return env, dataset
 
 
@@ -149,9 +154,9 @@ def CEM(start_state, end_state, init_action, ensemble, epsilon, quantile, **kwar
     action_upper_bound = kwargs.get('action_upper_bound', 1.)
     action_lower_bound = kwargs.get('action_lower_bound', -1.)
     initial_variance_divisor = kwargs.get('initial_variance_divisor', 4)
-    max_iters = kwargs.get('max_iters', 4)
-    popsize = kwargs.get('popsize', 128)
-    num_elites = kwargs.get('num_elites', 32)
+    max_iters = kwargs.get('max_iters', 5)
+    popsize = kwargs.get('popsize', 256)
+    num_elites = kwargs.get('num_elites', 64)
     alpha = kwargs.get('alpha', 0.25)
     action_dim = init_action.shape[0]
     mean = init_action
