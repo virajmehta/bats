@@ -14,7 +14,7 @@ class BATSTrainer:
         self.dataset = dataset
         self.env = env
         self.obs_dim = self.env.observation_space.high.shape[0]
-        self.action_dime = self.env.action_space.high.shape[0]
+        self.action_dim = self.env.action_space.high.shape[0]
         self.output_dir = output_dir
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
@@ -45,7 +45,7 @@ class BATSTrainer:
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
         self.possible_neighbors = None
         # set up graph
-        self.G = None
+        self.G = Graph()
         self.value_iteration_done = False
         self.graph_stitching_done = False
         # add a vertex for each state
@@ -89,6 +89,7 @@ class BATSTrainer:
             neighbors_path = kwargs['load_neighbors'] / 'possible_neighbors.np'
             self.possible_neighbors = np.load(neighbors_path)
         if kwargs['load_model'] is not None:
+            db()
             self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']), self.obs_dim, self.action_dim,
                                                    self.dynamics_train_params['cuda_device'])
 
@@ -104,10 +105,10 @@ class BATSTrainer:
             return range(n)
 
     def train(self):
-        if self.policy is not None:
+        if self.policy is None:
             # if this order is changed loading behavior might break
-            self.find_possible_neighbors()
             self.train_dynamics()
+            self.find_possible_neighbors()
             self.add_dataset_edges()
             self.add_neighbor_edges(self.possible_neighbors)
             self.G.save(str(self.output_dir / 'mdp.gt'))
@@ -155,11 +156,10 @@ class BATSTrainer:
         self.graph_stitching_done = True
 
     def add_dataset_edges(self):
-        if self.G:
+        if self.graph_stitching_done:
             print("skipping adding dataset edges")
             return
         print(f"Adding {self.dataset_size} initial edges to our graph")
-        self.G = Graph()
         iterator = self.get_iterator(self.dataset_size)
         for i in iterator:
             obs = self.dataset['observations'][i, :]
@@ -173,7 +173,7 @@ class BATSTrainer:
             self.G.ep.reward[e] = reward
 
     def find_possible_neighbors(self):
-        if self.possible_neighbors is not None or self.G is not None:
+        if self.possible_neighbors is not None or self.graph_stitching_done:
             print('skipping the nearest neighbors step')
             return
         print("finding possible neighbors")
@@ -183,8 +183,8 @@ class BATSTrainer:
         possible_neighbors = np.column_stack(neighbors.nonzero())
         print(f"Time to find possible neighbors: {time.time() - start}")
         print(f"found {possible_neighbors.shape[0] // 2} possible neighbors")
-        np.save(possible_neighbors, self.output_dir / 'possible_neighbors.np')
-        return possible_neighbors
+        np.save(self.output_dir / 'possible_neighbors.np', possible_neighbors)
+        self.possible_neighbors = possible_neighbors
 
     def value_iteration(self):
         if self.value_iteration_done:
