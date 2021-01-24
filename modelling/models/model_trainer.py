@@ -31,7 +31,7 @@ class ModelTrainer(object):
             save_path: Optional[str] = None,
             save_freq: int = -1,
             silent: bool = False,
-            save_path_exists_ok: bool = False,
+            save_path_exists_ok: bool = True,
             save_best_model: bool = True,
             validation_tune_metric: str = 'Loss',
             optimizer=None,

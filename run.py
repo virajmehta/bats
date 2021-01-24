@@ -1,25 +1,34 @@
 import argparse
 import util
 from bats import BATSTrainer
+from pathlib import Path
 
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser = argparse.ArgumentParser()
     parser.add_argument('name', help="The name of the experiment and output directory.")
-    parser.add_argument('--env_name', default="HalfCheetahMedium-v0", help="The name of the environment (will be checked at runtime for correctness).")  # NOQA
+    parser.add_argument('--env_name', default="halfcheetah-medium-v1", help="The name of the environment (will be checked at runtime for correctness).")  # NOQA
     parser.add_argument('--gamma', type=float, default=0.99, help="Discount factor")
-    parser.add_argument('--policy_layer_sizes', default="512|512")
-    parser.add_argument('--model_layer_sizes', default="512|512")
-    parser.add_argument('--num_bootstrap', type=int, default=5)
     parser.add_argument('-ow', dest='overwrite', action='store_true')
     parser.add_argument('-notqdm', dest="tqdm", action="store_false")
+    parser.add_argument('--cuda_device', default='')
+    parser.add_argument('-ep', '--epsilon_planning', type=float, default=0.1, help="The threshold for the planning to add graph edges")  # NOQA
+    parser.add_argument('-pq', '--planning_quantile', type=float, default=0.8, help="The quantile of the dynamics ensemble used for planning to add graph edges")  # NOQA
+    parser.add_argument('-en', '--epsilon_neighbors', type=float, default=0.1, help="The threshold for two states to be considered possible neighbors in an MDP")  # NOQA
+    parser.add_argument('--dataset_fraction', type=float, default=1., help="The fraction of the offline dataset to use for the algorithm. Useful for testing on smaller data")  # NOQA
+    parser.add_argument('-lm', '--load_model', type=Path, default=None, help="Load a dynamics model ensemble from this directory")
+    parser.add_argument('-lg', '--load_graph', type=Path, default=None, help="Load a graph pre-value iteration from this directory")
+    parser.add_argument('-lvi', '--load_value_iteration', type=Path, default=None, help="Load a graph after value iteration from this directory.")
+    parser.add_argument('-ln', '--load_neighbors', type=Path, default=None, help="Load nearest neighbors")
+    parser.add_argument('-lp', '--load_policy', type=Path, default=None, help="Load a behavior cloned policy from this directory")
+
     return parser.parse_args()
 
 
 def main(args):
     output_dir = util.make_output_dir(args.name, args.overwrite, args)
-    env, dataset = util.get_offline_env(args.env_name)
+    env, dataset = util.get_offline_env(args.env_name, args.dataset_fraction)
     args = vars(args)
     bats = BATSTrainer(dataset, env, output_dir, **args)
     bats.train()
