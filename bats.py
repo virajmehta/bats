@@ -68,6 +68,9 @@ class BATSTrainer:
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
 
+        # printing parameters
+        self.neighbor_print_period = 1000
+
 
         # check for all loads
         if kwargs['load_policy'] is not None:
@@ -90,7 +93,7 @@ class BATSTrainer:
             self.possible_neighbors = np.load(neighbors_path)
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']), self.obs_dim, self.action_dim,
-                                                   self.dynamics_train_params['cuda_device'])
+                                                   cuda_device=self.dynamics_train_params['cuda_device'])
 
 
 
@@ -131,7 +134,7 @@ class BATSTrainer:
             return
         print('testing possible neighbors')
         edges_to_add = []
-        for row in tqdm(possible_neighbors):
+        for i, row in enumerate(tqdm(possible_neighbors)):
             adding_neighbor = row[0]
             receiving_neighbor = row[1]
             receiving_obs = self.unique_obs[receiving_neighbor, :]
@@ -147,6 +150,8 @@ class BATSTrainer:
                                                          self.planning_quantile)
                 if best_action is not None:
                     edges_to_add.append((receiving_neighbor, end, best_action, predicted_reward))
+            if i % self.neighbor_print_period == 1:
+                tqdm.write(f"{i} neighbors considered, {len(edges_to_add)} edges added, {len(edges_to_add) / i:.2f} edges per neighbor")  # NOQA
         print(f"adding {len(edges_to_add)} edges to graph")
         for start, end, action, reward in edges_to_add:
             e = self.G.add_edge(start, end)

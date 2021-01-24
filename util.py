@@ -157,19 +157,20 @@ def CEM(start_state, end_state, init_action, ensemble, epsilon, quantile, **kwar
     action_upper_bound = kwargs.get('action_upper_bound', 1.)
     action_lower_bound = kwargs.get('action_lower_bound', -1.)
     initial_variance_divisor = kwargs.get('initial_variance_divisor', 4)
-    max_iters = kwargs.get('max_iters', 5)
-    popsize = kwargs.get('popsize', 256)
-    num_elites = kwargs.get('num_elites', 64)
+    max_iters = kwargs.get('max_iters', 3)
+    popsize = kwargs.get('popsize', 512)
+    num_elites = kwargs.get('num_elites', 128)
     alpha = kwargs.get('alpha', 0.25)
     action_dim = init_action.shape[0]
     mean = init_action
     var = np.ones_like(mean) * ((action_upper_bound - action_lower_bound) / initial_variance_divisor) ** 2
     X = stats.truncnorm(-2, 2, loc=np.zeros_like(mean), scale=np.ones_like(var))
     for i in range(max_iters):
-        lb_dist, ub_dist = mean - action_lower_bound, action_upper_bound - mean
-        constrained_var = np.minimum(np.minimum(np.square(lb_dist / 2), np.square(ub_dist / 2)), var)
+        # lb_dist, ub_dist = mean - action_lower_bound, action_upper_bound - mean
+        # constrained_var = np.minimum(np.minimum(np.square(lb_dist / 2), np.square(ub_dist / 2)), var)
 
-        samples = X.rvs(size=[popsize, action_dim]) * np.sqrt(constrained_var) + mean
+        samples = X.rvs(size=[popsize, action_dim]) * np.sqrt(var) + mean
+        samples = np.clip(samples, action_lower_bound, action_upper_bound)
         start_states = np.tile(start_state, (popsize, 1))
         input_data = prepare_model_inputs(start_states, samples)
         model_outputs = np.stack([member.get_mean_logvar(input_data)[0].cpu() for member in ensemble])
@@ -177,7 +178,7 @@ def CEM(start_state, end_state, init_action, ensemble, epsilon, quantile, **kwar
         # and the next state in all the following components
         state_outputs = model_outputs[:, :, 1:]
         reward_outputs = model_outputs[:, :, 0]
-        displacements = state_outputs - end_state
+        displacements = state_outputs + start_states - end_state
         distances = np.linalg.norm(displacements, axis=-1)
         quantiles = np.quantile(distances, quantile, axis=0)
         if quantiles.min() < epsilon:
