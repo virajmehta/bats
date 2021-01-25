@@ -27,9 +27,10 @@ class PNN(BaseModel):
         logvar_hidden_sizes: Sequence[int],
         hidden_activation=torch.nn.functional.relu,
         logvar_bounds: Optional[Tuple[float, float]] = None,
-        bound_loss_coef: float = 1e-2,
+        bound_loss_coef: float = 1e-3,
         standardize_targets: bool = True,
         linear_wrappers = [None, None, None],
+        bound_loss_function = None,
     ):
         """Constructor.
         Args:
@@ -46,6 +47,7 @@ class PNN(BaseModel):
             standardize_targets: Whether to standardize the targets to predict.
             linear_wrappers: Wrapper for linear layers such as regularizers,
                 order is [encoder, mean, logvar].
+            bound_loss_function: Loss function for the logvar bounds.
         """
         super(PNN, self).__init__([input_dim, output_dim])
         self.input_dim = input_dim
@@ -62,6 +64,10 @@ class PNN(BaseModel):
         )
         self._bound_loss_coef = bound_loss_coef
         self._standardize_targets = standardize_targets
+        if bound_loss_function is None:
+            self._bound_loss_function = torch.nn.L1Loss(reduction='sum')
+        else:
+            self._bound_loss_function = bound_loss_function
         if logvar_bounds is not None:
             self._var_pinning = True
             self._min_logvar = torch.nn.Parameter(torch_to(logvar_bounds[0]
@@ -107,8 +113,8 @@ class PNN(BaseModel):
             MSE=mse.item(),
         )
         if self._var_pinning:
-            bound_loss = self._bound_loss_coef * (self._max_logvar.sum()
-                    - self._min_logvar.sum())
+            bound_loss = self._bound_loss_coef * self._bound_loss_function(
+                    self._max_logvar, self._min_logvar)
             stats['BoundLoss'] = bound_loss.item()
             loss += bound_loss
         stats['Loss'] = loss.item()
