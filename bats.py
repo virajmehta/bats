@@ -1,20 +1,24 @@
-from graph_tool import Graph
+from graph_tool import Graph, load_graph
 import util
 import time
 import numpy as np
 from tqdm import trange, tqdm
-from modelling.dynamics_construction import train_ensemble
-from modelling.policy_construction import train_policy
+from modelling.dynamics_construction import train_ensemble, load_ensemble
+from modelling.policy_construction import train_policy, load_policy
 from sklearn.neighbors import radius_neighbors_graph
+from ipdb import set_trace as db
 
 
 class BATSTrainer:
     def __init__(self, dataset, env, output_dir, **kwargs):
         self.dataset = dataset
         self.env = env
+        self.obs_dim = self.env.observation_space.high.shape[0]
+        self.action_dim = self.env.action_space.high.shape[0]
+        self.output_dir = output_dir
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
-        self.n_val_iterations = kwargs.get('n_val_iterations', 100)
+        self.n_val_iterations = kwargs.get('n_val_iterations', 1000)
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
@@ -38,9 +42,12 @@ class BATSTrainer:
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
         # could do it this way or with knn, this is simpler to implement for now
-        self.epsilon_neighbors = kwargs.get('epsilon_neighors', 2)  # no idea what this should be
+        self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
+        self.possible_neighbors = None
         # set up graph
         self.G = Graph()
+        self.value_iteration_done = False
+        self.graph_stitching_done = False
         # add a vertex for each state
         self.G.add_vertex(self.graph_size)
         # make sure we keep the mapping from states to vertices
@@ -55,11 +62,40 @@ class BATSTrainer:
         self.G.ep.reward = self.G.new_edge_property("float")
 
         # parameters for planning
-        self.epsilon_planning = kwargs.get('epsilon_planning', 0.1)  # also no idea what this should be
+        self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
+
+        # printing parameters
+        self.neighbor_print_period = 1000
+
+
+        # check for all loads
+        if kwargs['load_policy'] is not None:
+            self.policy = load_policy(str(kwargs['load_policy']), self.obs_dim, self.action_dim,
+                                      cuda_device=self.bc_params['cuda_device'])
+            return
+        if kwargs['load_value_iteration'] is not None:
+            graph_path = kwargs['load_value_iteration'] / 'vi.gt'
+            self.G = load_graph(str(graph_path))
+            self.value_iteration_done = True
+            self.graph_stitching_done = True
+            return
+        if kwargs['load_graph'] is not None:
+            graph_path = kwargs['load_graph'] / 'mdp.gt'
+            self.G = load_graph(str(graph_path))
+            self.graph_stitching_done = True
+            return
+        if kwargs['load_neighbors'] is not None:
+            neighbors_path = kwargs['load_neighbors'] / 'possible_neighbors.np'
+            self.possible_neighbors = np.load(neighbors_path)
+        if kwargs['load_model'] is not None:
+            self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']), self.obs_dim, self.action_dim,
+                                                   cuda_device=self.dynamics_train_params['cuda_device'])
+
+
 
     def get_vertex(self, obs):
         return self.G.vertex(self.vertices[obs.tobytes()])
@@ -71,26 +107,35 @@ class BATSTrainer:
             return range(n)
 
     def train(self):
-        self.add_dataset_edges()
-        start = time.time()
-        possible_neighbors = self.find_possible_neighbors()
-        print(f"Time: {time.time() - start}")
-        self.train_dynamics()
-        self.add_neighbor_edges(possible_neighbors)
-        self.value_iteration()
-        self.train_bc()
+        if self.policy is None:
+            # if this order is changed loading behavior might break
+            self.train_dynamics()
+            self.find_possible_neighbors()
+            self.add_dataset_edges()
+            self.G.save(str(self.output_dir / 'dataset.gt'))
+            self.add_neighbor_edges(self.possible_neighbors)
+            self.G.save(str(self.output_dir / 'mdp.gt'))
+            self.value_iteration()
+            self.G.save(str(self.output_dir / 'vi.gt'))
+            self.train_bc()
         self.evaluate()
 
     def train_dynamics(self):
+        if self.dynamics_ensemble or self.graph_stitching_done:
+            print('skipping dynamics ensemble training')
+            return
         print("training ensemble of dynamics models")
         self.dynamics_ensemble = train_ensemble(self.dataset, **self.dynamics_train_params)
 
     def add_neighbor_edges(self, possible_neighbors):
         '''
         '''
+        if self.graph_stitching_done:
+            print('skipping graph stitching')
+            return
         print('testing possible neighbors')
         edges_to_add = []
-        for row in possible_neighbors:
+        for i, row in enumerate(tqdm(possible_neighbors)):
             adding_neighbor = row[0]
             receiving_neighbor = row[1]
             receiving_obs = self.unique_obs[receiving_neighbor, :]
@@ -106,13 +151,19 @@ class BATSTrainer:
                                                          self.planning_quantile)
                 if best_action is not None:
                     edges_to_add.append((receiving_neighbor, end, best_action, predicted_reward))
+            if i % self.neighbor_print_period == 1:
+                tqdm.write(f"{i} neighbors considered, {len(edges_to_add)} edges added, {len(edges_to_add) / i:.2f} edges per neighbor")  # NOQA
         print(f"adding {len(edges_to_add)} edges to graph")
         for start, end, action, reward in edges_to_add:
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
+        self.graph_stitching_done = True
 
     def add_dataset_edges(self):
+        if self.graph_stitching_done:
+            print("skipping adding dataset edges")
+            return
         print(f"Adding {self.dataset_size} initial edges to our graph")
         iterator = self.get_iterator(self.dataset_size)
         for i in iterator:
@@ -127,16 +178,26 @@ class BATSTrainer:
             self.G.ep.reward[e] = reward
 
     def find_possible_neighbors(self):
+        if self.possible_neighbors is not None or self.graph_stitching_done:
+            print('skipping the nearest neighbors step')
+            return
         print("finding possible neighbors")
+        # this is the only step with quadratic time complexity, watch out for how long it takes
+        start = time.time()
         neighbors = radius_neighbors_graph(self.unique_obs, self.epsilon_neighbors, n_jobs=-1)
         possible_neighbors = np.column_stack(neighbors.nonzero())
+        print(f"Time to find possible neighbors: {time.time() - start}")
         print(f"found {possible_neighbors.shape[0] // 2} possible neighbors")
-        return possible_neighbors
+        np.save(self.output_dir / 'possible_neighbors.npy', possible_neighbors)
+        self.possible_neighbors = possible_neighbors
 
     def value_iteration(self):
+        if self.value_iteration_done:
+            print("skipping value iteration")
+            return
         print("performing value iteration")
         iterator = self.get_iterator(self.n_val_iterations)
-        for _ in iterator:
+        for i in iterator:
             for v in self.G.iter_vertices():
                 # should be a (num_neighbors, 2) ndarray where the first col is indices and second is values
                 neighbors = self.G.get_out_neighbors(v, vprops=[self.G.vp.value])
@@ -154,6 +215,7 @@ class BATSTrainer:
                 value = backups[best_arm]
                 self.G.vp.value[v] = value
                 self.G.vp.best_neighbor[v] = neighbors[best_arm, 0]
+        self.value_iteration_done = True
 
     def train_bc(self):
         print("cloning a policy")
@@ -176,7 +238,7 @@ class BATSTrainer:
 
     def evaluate(self):
         # we have util.rollout ready for this purpose
-        print("evaluating cloned policy")
+        print("evaluating policy")
         episodes = []
         returns = []
         for i in self.get_iterator(self.num_eval_episodes):
@@ -186,4 +248,5 @@ class BATSTrainer:
             returns.append(ep_return)
         return_mean = np.mean(returns)
         return_std = np.std(returns)
-        tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f}")
+        normalized_mean = self.env.get_normalized_score(return_mean)
+        tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f} | Normalized mean | {normalized_mean:.2f}")
