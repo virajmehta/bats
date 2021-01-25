@@ -5,6 +5,7 @@ __pycache__/
 
 # data outputs
 experiments/
+get_data.sh
 
 # C extensions
 *.so
