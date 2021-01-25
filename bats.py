@@ -112,6 +112,7 @@ class BATSTrainer:
             self.train_dynamics()
             self.find_possible_neighbors()
             self.add_dataset_edges()
+            self.G.save(str(self.output_dir / 'dataset.gt'))
             self.add_neighbor_edges(self.possible_neighbors)
             self.G.save(str(self.output_dir / 'mdp.gt'))
             self.value_iteration()
@@ -187,7 +188,7 @@ class BATSTrainer:
         possible_neighbors = np.column_stack(neighbors.nonzero())
         print(f"Time to find possible neighbors: {time.time() - start}")
         print(f"found {possible_neighbors.shape[0] // 2} possible neighbors")
-        np.save(self.output_dir / 'possible_neighbors.np', possible_neighbors)
+        np.save(self.output_dir / 'possible_neighbors.npy', possible_neighbors)
         self.possible_neighbors = possible_neighbors
 
     def value_iteration(self):
@@ -196,7 +197,7 @@ class BATSTrainer:
             return
         print("performing value iteration")
         iterator = self.get_iterator(self.n_val_iterations)
-        for _ in iterator:
+        for i in iterator:
             for v in self.G.iter_vertices():
                 # should be a (num_neighbors, 2) ndarray where the first col is indices and second is values
                 neighbors = self.G.get_out_neighbors(v, vprops=[self.G.vp.value])
@@ -247,4 +248,5 @@ class BATSTrainer:
             returns.append(ep_return)
         return_mean = np.mean(returns)
         return_std = np.std(returns)
-        tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f}")
+        normalized_mean = self.env.get_normalized_score(return_mean)
+        tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f} | Normalized mean | {normalized_mean:.2f}")

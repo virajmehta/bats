@@ -2,6 +2,7 @@ import argparse
 import util
 from bats import BATSTrainer
 from pathlib import Path
+from copy import deepcopy
 
 
 def parse_arguments():
@@ -27,7 +28,7 @@ def parse_arguments():
 
 
 def main(args):
-    output_dir = util.make_output_dir(args.name, args.overwrite, args)
+    output_dir = util.make_output_dir(args.name, args.overwrite, deepcopy(args))
     env, dataset = util.get_offline_env(args.env_name, args.dataset_fraction)
     args = vars(args)
     bats = BATSTrainer(dataset, env, output_dir, **args)
