@@ -56,6 +56,8 @@ class BATSTrainer:
         self.G.vp.value = self.G.new_vertex_property("float")
         self.G.vp.value.get_array()[:] = 0
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
+        self.G.vp.obs = self.G.new_vertex_property('vector<float>')
+        self.G.vp.obs.get_array()[:] = self.unique_obs.copy()
         # the actions are gonna be associated with each edge
         self.G.ep.action = self.G.new_edge_property("vector<float>")
         # we also associate the rewards with each edge
