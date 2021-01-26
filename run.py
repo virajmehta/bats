@@ -1,6 +1,8 @@
 import argparse
-import util
+# due to some weirdness with dynamic libraries graph_tool needs to be imported before torch
+# don't change the order of the next 2 lines
 from bats import BATSTrainer
+import util
 from pathlib import Path
 from copy import deepcopy
 

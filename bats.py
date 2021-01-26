@@ -43,7 +43,7 @@ class BATSTrainer:
 
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
-        self.possible_neighbors = None
+        self.possible_stitches = None
         # set up graph
         self.G = Graph()
         self.value_iteration_done = False
@@ -57,7 +57,7 @@ class BATSTrainer:
         self.G.vp.value.get_array()[:] = 0
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
         self.G.vp.obs = self.G.new_vertex_property('vector<float>')
-        self.G.vp.obs.get_array()[:] = self.unique_obs.copy()
+        self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
 
         # the actions are gonna be associated with each edge
         self.G.ep.action = self.G.new_edge_property("vector<float>")
@@ -91,8 +91,8 @@ class BATSTrainer:
             self.graph_stitching_done = True
             return
         if kwargs['load_neighbors'] is not None:
-            neighbors_path = kwargs['load_neighbors'] / 'possible_neighbors.np'
-            self.possible_neighbors = np.load(neighbors_path)
+            stitches_path = kwargs['load_neighbors'] / 'possible_stitches.np'
+            self.possible_stitches = np.load(stitches_path)
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']), self.obs_dim, self.action_dim,
                                                    cuda_device=self.dynamics_train_params['cuda_device'])
@@ -109,11 +109,11 @@ class BATSTrainer:
     def train(self):
         if self.policy is None:
             # if this order is changed loading behavior might break
-            self.train_dynamics()
-            self.find_possible_neighbors()
             self.add_dataset_edges()
+            self.find_possible_stitches()
+            self.train_dynamics()
             self.G.save(str(self.output_dir / 'dataset.gt'))
-            self.add_neighbor_edges(self.possible_neighbors)
+            self.add_neighbor_edges(self.possible_stitches)
             self.G.save(str(self.output_dir / 'mdp.gt'))
             self.value_iteration()
             self.G.save(str(self.output_dir / 'vi.gt'))
@@ -127,15 +127,16 @@ class BATSTrainer:
         print("training ensemble of dynamics models")
         self.dynamics_ensemble = train_ensemble(self.dataset, **self.dynamics_train_params)
 
-    def add_neighbor_edges(self, possible_neighbors):
+    def add_neighbor_edges(self, possible_stitches):
         '''
         '''
+        # TODO: adjust this for the fact that we now have possible stitches and don't have to accoutn for neighbors
         if self.graph_stitching_done:
             print('skipping graph stitching')
             return
-        print('testing possible neighbors')
+        print('testing possible stitches')
         edges_to_add = []
-        for i, row in enumerate(tqdm(possible_neighbors)):
+        for i, row in enumerate(tqdm(possible_stitches)):
             adding_neighbor = row[0]
             receiving_neighbor = row[1]
             receiving_obs = self.unique_obs[receiving_neighbor, :]
@@ -177,8 +178,8 @@ class BATSTrainer:
             self.G.ep.action[e] = action.tolist()
             self.G.ep.reward[e] = reward
 
-    def find_possible_neighbors(self):
-        if self.possible_neighbors is not None or self.graph_stitching_done:
+    def find_possible_stitches(self):
+        if self.possible_stitches is not None or self.graph_stitching_done:
             print('skipping the nearest neighbors step')
             return
         print("finding possible neighbors")
@@ -188,8 +189,27 @@ class BATSTrainer:
         possible_neighbors = np.column_stack(neighbors.nonzero())
         print(f"Time to find possible neighbors: {time.time() - start}")
         print(f"found {possible_neighbors.shape[0] // 2} possible neighbors")
-        np.save(self.output_dir / 'possible_neighbors.npy', possible_neighbors)
-        self.possible_neighbors = possible_neighbors
+        print(f"converting to edges")
+        possible_stitches = []
+        for row in tqdm(possible_neighbors):
+            # get all the possible neighbors of the row
+            v0 = row[0]
+            v1 = row[1]
+            v0_in_neighbors = self.G.get_in_neighbors(v0)
+            v0_in_targets = np.ones_like(v0_in_neighbors) * v1
+            possible_stitches.append(np.stack((v0_in_neighbors, v0_in_targets), axis=-1))
+            v0_out_neighbors = self.G.get_out_neighbors(v0)
+            v0_out_start = np.ones_like(v0_out_neighbors) * v1
+            possible_stitches.append(np.stack((v0_out_start, v0_out_neighbors), axis=-1))
+            v1_in_neighbors = self.G.get_in_neighbors(v1)
+            v1_in_targets = np.ones_like(v1_in_neighbors) * v0
+            possible_stitches.append(np.stack((v1_in_neighbors, v1_in_targets), axis=-1))
+            v1_out_neighbors = self.G.get_out_neighbors(v1)
+            v1_out_start = np.ones_like(v1_out_neighbors) * v0
+            possible_stitches.append(np.stack((v1_out_start, v1_out_neighbors), axis=-1))
+
+        self.possible_stitches = possible_stitches
+        np.save(self.output_dir / 'possible_stitches.npy', possible_stitches)
 
     def value_iteration(self):
         if self.value_iteration_done:
