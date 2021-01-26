@@ -1,4 +1,4 @@
-from graph_tool import Graph, load_graph
+from graph_tool import Graph, load_graph, ungroup_vector_property
 import util
 import time
 import numpy as np
@@ -91,7 +91,7 @@ class BATSTrainer:
             self.graph_stitching_done = True
             return
         if kwargs['load_neighbors'] is not None:
-            stitches_path = kwargs['load_neighbors'] / 'possible_stitches.np'
+            stitches_path = kwargs['load_neighbors'] / 'possible_stitches.npy'
             self.possible_stitches = np.load(stitches_path)
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']), self.obs_dim, self.action_dim,
@@ -129,6 +129,8 @@ class BATSTrainer:
 
     def add_neighbor_edges(self, possible_stitches):
         '''
+        This function currently assumes whatever prioritization there is exists outside the function and that it is
+        supposed to try all possible stitches.
         '''
         # TODO: adjust this for the fact that we now have possible stitches and don't have to accoutn for neighbors
         if self.graph_stitching_done:
@@ -175,10 +177,15 @@ class BATSTrainer:
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
             e = self.G.add_edge(v_from, v_to)
-            self.G.ep.action[e] = action.tolist()
+            self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
 
     def find_possible_stitches(self):
+        '''
+        saves a list in the form of an ndarray with N x D
+        where N is the number of possible stitches and D is 2 + (2 * obs_dim) + action_dim
+        where each row is start_vertex, end_vertex, start_obs, end_obs, initial_action
+        '''
         if self.possible_stitches is not None or self.graph_stitching_done:
             print('skipping the nearest neighbors step')
             return
@@ -191,25 +198,35 @@ class BATSTrainer:
         print(f"found {possible_neighbors.shape[0] // 2} possible neighbors")
         print(f"converting to edges")
         possible_stitches = []
+        action_props = ungroup_vector_property(self.G.ep.action, range(self.action_dim))
+        state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
         for row in tqdm(possible_neighbors):
-            # get all the possible neighbors of the row
+            # get all the possible neighbors of the row donating from v0 to v1
+            # since each pair should show up in both orders in the list, all pairs will get donations
+            # both ways
             v0 = row[0]
             v1 = row[1]
-            v0_in_neighbors = self.G.get_in_neighbors(v0)
-            v0_in_targets = np.ones_like(v0_in_neighbors) * v1
-            possible_stitches.append(np.stack((v0_in_neighbors, v0_in_targets), axis=-1))
-            v0_out_neighbors = self.G.get_out_neighbors(v0)
-            v0_out_start = np.ones_like(v0_out_neighbors) * v1
-            possible_stitches.append(np.stack((v0_out_start, v0_out_neighbors), axis=-1))
-            v1_in_neighbors = self.G.get_in_neighbors(v1)
-            v1_in_targets = np.ones_like(v1_in_neighbors) * v0
-            possible_stitches.append(np.stack((v1_in_neighbors, v1_in_targets), axis=-1))
-            v1_out_neighbors = self.G.get_out_neighbors(v1)
-            v1_out_start = np.ones_like(v1_out_neighbors) * v0
-            possible_stitches.append(np.stack((v1_out_start, v1_out_neighbors), axis=-1))
+            v1_obs = self.unique_obs[v1, :]
+            v0_in_neighbors = self.G.get_in_neighbors(v0, vprops=state_props)
+            v0_in_edges = self.G.get_in_edges(v0, eprops=action_props)
+            v0_in_targets = np.ones_like(v0_in_neighbors[:, :1]) * v1
+            possible_stitches.append(np.concatenate((v0_in_neighbors[:, :1],
+                                                     v0_in_targets,
+                                                     v0_in_neighbors[:, 1:],
+                                                     np.tile(v1_obs, (v0_in_neighbors.shape[0], 1)),
+                                                     v0_in_edges[:, 2:]), axis=-1))
+            v0_out_neighbors = self.G.get_out_neighbors(v0, vprops=state_props)
+            v0_out_edges = self.G.get_out_edges(v0, eprops=action_props)
+            v0_out_start = np.ones_like(v0_out_neighbors[:, :1]) * v1
+            possible_stitches.append(np.concatenate((v0_out_start,
+                                                     v0_out_neighbors[:, :1],
+                                                     np.tile(v1_obs, (v0_out_neighbors.shape[0], 1)),
+                                                     v0_out_neighbors[:, 1:],
+                                                     v0_out_edges[:, 2:]), axis=-1))
 
-        self.possible_stitches = possible_stitches
-        np.save(self.output_dir / 'possible_stitches.npy', possible_stitches)
+        self.possible_stitches = np.concatenate(possible_stitches, axis=0)
+        print(f"found {self.possible_stitches.shape[0]} possible stitches")
+        np.save(self.output_dir / 'possible_stitches.npy', self.possible_stitches)
 
     def value_iteration(self):
         if self.value_iteration_done:
