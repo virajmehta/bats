@@ -58,6 +58,7 @@ class BATSTrainer:
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
         self.G.vp.obs = self.G.new_vertex_property('vector<float>')
         self.G.vp.obs.get_array()[:] = self.unique_obs.copy()
+
         # the actions are gonna be associated with each edge
         self.G.ep.action = self.G.new_edge_property("vector<float>")
         # we also associate the rewards with each edge
@@ -72,7 +73,6 @@ class BATSTrainer:
 
         # printing parameters
         self.neighbor_print_period = 1000
-
 
         # check for all loads
         if kwargs['load_policy'] is not None:
@@ -96,8 +96,6 @@ class BATSTrainer:
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']), self.obs_dim, self.action_dim,
                                                    cuda_device=self.dynamics_train_params['cuda_device'])
-
-
 
     def get_vertex(self, obs):
         return self.G.vertex(self.vertices[obs.tobytes()])
@@ -251,4 +249,4 @@ class BATSTrainer:
         return_mean = np.mean(returns)
         return_std = np.std(returns)
         normalized_mean = self.env.get_normalized_score(return_mean)
-        tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f} | Normalized mean | {normalized_mean:.2f}")
+        tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f} | Normalized mean | {normalized_mean:.2f}")  # NOQA
