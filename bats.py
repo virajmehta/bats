@@ -2,6 +2,7 @@ from graph_tool import Graph, load_graph, ungroup_vector_property
 import util
 import time
 import numpy as np
+from functools import partial
 from tqdm import trange, tqdm
 from modelling.dynamics_construction import train_ensemble, load_ensemble
 from modelling.policy_construction import train_policy, load_policy
@@ -137,8 +138,16 @@ class BATSTrainer:
             print('skipping graph stitching')
             return
         print('testing possible stitches')
+        plan_fn = partial(util.CEM,
+                          obs_dim=self.obs_dim,
+                          action_dim=self.action_dim,
+                          ensemble=self.dynamics_ensemble,
+                          epsilon=self.epsilon_planning,
+                          quantile=self.planning_quantile)
         edges_to_add = []
         for i, row in enumerate(tqdm(possible_stitches)):
+            best_action, predicted_reward = plan_fn(row)
+            '''
             adding_neighbor = row[0]
             receiving_neighbor = row[1]
             receiving_obs = self.unique_obs[receiving_neighbor, :]
@@ -152,8 +161,9 @@ class BATSTrainer:
                                                          self.dynamics_ensemble,
                                                          self.epsilon_planning,
                                                          self.planning_quantile)
-                if best_action is not None:
-                    edges_to_add.append((receiving_neighbor, end, best_action, predicted_reward))
+            '''
+            if best_action is not None:
+                edges_to_add.append((row[0], row[1], best_action, predicted_reward))
             if i % self.neighbor_print_period == 1:
                 tqdm.write(f"{i} neighbors considered, {len(edges_to_add)} edges added, {len(edges_to_add) / i:.2f} edges per neighbor")  # NOQA
         print(f"adding {len(edges_to_add)} edges to graph")

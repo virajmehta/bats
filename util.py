@@ -145,16 +145,23 @@ def prepare_model_inputs(obs, actions):
     return torch.Tensor(np.hstack([obs, actions]))
 
 
-def CEM(start_state, end_state, init_action, ensemble, epsilon, quantile, **kwargs):
+def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
     initializes the mean with the init action.
+
+    row: a numpy array of size D = 2 + 2 * obs_dim + action_dim, assumed to be of the form:
+    start state (int); end state (int); start_obs (obs_dim floats); end_obs (obs_dim floats);
+        init_action (action_dim floats);
 
     if successful, returns the action and predicted reward of the transition.
     if unsuccessful, returns None, None
     for now we assume that the actions are bounded in [-1, 1]
     '''
     action_upper_bound = kwargs.get('action_upper_bound', 1.)
+    start_state = row[2:2 + obs_dim]
+    end_state = row[2 + obs_dim:2 + 2 * obs_dim]
+    init_action = row[-action_dim:]
     action_lower_bound = kwargs.get('action_lower_bound', -1.)
     initial_variance_divisor = kwargs.get('initial_variance_divisor', 4)
     max_iters = kwargs.get('max_iters', 3)
