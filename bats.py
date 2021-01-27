@@ -158,13 +158,13 @@ class BATSTrainer:
         edges_to_add = []
         n_possible_stitches = possible_stitches.shape[0]
         n_stitching_chunks = util.ceildiv(n_possible_stitches, self.stitching_chunk_size)
-        db()
         for i in trange(n_stitching_chunks):
             possible_stitch_chunk = torch.Tensor(possible_stitches[i * self.stitching_chunk_size:(i + 1) * self.stitching_chunk_size])  # NOQA
             chunksize = possible_stitch_chunk.shape[0]
             with Pool(processes=self.num_cpus) as pool:
                 edges_to_add += list(tqdm(pool.imap(plan_fn, possible_stitch_chunk), total=chunksize))
-        for start, end, action, reward in edges_to_add:
+        print('checked all stitches, adding to graph')
+        for start, end, action, reward in tqdm(edges_to_add):
             if start is None:
                 continue
             e = self.G.add_edge(start, end)
