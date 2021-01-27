@@ -154,9 +154,13 @@ class BATSTrainer:
                           epsilon=self.epsilon_planning,
                           quantile=self.planning_quantile)
         edges_to_add = []
+        max_ = possible_stitches.shape[0]
         possible_stitches = torch.Tensor(possible_stitches)
         with Pool(processes=self.num_cpus) as pool:
-            edges_to_add = pool.map(plan_fn, possible_stitches)
+            with tqdm(total=max_) as pbad:
+                for slug in pool.imap(plan_fn, possible_stitches):
+                    edges_to_add.append(slug)
+                    pbar.update()
         for start, end, action, reward in edges_to_add:
             if start is None:
                 continue
