@@ -212,5 +212,4 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
         new_var = torch.var(elites, axis=0)
         mean = alpha * mean + (1 - alpha) * new_mean
         var = alpha * var + (1 - alpha) * new_var
-        print(f'completed iter {i}')
     return None, None, None, None

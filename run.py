@@ -25,6 +25,7 @@ def parse_arguments():
     parser.add_argument('-lvi', '--load_value_iteration', type=Path, default=None, help="Load a graph after value iteration from this directory.")
     parser.add_argument('-ln', '--load_neighbors', type=Path, default=None, help="Load nearest neighbors")
     parser.add_argument('-lp', '--load_policy', type=Path, default=None, help="Load a behavior cloned policy from this directory")
+    parser.add_argument('-ncpus', '--num_cpus', type=int, default=1)
 
     return parser.parse_args()
 
