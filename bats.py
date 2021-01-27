@@ -141,13 +141,14 @@ class BATSTrainer:
         '''
         This function currently assumes whatever prioritization there is exists outside the function and that it is
         supposed to try all possible stitches.
+        I tested this and it made things slower:
+        # for model in self.dynamics_ensemble:
+            # model.share_memory()
         '''
         if self.graph_stitching_done:
             print('skipping graph stitching')
             return
         print('testing possible stitches')
-        # for model in self.dynamics_ensemble:
-            # model.share_memory()
         plan_fn = partial(util.CEM,
                           ensemble=self.dynamics_ensemble,
                           obs_dim=self.obs_dim,
@@ -156,9 +157,13 @@ class BATSTrainer:
                           quantile=self.planning_quantile)
         edges_to_add = []
         n_possible_stitches = possible_stitches.shape[0]
-        possible_stitches = torch.Tensor(possible_stitches)[:cutoff]
-        with Pool(processes=self.num_cpus) as pool:
-            edges_to_add = list(tqdm(pool.imap(plan_fn, possible_stitches), total=cutoff))
+        n_stitching_chunks = util.ceildiv(n_possible_stitches, self.stitching_chunk_size)
+        db()
+        for i in trange(n_stitching_chunks):
+            possible_stitch_chunk = torch.Tensor(possible_stitches[i * self.stitching_chunk_size:(i + 1) * self.stitching_chunk_size])  # NOQA
+            chunksize = possible_stitch_chunk.shape[0]
+            with Pool(processes=self.num_cpus) as pool:
+                edges_to_add += list(tqdm(pool.imap(plan_fn, possible_stitch_chunk), total=chunksize))
         for start, end, action, reward in edges_to_add:
             if start is None:
                 continue
