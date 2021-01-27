@@ -1,12 +1,18 @@
-from graph_tool import Graph, load_graph
+from graph_tool import Graph, load_graph, ungroup_vector_property
 import util
 import time
 import numpy as np
+from functools import partial
+import torch
+import torch.multiprocessing
+from torch.multiprocessing import Pool
 from tqdm import trange, tqdm
 from modelling.dynamics_construction import train_ensemble, load_ensemble
 from modelling.policy_construction import train_policy, load_policy
 from sklearn.neighbors import radius_neighbors_graph
 from ipdb import set_trace as db
+torch.multiprocessing.set_sharing_strategy('file_system')
+torch.multiprocessing.set_start_method('spawn')
 
 
 class BATSTrainer:
@@ -26,6 +32,7 @@ class BATSTrainer:
 
         # set up the parameters for the dynamics model training
         self.dynamics_ensemble = None
+
         self.dynamics_train_params = {}
         self.dynamics_train_params['n_members'] = kwargs.get('dynamics_n_members', 7)
         self.dynamics_train_params['n_elites'] = kwargs.get('dynamics_n_elites', 5)
@@ -43,7 +50,7 @@ class BATSTrainer:
 
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
-        self.possible_neighbors = None
+        self.possible_stitches = None
         # set up graph
         self.G = Graph()
         self.value_iteration_done = False
@@ -56,6 +63,9 @@ class BATSTrainer:
         self.G.vp.value = self.G.new_vertex_property("float")
         self.G.vp.value.get_array()[:] = 0
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
+        self.G.vp.obs = self.G.new_vertex_property('vector<float>')
+        self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
+
         # the actions are gonna be associated with each edge
         self.G.ep.action = self.G.new_edge_property("vector<float>")
         # we also associate the rewards with each edge
@@ -64,13 +74,13 @@ class BATSTrainer:
         # parameters for planning
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
+        self.num_cpus = kwargs.get('num_cpus', 1)
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
 
         # printing parameters
         self.neighbor_print_period = 1000
-
 
         # check for all loads
         if kwargs['load_policy'] is not None:
@@ -89,13 +99,12 @@ class BATSTrainer:
             self.graph_stitching_done = True
             return
         if kwargs['load_neighbors'] is not None:
-            neighbors_path = kwargs['load_neighbors'] / 'possible_neighbors.np'
-            self.possible_neighbors = np.load(neighbors_path)
+            stitches_path = kwargs['load_neighbors'] / 'possible_stitches.npy'
+            self.possible_stitches = np.load(stitches_path)
         if kwargs['load_model'] is not None:
-            self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']), self.obs_dim, self.action_dim,
-                                                   cuda_device=self.dynamics_train_params['cuda_device'])
-
-
+            self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']),
+                                                   obs_dim=self.obs_dim,
+                                                   act_dim=self.action_dim)
 
     def get_vertex(self, obs):
         return self.G.vertex(self.vertices[obs.tobytes()])
@@ -109,10 +118,11 @@ class BATSTrainer:
     def train(self):
         if self.policy is None:
             # if this order is changed loading behavior might break
-            self.train_dynamics()
-            self.find_possible_neighbors()
             self.add_dataset_edges()
-            self.add_neighbor_edges(self.possible_neighbors)
+            self.find_possible_stitches()
+            self.train_dynamics()
+            self.G.save(str(self.output_dir / 'dataset.gt'))
+            self.add_neighbor_edges(self.possible_stitches)
             self.G.save(str(self.output_dir / 'mdp.gt'))
             self.value_iteration()
             self.G.save(str(self.output_dir / 'vi.gt'))
@@ -126,34 +136,30 @@ class BATSTrainer:
         print("training ensemble of dynamics models")
         self.dynamics_ensemble = train_ensemble(self.dataset, **self.dynamics_train_params)
 
-    def add_neighbor_edges(self, possible_neighbors):
+    def add_neighbor_edges(self, possible_stitches):
         '''
+        This function currently assumes whatever prioritization there is exists outside the function and that it is
+        supposed to try all possible stitches.
         '''
         if self.graph_stitching_done:
             print('skipping graph stitching')
             return
-        print('testing possible neighbors')
+        print('testing possible stitches')
+        for model in self.dynamics_ensemble:
+            model.share_memory()
+        plan_fn = partial(util.CEM,
+                          ensemble=self.dynamics_ensemble,
+                          obs_dim=self.obs_dim,
+                          action_dim=self.action_dim,
+                          epsilon=self.epsilon_planning,
+                          quantile=self.planning_quantile)
         edges_to_add = []
-        for i, row in enumerate(tqdm(possible_neighbors)):
-            adding_neighbor = row[0]
-            receiving_neighbor = row[1]
-            receiving_obs = self.unique_obs[receiving_neighbor, :]
-            for start, end, action in self.G.iter_out_edges(adding_neighbor, eprops=[self.G.ep.action]):
-                target_obs = self.unique_obs[end, :]
-                # need to run CEM to go from recieving_obs to target_obs with action initialized at action
-                # could also add kwargs to adjust the CEM parameters like max_iters, popsize, etc.
-                best_action, predicted_reward = util.CEM(receiving_obs,
-                                                         target_obs,
-                                                         np.array(action),
-                                                         self.dynamics_ensemble,
-                                                         self.epsilon_planning,
-                                                         self.planning_quantile)
-                if best_action is not None:
-                    edges_to_add.append((receiving_neighbor, end, best_action, predicted_reward))
-            if i % self.neighbor_print_period == 1:
-                tqdm.write(f"{i} neighbors considered, {len(edges_to_add)} edges added, {len(edges_to_add) / i:.2f} edges per neighbor")  # NOQA
-        print(f"adding {len(edges_to_add)} edges to graph")
+        possible_stitches = torch.Tensor(possible_stitches)
+        with Pool(processes=self.num_cpus) as pool:
+            edges_to_add = pool.map(plan_fn, possible_stitches)
         for start, end, action, reward in edges_to_add:
+            if start is None:
+                continue
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
@@ -173,11 +179,16 @@ class BATSTrainer:
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
             e = self.G.add_edge(v_from, v_to)
-            self.G.ep.action[e] = action.tolist()
+            self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
 
-    def find_possible_neighbors(self):
-        if self.possible_neighbors is not None or self.graph_stitching_done:
+    def find_possible_stitches(self):
+        '''
+        saves a list in the form of an ndarray with N x D
+        where N is the number of possible stitches and D is 2 + (2 * obs_dim) + action_dim
+        where each row is start_vertex, end_vertex, start_obs, end_obs, initial_action
+        '''
+        if self.possible_stitches is not None or self.graph_stitching_done:
             print('skipping the nearest neighbors step')
             return
         print("finding possible neighbors")
@@ -187,8 +198,37 @@ class BATSTrainer:
         possible_neighbors = np.column_stack(neighbors.nonzero())
         print(f"Time to find possible neighbors: {time.time() - start}")
         print(f"found {possible_neighbors.shape[0] // 2} possible neighbors")
-        np.save(self.output_dir / 'possible_neighbors.np', possible_neighbors)
-        self.possible_neighbors = possible_neighbors
+        print(f"converting to edges")
+        possible_stitches = []
+        action_props = ungroup_vector_property(self.G.ep.action, range(self.action_dim))
+        state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
+        for row in tqdm(possible_neighbors):
+            # get all the possible neighbors of the row donating from v0 to v1
+            # since each pair should show up in both orders in the list, all pairs will get donations
+            # both ways
+            v0 = row[0]
+            v1 = row[1]
+            v1_obs = self.unique_obs[v1, :]
+            v0_in_neighbors = self.G.get_in_neighbors(v0, vprops=state_props)
+            v0_in_edges = self.G.get_in_edges(v0, eprops=action_props)
+            v0_in_targets = np.ones_like(v0_in_neighbors[:, :1]) * v1
+            possible_stitches.append(np.concatenate((v0_in_neighbors[:, :1],
+                                                     v0_in_targets,
+                                                     v0_in_neighbors[:, 1:],
+                                                     np.tile(v1_obs, (v0_in_neighbors.shape[0], 1)),
+                                                     v0_in_edges[:, 2:]), axis=-1))
+            v0_out_neighbors = self.G.get_out_neighbors(v0, vprops=state_props)
+            v0_out_edges = self.G.get_out_edges(v0, eprops=action_props)
+            v0_out_start = np.ones_like(v0_out_neighbors[:, :1]) * v1
+            possible_stitches.append(np.concatenate((v0_out_start,
+                                                     v0_out_neighbors[:, :1],
+                                                     np.tile(v1_obs, (v0_out_neighbors.shape[0], 1)),
+                                                     v0_out_neighbors[:, 1:],
+                                                     v0_out_edges[:, 2:]), axis=-1))
+
+        self.possible_stitches = np.concatenate(possible_stitches, axis=0)
+        print(f"found {self.possible_stitches.shape[0]} possible stitches")
+        np.save(self.output_dir / 'possible_stitches.npy', self.possible_stitches)
 
     def value_iteration(self):
         if self.value_iteration_done:
@@ -196,7 +236,7 @@ class BATSTrainer:
             return
         print("performing value iteration")
         iterator = self.get_iterator(self.n_val_iterations)
-        for _ in iterator:
+        for i in iterator:
             for v in self.G.iter_vertices():
                 # should be a (num_neighbors, 2) ndarray where the first col is indices and second is values
                 neighbors = self.G.get_out_neighbors(v, vprops=[self.G.vp.value])
@@ -247,4 +287,5 @@ class BATSTrainer:
             returns.append(ep_return)
         return_mean = np.mean(returns)
         return_std = np.std(returns)
-        tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f}")
+        normalized_mean = self.env.get_normalized_score(return_mean)
+        tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f} | Normalized mean | {normalized_mean:.2f}")  # NOQA
