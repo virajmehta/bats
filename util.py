@@ -217,4 +217,4 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
 
 def dummy_CEM(row, ensemble, *args, **kwargs):
     print('f')
-    return ensemble[0](row)
+    return ensemble[0].get_mean_logvar(row)[0]
