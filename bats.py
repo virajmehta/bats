@@ -3,11 +3,15 @@ import util
 import time
 import numpy as np
 from functools import partial
+import torch
+import torch.multiprocessing
+from torch.multiprocessing import Pool
 from tqdm import trange, tqdm
 from modelling.dynamics_construction import train_ensemble, load_ensemble
 from modelling.policy_construction import train_policy, load_policy
 from sklearn.neighbors import radius_neighbors_graph
 from ipdb import set_trace as db
+# torch.multiprocessing.set_sharing_strategy('file_system')
 
 
 class BATSTrainer:
@@ -26,7 +30,12 @@ class BATSTrainer:
         self.dataset_size = self.dataset['observations'].shape[0]
 
         # set up the parameters for the dynamics model training
+        self.dynamics_ensemble_fn = None
         self.dynamics_ensemble = None
+        self.load_dynamics_fun = partial(load_ensemble,
+                                         obs_dim=self.obs_dim,
+                                         act_dim=self.action_dim)
+
         self.dynamics_train_params = {}
         self.dynamics_train_params['n_members'] = kwargs.get('dynamics_n_members', 7)
         self.dynamics_train_params['n_elites'] = kwargs.get('dynamics_n_elites', 5)
@@ -68,6 +77,7 @@ class BATSTrainer:
         # parameters for planning
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
+        self.n_cpus = kwargs.get('n_cpus', 1)
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
@@ -95,8 +105,8 @@ class BATSTrainer:
             stitches_path = kwargs['load_neighbors'] / 'possible_stitches.npy'
             self.possible_stitches = np.load(stitches_path)
         if kwargs['load_model'] is not None:
-            self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']), self.obs_dim, self.action_dim,
-                                                   cuda_device=self.dynamics_train_params['cuda_device'])
+            self.dynamics_ensemble_fn = str(kwargs['load_model'])
+            self.dynamics_ensemble = self.load_dynamics_fun(self.dynamics_ensemble_fn)
 
     def get_vertex(self, obs):
         return self.G.vertex(self.vertices[obs.tobytes()])
@@ -122,11 +132,12 @@ class BATSTrainer:
         self.evaluate()
 
     def train_dynamics(self):
-        if self.dynamics_ensemble or self.graph_stitching_done:
+        if self.dynamics_ensemble_fn or self.graph_stitching_done:
             print('skipping dynamics ensemble training')
             return
         print("training ensemble of dynamics models")
         self.dynamics_ensemble = train_ensemble(self.dataset, **self.dynamics_train_params)
+        self.dynamics_ensemble_fn = str(self.output_dir)
 
     def add_neighbor_edges(self, possible_stitches):
         '''
@@ -138,16 +149,27 @@ class BATSTrainer:
             print('skipping graph stitching')
             return
         print('testing possible stitches')
-        plan_fn = partial(util.CEM,
+        '''
+        plan_fn = partial(util.CEM_wrapper,
+                          ensemble_fn=self.dynamics_ensemble_fn,
+                          load_ensemble_fun=self.load_dynamics_fun,
                           obs_dim=self.obs_dim,
                           action_dim=self.action_dim,
+                          epsilon=self.epsilon_planning,
+                          quantile=self.planning_quantile)
+        '''
+        for model in self.dynamics_ensemble:
+            model.share_memory()
+        plan_fn = partial(util.CEM,
                           ensemble=self.dynamics_ensemble,
+                          obs_dim=self.obs_dim,
+                          action_dim=self.action_dim,
                           epsilon=self.epsilon_planning,
                           quantile=self.planning_quantile)
         edges_to_add = []
+        '''
         for i, row in enumerate(tqdm(possible_stitches)):
             best_action, predicted_reward = plan_fn(row)
-            '''
             adding_neighbor = row[0]
             receiving_neighbor = row[1]
             receiving_obs = self.unique_obs[receiving_neighbor, :]
@@ -161,13 +183,19 @@ class BATSTrainer:
                                                          self.dynamics_ensemble,
                                                          self.epsilon_planning,
                                                          self.planning_quantile)
-            '''
             if best_action is not None:
                 edges_to_add.append((row[0], row[1], best_action, predicted_reward))
             if i % self.neighbor_print_period == 1:
                 tqdm.write(f"{i} neighbors considered, {len(edges_to_add)} edges added, {len(edges_to_add) / i:.2f} edges per neighbor")  # NOQA
-        print(f"adding {len(edges_to_add)} edges to graph")
+        '''
+        possible_stitches = possible_stitches[:1000, ...]
+        # possible_stitches = torch.Tensor(possible_stitches)
+        with Pool(processes=self.n_cpus) as pool:
+            edges_to_add = pool.map(plan_fn, possible_stitches)
+        # edges_to_add = map(plan_fn, possible_stitches)
         for start, end, action, reward in edges_to_add:
+            if start is None:
+                continue
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward

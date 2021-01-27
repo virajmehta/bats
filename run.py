@@ -16,7 +16,7 @@ def parse_arguments():
     parser.add_argument('-ow', dest='overwrite', action='store_true')
     parser.add_argument('-notqdm', dest="tqdm", action="store_false")
     parser.add_argument('--cuda_device', default='')
-    parser.add_argument('-ep', '--epsilon_planning', type=float, default=0.1, help="The threshold for the planning to add graph edges")  # NOQA
+    parser.add_argument('-ep', '--epsilon_planning', type=float, default=0.05, help="The threshold for the planning to add graph edges")  # NOQA
     parser.add_argument('-pq', '--planning_quantile', type=float, default=0.8, help="The quantile of the dynamics ensemble used for planning to add graph edges")  # NOQA
     parser.add_argument('-en', '--epsilon_neighbors', type=float, default=0.1, help="The threshold for two states to be considered possible neighbors in an MDP")  # NOQA
     parser.add_argument('--dataset_fraction', type=float, default=1., help="The fraction of the offline dataset to use for the algorithm. Useful for testing on smaller data")  # NOQA
