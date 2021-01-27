@@ -213,3 +213,8 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
         mean = alpha * mean + (1 - alpha) * new_mean
         var = alpha * var + (1 - alpha) * new_var
     return None, None, None, None
+
+
+def dummy_CEM(row, ensemble, *args, **kwargs):
+    print('f')
+    return ensemble[0](row)
