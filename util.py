@@ -215,10 +215,5 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
     return None, None, None, None
 
 
-def dummy_CEM(row, ensemble, *args, **kwargs):
-    # print('f')
-    return ensemble[0].get_mean_logvar(row)[0]
-
-
 def ceildiv(a, b):
     return -(-a // b)
