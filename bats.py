@@ -24,7 +24,7 @@ class BATSTrainer:
         self.output_dir = output_dir
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
-        self.n_val_iterations = kwargs.get('n_val_iterations', 1000)
+        self.n_val_iterations = kwargs.get('n_val_iterations', 100)
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
@@ -51,6 +51,7 @@ class BATSTrainer:
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
         self.possible_stitches = None
+        self.possible_stitch_priorities = None
         # set up graph
         self.G = Graph()
         self.value_iteration_done = False
@@ -75,10 +76,14 @@ class BATSTrainer:
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
+        self.pool = Pool(self.num_cpus)
         self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 1000000)
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
+
+        # parameters for interleaving
+        self.num_stitching_iters = kwargs('num_stitching_iters', 20)
 
         # printing parameters
         self.neighbor_print_period = 1000
@@ -117,17 +122,34 @@ class BATSTrainer:
             return range(n)
 
     def train(self):
-        if self.policy is None:
-            # if this order is changed loading behavior might break
-            self.add_dataset_edges()
-            self.find_possible_stitches()
-            self.train_dynamics()
-            self.G.save(str(self.output_dir / 'dataset.gt'))
-            self.add_neighbor_edges(self.possible_stitches)
-            self.G.save(str(self.output_dir / 'mdp.gt'))
-            self.value_iteration()
-            self.G.save(str(self.output_dir / 'vi.gt'))
+        if self.graph_stitching_done:
             self.train_bc()
+        if self.policy is not None:
+            self.evaluate()
+            return
+        # if this order is changed loading behavior might break
+        self.add_dataset_edges()
+        self.find_possible_stitches()
+        self.train_dynamics()
+        self.G.save(str(self.output_dir / 'dataset.gt'))
+        edges_to_add = None
+        for _ in trange(self.num_stitching_iters):
+            self.value_iteration()
+            self.compute_stitch_priorities()
+            stitches_to_try = self.get_prioritized_stitch_chunk()
+            if edges_to_add is not None:
+                edges_to_add = edges_to_add.get()
+                self.add_edges(edges_to_add)
+            # edges_to_add should be an asynchronous result object, we'll run value iteration and
+            # all other computations needed to prioritize the next round of stitches while this is running
+            edges_to_add = self.test_neighbor_edges(stitches_to_try)
+            self.G.save(str(self.output_dir / 'mdp.gt'))
+        self.value_iteration()
+        self.G.save(str(self.output_dir / 'vi.gt'))
+        self.graph_stitching_done = True
+        self.value_iteration_done = True
+        self.value_iteration()
+        self.train_bc()
         self.evaluate()
 
     def train_dynamics(self):
@@ -137,7 +159,7 @@ class BATSTrainer:
         print("training ensemble of dynamics models")
         self.dynamics_ensemble = train_ensemble(self.dataset, **self.dynamics_train_params)
 
-    def add_neighbor_edges(self, possible_stitches):
+    def test_neighbor_edges(self, possible_stitches):
         '''
         This function currently assumes whatever prioritization there is exists outside the function and that it is
         supposed to try all possible stitches.
@@ -149,13 +171,15 @@ class BATSTrainer:
             print('skipping graph stitching')
             return
         print('testing possible stitches')
-        plan_fn = partial(util.CEM,
-                          ensemble=self.dynamics_ensemble,
-                          obs_dim=self.obs_dim,
-                          action_dim=self.action_dim,
-                          epsilon=self.epsilon_planning,
-                          quantile=self.planning_quantile)
-        edges_to_add = []
+        plan_fun = partial(util.CEM,
+                           ensemble=self.dynamics_ensemble,
+                           obs_dim=self.obs_dim,
+                           action_dim=self.action_dim,
+                           epsilon=self.epsilon_planning,
+                           quantile=self.planning_quantile)
+        edges_to_add = self.pool.map_async(plan_fun, possible_stitches)
+        return edges_to_add
+        '''
         n_possible_stitches = possible_stitches.shape[0]
         n_stitching_chunks = util.ceildiv(n_possible_stitches, self.stitching_chunk_size)
         for i in trange(n_stitching_chunks):
@@ -170,7 +194,16 @@ class BATSTrainer:
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
-        self.graph_stitching_done = True
+        '''
+
+    def add_edges(self, edges_to_add):
+        print(f"adding {len(edges_to_add)} edges to graph")
+        for start, end, action, reward in tqdm(edges_to_add):
+            if start is None:
+                continue
+            e = self.G.add_edge(start, end)
+            self.G.ep.action[e] = action
+            self.G.ep.reward[e] = reward
 
     def add_dataset_edges(self):
         if self.graph_stitching_done:
@@ -236,6 +269,26 @@ class BATSTrainer:
         self.possible_stitches = np.concatenate(possible_stitches, axis=0)
         print(f"found {self.possible_stitches.shape[0]} possible stitches")
         np.save(self.output_dir / 'possible_stitches.npy', self.possible_stitches)
+
+    def compute_stitch_priorities(self):
+        print(f"Computing updated priorities for stitches")
+        # for now the priority will just be the -(approximate advantage)
+        priorities = np.empty(self.possible_stitches.shape[0])
+        for i, stitch in enumerate(tqdm(self.possible_stitches)):
+            start_vertex = stitch[0]
+            end_vertex = stitch[0]
+            end_vertex_value = self.G.vp.value[end_vertex]
+            start_vertex_value = self.G.vp.value[start_vertex]
+            advantage = end_vertex_value - start_vertex_value
+            priorities[i] = -advantage
+        self.possible_stitch_priorities = priorities
+
+    def get_prioritized_stitch_chunk(self):
+        indices = np.argpartition(self.possible_stitch_priorities,
+                                  self.stitching_chunk_size)[:self.stitching_chunk_size]
+        stitch_chunk = self.possible_stitches[indices]
+        self.possible_stitches = np.delete(self.possible_stitches, indices, axis=0)
+        return stitch_chunk
 
     def value_iteration(self):
         if self.value_iteration_done:
