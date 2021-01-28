@@ -144,6 +144,10 @@ class BATSTrainer:
             # all other computations needed to prioritize the next round of stitches while this is running
             edges_to_add = self.test_neighbor_edges(stitches_to_try)
             self.G.save(str(self.output_dir / 'mdp.gt'))
+        self.pool.close()
+        edges_to_add = edges_to_add.get()
+        self.add_edges(edges_to_add)
+        self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration()
         self.G.save(str(self.output_dir / 'vi.gt'))
         self.graph_stitching_done = True
