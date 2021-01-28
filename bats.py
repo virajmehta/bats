@@ -12,7 +12,7 @@ from modelling.policy_construction import train_policy, load_policy
 from sklearn.neighbors import radius_neighbors_graph
 from ipdb import set_trace as db
 torch.multiprocessing.set_sharing_strategy('file_system')
-torch.multiprocessing.set_start_method('spawn')
+# torch.multiprocessing.set_start_method('spawn')
 
 
 class BATSTrainer:
@@ -75,6 +75,7 @@ class BATSTrainer:
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
+        self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 1000000)
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
@@ -140,13 +141,14 @@ class BATSTrainer:
         '''
         This function currently assumes whatever prioritization there is exists outside the function and that it is
         supposed to try all possible stitches.
+        I tested this and it made things slower:
+        # for model in self.dynamics_ensemble:
+            # model.share_memory()
         '''
         if self.graph_stitching_done:
             print('skipping graph stitching')
             return
         print('testing possible stitches')
-        for model in self.dynamics_ensemble:
-            model.share_memory()
         plan_fn = partial(util.CEM,
                           ensemble=self.dynamics_ensemble,
                           obs_dim=self.obs_dim,
@@ -154,10 +156,15 @@ class BATSTrainer:
                           epsilon=self.epsilon_planning,
                           quantile=self.planning_quantile)
         edges_to_add = []
-        possible_stitches = torch.Tensor(possible_stitches)
-        with Pool(processes=self.num_cpus) as pool:
-            edges_to_add = pool.map(plan_fn, possible_stitches)
-        for start, end, action, reward in edges_to_add:
+        n_possible_stitches = possible_stitches.shape[0]
+        n_stitching_chunks = util.ceildiv(n_possible_stitches, self.stitching_chunk_size)
+        for i in trange(n_stitching_chunks):
+            possible_stitch_chunk = torch.Tensor(possible_stitches[i * self.stitching_chunk_size:(i + 1) * self.stitching_chunk_size])  # NOQA
+            chunksize = possible_stitch_chunk.shape[0]
+            with Pool(processes=self.num_cpus) as pool:
+                edges_to_add += list(tqdm(pool.imap(plan_fn, possible_stitch_chunk), total=chunksize))
+        print('checked all stitches, adding to graph')
+        for start, end, action, reward in tqdm(edges_to_add):
             if start is None:
                 continue
             e = self.G.add_edge(start, end)
