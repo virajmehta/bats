@@ -310,10 +310,11 @@ class BATSTrainer:
             return
         print("performing value iteration")
         # first we initialize the occupancies with the first nodes as 1
-        self.G.vp.occupancy.get_array()[:] = self.G.vp.start_node.get_array().astype(float)
+        self.G.vp.occupancy.get_array()[:] = 0
 
         iterator = self.get_iterator(self.n_val_iterations)
         for i in iterator:
+            self.G.vp.occupancy.get_array()[:] += self.G.vp.start_node.get_array().astype(float)
             for v in self.G.iter_vertices():
                 # should be a (num_neighbors, 2) ndarray where the first col is indices and second is values
                 neighbor_values = self.G.get_out_neighbors(v, vprops=[self.G.vp.value])
@@ -330,13 +331,10 @@ class BATSTrainer:
                 backups = rewards + self.gamma * values
                 best_arm = np.argmax(backups)
                 value = backups[best_arm]
-                if i < 3:
-                    # I thiiiiink you don't have to do this that many times to get the correct computation
-                    # (like maybe twice), can prove that later
-                    boltzmann_backups = np.exp(backups)
-                    boltzmann_backups /= boltzmann_backups.sum()
-                    occupancies = boltzmann_backups * self.G.vp.occupancy[v] * self.gamma
-                    self.G.vp.occupancies.get_array()[neighbors] += occupancies
+                boltzmann_backups = np.exp(backups)
+                boltzmann_backups /= boltzmann_backups.sum()
+                occupancies = boltzmann_backups * self.G.vp.occupancy[v] * self.gamma
+                self.G.vp.occupancies.get_array()[neighbors] += occupancies
                 self.G.vp.value[v] = value
                 self.G.vp.best_neighbor[v] = neighbors[best_arm, 0]
 
