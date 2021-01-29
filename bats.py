@@ -305,16 +305,20 @@ class BATSTrainer:
         return stitch_chunk
 
     def value_iteration(self):
+        '''
+        This value iteration step actually computes two things:
+        the value function and the occupancy distribution. Since the value function is pretty
+        straightforward I'll give an explanation of the procedure for the value function in the comments.
+        '''
         if self.value_iteration_done:
             print("skipping value iteration")
             return
         print("performing value iteration")
         # first we initialize the occupancies with the first nodes as 1
-        self.G.vp.occupancy.get_array()[:] = 0
+        self.G.vp.occupancy.get_array()[:] = self.G.vp.start_node.get_array().astype(float)
 
         iterator = self.get_iterator(self.n_val_iterations)
         for i in iterator:
-            self.G.vp.occupancy.get_array()[:] += self.G.vp.start_node.get_array().astype(float)
             for v in self.G.iter_vertices():
                 # should be a (num_neighbors, 2) ndarray where the first col is indices and second is values
                 neighbor_values = self.G.get_out_neighbors(v, vprops=[self.G.vp.value])
