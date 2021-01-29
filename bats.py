@@ -66,6 +66,8 @@ class BATSTrainer:
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
         self.G.vp.obs = self.G.new_vertex_property('vector<float>')
         self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
+        self.G.vp.start_node = self.G.new_vertex_property('bool')
+        self.G.vp.occupancy = self.G.new_vertex_property('float')
 
         # the actions are gonna be associated with each edge
         self.G.ep.action = self.G.new_edge_property("vector<float>")
@@ -221,6 +223,13 @@ class BATSTrainer:
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
+        self.mark_start_nodes()
+
+    def mark_start_nodes(self):
+        vertices = self.G.get_vertices()
+        in_degrees = self.G.get_in_degrees(vertices)
+        start_nodes = in_degrees == 0
+        self.G.vp.start_node.get_array()[:] = start_nodes
 
     def find_possible_stitches(self):
         '''
@@ -279,8 +288,9 @@ class BATSTrainer:
             end_vertex = stitch[0]
             end_vertex_value = self.G.vp.value[end_vertex]
             start_vertex_value = self.G.vp.value[start_vertex]
+            start_vertex_occupancy = self.G.vp.occupancy[start_vertex]
             advantage = end_vertex_value - start_vertex_value
-            priorities[i] = -advantage
+            priorities[i] = -advantage * start_vertex_occupancy
         self.possible_stitch_priorities = priorities
 
     def get_prioritized_stitch_chunk(self):
@@ -295,23 +305,34 @@ class BATSTrainer:
             print("skipping value iteration")
             return
         print("performing value iteration")
+        # first we initialize the occupancies with the first nodes as 1
+        self.G.vp.occupancy.get_array()[:] = self.G.vp.start_node.get_array().astype(float)
+
         iterator = self.get_iterator(self.n_val_iterations)
         for i in iterator:
             for v in self.G.iter_vertices():
                 # should be a (num_neighbors, 2) ndarray where the first col is indices and second is values
-                neighbors = self.G.get_out_neighbors(v, vprops=[self.G.vp.value])
-                if len(neighbors) == 0:
+                neighbor_values = self.G.get_out_neighbors(v, vprops=[self.G.vp.value])
+                if len(neighbor_values) == 0:
                     # the state has no actions in our graph
                     self.G.vp.value[v] = 0
                     self.G.vp.best_neighbor[v] = -1
                     continue
-                values = neighbors[:, 1]
+                values = neighbor_values[:, 1]
+                neighbors = neighbor_values[:, 0]
                 # should be a (num_neighbors, 3) ndarray where the first col is v second col is indices, third is reward
                 edges = self.G.get_out_edges(v, eprops=[self.G.ep.reward])
                 rewards = edges[:, 2]
                 backups = rewards + self.gamma * values
                 best_arm = np.argmax(backups)
                 value = backups[best_arm]
+                if i < 3:
+                    # I thiiiiink you don't have to do this that many times to get the correct computation
+                    # (like maybe twice), can prove that later
+                    boltzmann_backups = np.exp(backups)
+                    boltzmann_backups /= boltzmann_backups.sum()
+                    occupancies = boltzmann_backups * self.G.vp.occupancy[v] * self.gamma
+                    self.G.vp.occupancies.get_array()[neighbors] += occupancies
                 self.G.vp.value[v] = value
                 self.G.vp.best_neighbor[v] = neighbors[best_arm, 0]
         self.value_iteration_done = True
