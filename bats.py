@@ -79,13 +79,13 @@ class BATSTrainer:
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
         self.pool = Pool(self.num_cpus)
-        self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 1000000)
+        self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 10000)
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
 
         # parameters for interleaving
-        self.num_stitching_iters = kwargs('num_stitching_iters', 20)
+        self.num_stitching_iters = kwargs.get('num_stitching_iters', 20)
 
         # printing parameters
         self.neighbor_print_period = 1000
@@ -146,6 +146,10 @@ class BATSTrainer:
             # all other computations needed to prioritize the next round of stitches while this is running
             edges_to_add = self.test_neighbor_edges(stitches_to_try)
             self.G.save(str(self.output_dir / 'mdp.gt'))
+        self.pool.close()
+        edges_to_add = edges_to_add.get()
+        self.add_edges(edges_to_add)
+        self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration()
         self.G.save(str(self.output_dir / 'vi.gt'))
         self.graph_stitching_done = True
@@ -335,7 +339,6 @@ class BATSTrainer:
                     self.G.vp.occupancies.get_array()[neighbors] += occupancies
                 self.G.vp.value[v] = value
                 self.G.vp.best_neighbor[v] = neighbors[best_arm, 0]
-        self.value_iteration_done = True
 
     def train_bc(self):
         print("cloning a policy")
