@@ -24,7 +24,7 @@ class BATSTrainer:
         self.output_dir = output_dir
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
-        self.n_val_iterations = kwargs.get('n_val_iterations', 100)
+        self.n_val_iterations = kwargs.get('n_val_iterations', 50)
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
@@ -77,7 +77,7 @@ class BATSTrainer:
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
         self.pool = Pool(self.num_cpus)
-        self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 10000)
+        self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 50000)
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
@@ -139,11 +139,16 @@ class BATSTrainer:
             stitches_to_try = self.get_prioritized_stitch_chunk()
             if edges_to_add is not None:
                 edges_to_add = edges_to_add.get()
+                # self.pool.close()
+                # self.pool.join()
+                # self.pool = Pool(self.num_cpus)
                 self.add_edges(edges_to_add)
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
             edges_to_add = self.test_neighbor_edges(stitches_to_try)
             self.G.save(str(self.output_dir / 'mdp.gt'))
+            if stitches_to_try.shape[0] == 0:
+                break
         self.pool.close()
         edges_to_add = edges_to_add.get()
         self.add_edges(edges_to_add)
