@@ -16,7 +16,7 @@ def train_policy(
     dataset,  # Dataset is a dictionary containing 'observations' and 'actions'
     save_dir,
     epochs,
-    hidden_sizes='256,256',
+    hidden_sizes='128,64',
     standardize_targets=False,
     od_wait=25,  # Epochs of no validation improvement before break.
     val_size=1000,
@@ -30,15 +30,20 @@ def train_policy(
     # Get data into trainable form.
     x_data = torch.Tensor(dataset['observations'])
     y_data = torch.Tensor(dataset['actions'])
-    tr_x, val_x, tr_y, val_y = train_test_split(x_data, y_data,
-                                                test_size=val_size)
+    if val_size > 0:
+        tr_x, val_x, tr_y, val_y = train_test_split(x_data, y_data,
+                                                    test_size=val_size)
+        val_data = DataLoader(
+            TensorDataset(tr_x, tr_y),
+            batch_size=batch_size,
+            shuffle=not use_gpu,
+            pin_memory=use_gpu,
+        )
+    else:
+        tr_x = x_data
+        tr_y = y_data
+        val_data = None
     tr_data = DataLoader(
-        TensorDataset(tr_x, tr_y),
-        batch_size=batch_size,
-        shuffle=not use_gpu,
-        pin_memory=use_gpu,
-    )
-    val_data = DataLoader(
         TensorDataset(tr_x, tr_y),
         batch_size=batch_size,
         shuffle=not use_gpu,

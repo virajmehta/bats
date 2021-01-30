@@ -12,10 +12,8 @@ import h5py
 import numpy as np
 import torch
 from tqdm import tqdm
-import uuid
 
-
-filename = str(uuid.uuid4())
+from env_wrapper import NormalizedBoxEnv
 
 
 class RandomPolicy(object):
@@ -39,13 +37,13 @@ def load_in_policy(args):
     return policy
 
 def collect_data(args):
-    env = gym.make(args.env)
+    env = NormalizedBoxEnv(gym.make(args.env))
     if args.policy_path is not None:
         policy = load_in_policy(args)
     else:
         policy = RandomPolicy(env)
     print("Policy loaded")
-    observations, actions, rewards, next_observations, terminals, infos =\
+    observations, actions, rewards, next_observations, terminals, ends =\
             [[] for _ in range(6)]
     pbar = tqdm(total=args.num_collects)
     while len(observations) < args.num_collects:
@@ -56,11 +54,12 @@ def collect_data(args):
             a, _ = policy.get_action(s)
             n, r, done, info = env.step(a)
             t += 1
-            if t >= args.path_length:
-                info['TimeLimitReached'] = True
+            if (t >= args.path_length
+                    or len(observations) + 1 >= args.num_collects):
                 done = args.terminate_at_horizon
+                ends.append(True)
             else:
-                info['TimeLimitReached'] = False
+                ends.append(False)
             observations.append(s)
             actions.append(a)
             rewards.append(r)
@@ -76,7 +75,7 @@ def collect_data(args):
         wd.create_dataset('rewards', data=np.vstack(rewards))
         wd.create_dataset('next_observations', data=np.vstack(next_observations))
         wd.create_dataset('terminals', data=np.vstack(terminals))
-        wd.create_dataset('infos', data=infos)
+        wd.create_dataset('ends', data=np.vstack(ends))
     print('Done.')
 
 
