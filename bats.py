@@ -140,7 +140,6 @@ class BATSTrainer:
             self.compute_stitch_priorities()
             stitches_to_try = self.get_prioritized_stitch_chunk()
             if edges_to_add is not None:
-                edges_to_add = edges_to_add.get()
                 self.add_edges(edges_to_add)
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
@@ -184,6 +183,9 @@ class BATSTrainer:
                            epsilon=self.epsilon_planning,
                            quantile=self.planning_quantile)
         edges_to_add = self.pool.map_async(plan_fun, possible_stitches)
+        edges_to_add = []
+        for row in possible_stitches:
+            edges_to_add.append(self.pool.apply_async(plan_fun, row))
         return edges_to_add
         '''
         n_possible_stitches = possible_stitches.shape[0]
@@ -204,7 +206,8 @@ class BATSTrainer:
 
     def add_edges(self, edges_to_add):
         print(f"adding {len(edges_to_add)} edges to graph")
-        for start, end, action, reward in tqdm(edges_to_add):
+        for edge in tqdm(edges_to_add):
+            start, end, action, reward = edge.get()
             if start is None:
                 continue
             e = self.G.add_edge(start, end)
