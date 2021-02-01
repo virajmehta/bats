@@ -4,14 +4,14 @@ import time
 import numpy as np
 from functools import partial
 import torch
-import torch.multiprocessing
-from torch.multiprocessing import Pool
+import multiprocessing
+from multiprocessing import Pool
 from tqdm import trange, tqdm
 from modelling.dynamics_construction import train_ensemble, load_ensemble
 from modelling.policy_construction import train_policy, load_policy
 from sklearn.neighbors import radius_neighbors_graph
 from ipdb import set_trace as db
-torch.multiprocessing.set_sharing_strategy('file_system')
+# multiprocessing.set_sharing_strategy('file_system')
 # torch.multiprocessing.set_start_method('spawn')
 
 
@@ -24,7 +24,7 @@ class BATSTrainer:
         self.output_dir = output_dir
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
-        self.n_val_iterations = kwargs.get('n_val_iterations', 50)
+        self.n_val_iterations = kwargs.get('n_val_iterations', 100)
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
@@ -79,7 +79,7 @@ class BATSTrainer:
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
         self.pool = Pool(self.num_cpus)
-        self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 50000)
+        self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 100000)
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
@@ -90,6 +90,7 @@ class BATSTrainer:
         # printing parameters
         self.neighbor_print_period = 1000
 
+        self.use_occupancy = kwargs.get('use_occupancy', False)
         # check for all loads
         if kwargs['load_policy'] is not None:
             self.policy = load_policy(str(kwargs['load_policy']), self.obs_dim, self.action_dim,
@@ -141,9 +142,9 @@ class BATSTrainer:
             stitches_to_try = self.get_prioritized_stitch_chunk()
             if edges_to_add is not None:
                 edges_to_add = edges_to_add.get()
-                # self.pool.close()
-                # self.pool.join()
-                # self.pool = Pool(self.num_cpus)
+                self.pool.close()
+                self.pool.join()
+                self.pool = Pool(self.num_cpus)
                 self.add_edges(edges_to_add)
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
@@ -159,7 +160,6 @@ class BATSTrainer:
         self.G.save(str(self.output_dir / 'vi.gt'))
         self.graph_stitching_done = True
         self.value_iteration_done = True
-        self.value_iteration()
         self.train_bc()
         self.evaluate()
 
@@ -208,13 +208,15 @@ class BATSTrainer:
         '''
 
     def add_edges(self, edges_to_add):
-        print(f"adding {len(edges_to_add)} edges to graph")
+        total = 0
         for start, end, action, reward in tqdm(edges_to_add):
             if start is None:
                 continue
+            total += 1
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
+        print(f"Added {total} edges!")
 
     def add_dataset_edges(self):
         if self.graph_stitching_done:
@@ -222,9 +224,14 @@ class BATSTrainer:
             return
         print(f"Adding {self.dataset_size} initial edges to our graph")
         iterator = self.get_iterator(self.dataset_size)
+        last_obs = None
+        start_nodes = np.zeros((len(self.vertices),))
         for i in iterator:
             obs = self.dataset['observations'][i, :]
             next_obs = self.dataset['next_observations'][i, :]
+            if (last_obs != obs).any():
+                vnum = self.vertices[obs.tobytes()]
+                start_nodes[vnum] = 1
             action = self.dataset['actions'][i, :]
             reward = self.dataset['rewards'][i]
             v_from = self.get_vertex(obs)
@@ -232,12 +239,7 @@ class BATSTrainer:
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
-        self.mark_start_nodes()
-
-    def mark_start_nodes(self):
-        vertices = self.G.get_vertices()
-        in_degrees = self.G.get_in_degrees(vertices)
-        start_nodes = in_degrees == 0
+            last_obs = next_obs
         self.G.vp.start_node.get_array()[:] = start_nodes
 
     def find_possible_stitches(self):
@@ -254,7 +256,7 @@ class BATSTrainer:
         start = time.time()
         neighbors = radius_neighbors_graph(self.unique_obs, self.epsilon_neighbors, n_jobs=-1)
         possible_neighbors = np.column_stack(neighbors.nonzero())
-        print(f"Time to find possible neighbors: {time.time() - start}")
+        print(f"Time to find possible neighbors: {time.time() - start:.2f}")
         print(f"found {possible_neighbors.shape[0] // 2} possible neighbors")
         print(f"converting to edges")
         possible_stitches = []
@@ -299,7 +301,9 @@ class BATSTrainer:
             start_vertex_value = self.G.vp.value[start_vertex]
             start_vertex_occupancy = self.G.vp.occupancy[start_vertex]
             advantage = end_vertex_value - start_vertex_value
-            priorities[i] = -advantage * start_vertex_occupancy
+            priorities[i] = -advantage
+            if self.use_occupancy:
+                priorities[i] *= start_vertex_occupancy
         self.possible_stitch_priorities = priorities
 
     def get_prioritized_stitch_chunk(self):
@@ -340,12 +344,13 @@ class BATSTrainer:
                 backups = rewards + self.gamma * values
                 best_arm = np.argmax(backups)
                 value = backups[best_arm]
-                boltzmann_backups = np.exp(backups)
-                boltzmann_backups /= boltzmann_backups.sum()
-                occupancies = boltzmann_backups * self.G.vp.occupancy[v] * self.gamma
-                self.G.vp.occupancies.get_array()[neighbors] += occupancies
+                if self.use_occupancy:
+                    boltzmann_backups = np.exp(backups)
+                    boltzmann_backups /= boltzmann_backups.sum()
+                    occupancies = boltzmann_backups * self.G.vp.occupancy[v] * self.gamma
+                    self.G.vp.occupancies.get_array()[neighbors] += occupancies
                 self.G.vp.value[v] = value
-                self.G.vp.best_neighbor[v] = neighbors[best_arm, 0]
+                self.G.vp.best_neighbor[v] = neighbors[best_arm]
 
     def train_bc(self):
         print("cloning a policy")
