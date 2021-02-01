@@ -11,7 +11,7 @@ from modelling.dynamics_construction import train_ensemble, load_ensemble
 from modelling.policy_construction import train_policy, load_policy
 from sklearn.neighbors import radius_neighbors_graph
 from ipdb import set_trace as db
-# multiprocessing.set_sharing_strategy('file_system')
+# torch.multiprocessing.set_sharing_strategy('file_system')
 # torch.multiprocessing.set_start_method('spawn')
 
 
@@ -24,7 +24,7 @@ class BATSTrainer:
         self.output_dir = output_dir
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
-        self.n_val_iterations = kwargs.get('n_val_iterations', 100)
+        self.n_val_iterations = kwargs.get('n_val_iterations', 20)
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
@@ -85,7 +85,7 @@ class BATSTrainer:
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
 
         # parameters for interleaving
-        self.num_stitching_iters = kwargs.get('num_stitching_iters', 20)
+        self.num_stitching_iters = kwargs.get('num_stitching_iters', 50)
 
         # printing parameters
         self.neighbor_print_period = 1000
@@ -182,15 +182,14 @@ class BATSTrainer:
             return
         print('testing possible stitches')
         plan_fun = partial(util.CEM,
-                           ensemble=self.dynamics_ensemble,
-                           obs_dim=self.obs_dim,
-                           action_dim=self.action_dim,
-                           epsilon=self.epsilon_planning,
-                           quantile=self.planning_quantile)
-        edges_to_add = self.pool.map_async(plan_fun, possible_stitches)
+                           self.obs_dim,
+                           self.action_dim,
+                           self.dynamics_ensemble,
+                           self.epsilon_planning,
+                           self.planning_quantile)
         edges_to_add = []
         for row in possible_stitches:
-            edges_to_add.append(self.pool.apply_async(plan_fun, row))
+            edges_to_add.append(self.pool.apply_async(plan_fun, [row]))
         return edges_to_add
         '''
         n_possible_stitches = possible_stitches.shape[0]
@@ -252,7 +251,7 @@ class BATSTrainer:
         where each row is start_vertex, end_vertex, start_obs, end_obs, initial_action
         '''
         if self.possible_stitches is not None or self.graph_stitching_done:
-            print('skipping the nearest neighbors step')
+            print(f'skipping the nearest neighbors step, loaded {self.possible_stitches.shape[0]} possible stitches')
             return
         print("finding possible neighbors")
         # this is the only step with quadratic time complexity, watch out for how long it takes

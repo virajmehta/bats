@@ -158,7 +158,19 @@ def CEM_wrapper(row, ensemble_fn, load_ensemble_fun, obs_dim, action_dim, epsilo
     return CEM(row, obs_dim, action_dim, ENSEMBLE, epsilon, quantile, **kwargs)
 
 
-def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
+def CEM(obs_dim,
+        action_dim,
+        ensemble,
+        epsilon,
+        quantile,
+        row,
+        action_upper_bound=1,
+        action_lower_bound=-1,
+        initial_variance_divisor=4,
+        max_iters=3,
+        popsize=512,
+        num_elites=128,
+        alpha=0.25):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
     initializes the mean with the init action.
@@ -172,16 +184,9 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
     for now we assume that the actions are bounded in [-1, 1]
     '''
     row = torch.Tensor(row)
-    action_upper_bound = kwargs.get('action_upper_bound', 1.)
     start_state = row[2:2 + obs_dim]
     end_state = row[2 + obs_dim:2 + 2 * obs_dim]
     init_action = row[-action_dim:]
-    action_lower_bound = kwargs.get('action_lower_bound', -1.)
-    initial_variance_divisor = kwargs.get('initial_variance_divisor', 4)
-    max_iters = kwargs.get('max_iters', 3)
-    popsize = kwargs.get('popsize', 512)
-    num_elites = kwargs.get('num_elites', 128)
-    alpha = kwargs.get('alpha', 0.25)
     action_dim = init_action.shape[0]
     mean = init_action
     var = torch.ones_like(mean) * ((action_upper_bound - action_lower_bound) / initial_variance_divisor) ** 2
