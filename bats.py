@@ -259,7 +259,7 @@ class BATSTrainer:
         start = time.time()
         neighbors = radius_neighbors_graph(self.unique_obs, self.epsilon_neighbors, n_jobs=-1)
         possible_neighbors = np.column_stack(neighbors.nonzero())
-        print(f"Time to find possible neighbors: {time.time() - start:.2f}")
+        print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"found {possible_neighbors.shape[0] // 2} possible neighbors")
         print(f"converting to edges")
         possible_stitches = []
