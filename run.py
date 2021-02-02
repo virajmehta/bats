@@ -26,13 +26,16 @@ def parse_arguments():
     parser.add_argument('-ln', '--load_neighbors', type=Path, default=None, help="Load nearest neighbors")
     parser.add_argument('-lp', '--load_policy', type=Path, default=None, help="Load a behavior cloned policy from this directory")
     parser.add_argument('-ncpus', '--num_cpus', type=int, default=1)
+    parser.add_argument('-odp', '--offline_dataset_path', type=Path, default=None, help='Path for dataset, will use d4rl dataset if none is provided.')
 
     return parser.parse_args()
 
 
 def main(args):
     output_dir = util.make_output_dir(args.name, args.overwrite, deepcopy(args))
-    env, dataset = util.get_offline_env(args.env_name, args.dataset_fraction)
+    env, dataset = util.get_offline_env(args.env_name,
+                                        args.dataset_fraction,
+                                        data_path=args.offline_dataset_path)
     args = vars(args)
     bats = BATSTrainer(dataset, env, output_dir, **args)
     bats.train()

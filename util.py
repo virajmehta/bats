@@ -6,6 +6,7 @@ import numpy as np
 # from scipy import stats
 import d4rl
 import gym
+import h5py
 import torch
 from ipdb import set_trace as db
 
@@ -35,9 +36,15 @@ def make_output_dir(name, overwrite, args):
     return dir_path
 
 
-def get_offline_env(name, dataset_fraction):
+def get_offline_env(name, dataset_fraction, data_path=None):
     env = gym.make(name)
-    dataset = d4rl.qlearning_dataset(env)
+    if data_path is None:
+        dataset = d4rl.qlearning_dataset(env)
+    else:
+        dataset = {}
+        with h5py.File(str(data_path), 'r') as hdata:
+            for k, v in hdata.items():
+                dataset[k] =  v[()]
     for name in dataset:
         item = dataset[name]
         size = item.shape[0]
