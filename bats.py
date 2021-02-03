@@ -2,16 +2,14 @@ from graph_tool import Graph, load_graph, ungroup_vector_property
 import util
 import time
 import numpy as np
-from functools import partial
-import torch
-import torch.multiprocessing
-from torch.multiprocessing import Pool
+import pickle
+from subprocess import Popen
 from tqdm import trange, tqdm
-from modelling.dynamics_construction import train_ensemble, load_ensemble
+from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import train_policy, load_policy
 from sklearn.neighbors import radius_neighbors_graph
-from ipdb import set_trace as db
-torch.multiprocessing.set_sharing_strategy('file_system')
+from ipdb import set_trace as db  # NOQA
+# torch.multiprocessing.set_sharing_strategy('file_system')
 # torch.multiprocessing.set_start_method('spawn')
 
 
@@ -103,9 +101,7 @@ class BATSTrainer:
             stitches_path = kwargs['load_neighbors'] / 'possible_stitches.npy'
             self.possible_stitches = np.load(stitches_path)
         if kwargs['load_model'] is not None:
-            self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']),
-                                                   obs_dim=self.obs_dim,
-                                                   act_dim=self.action_dim)
+            self.dynamics_ensemble_path = str(kwargs['load_model'])
 
     def get_vertex(self, obs):
         return self.G.vertex(self.vertices[obs.tobytes()])
@@ -131,11 +127,12 @@ class BATSTrainer:
         self.evaluate()
 
     def train_dynamics(self):
-        if self.dynamics_ensemble or self.graph_stitching_done:
+        if self.dynamics_ensemble_path or self.graph_stitching_done:
             print('skipping dynamics ensemble training')
             return
         print("training ensemble of dynamics models")
-        self.dynamics_ensemble = train_ensemble(self.dataset, **self.dynamics_train_params)
+        train_ensemble(self.dataset, **self.dynamics_train_params)
+        self.dynamics_ensemble_path = str(self.output_dir)
 
     def add_neighbor_edges(self, possible_stitches):
         '''
@@ -149,28 +146,35 @@ class BATSTrainer:
             print('skipping graph stitching')
             return
         print('testing possible stitches')
-        plan_fn = partial(util.CEM,
-                          ensemble=self.dynamics_ensemble,
-                          obs_dim=self.obs_dim,
-                          action_dim=self.action_dim,
-                          epsilon=self.epsilon_planning,
-                          quantile=self.planning_quantile)
-        edges_to_add = []
-        n_possible_stitches = possible_stitches.shape[0]
-        n_stitching_chunks = util.ceildiv(n_possible_stitches, self.stitching_chunk_size)
-        for i in trange(n_stitching_chunks):
-            possible_stitch_chunk = torch.Tensor(possible_stitches[i * self.stitching_chunk_size:(i + 1) * self.stitching_chunk_size])  # NOQA
-            chunksize = possible_stitch_chunk.shape[0]
-            with Pool(processes=self.num_cpus) as pool:
-                edges_to_add += list(tqdm(pool.imap(plan_fn, possible_stitch_chunk), total=chunksize))
-        print('checked all stitches, adding to graph')
-        for start, end, action, reward in tqdm(edges_to_add):
+        chunksize = possible_stitches.shape[0] // self.num_cpus
+        input_path = self.output_dir / 'input'
+        output_path = self.output_dir / 'output'
+        processes = []
+        for i in range(self.num_cpus):
+            cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize, :]
+            fn = input_path / f"{i}.npy"
+            np.save(fn, cpu_chunk)
+            output_file = output_path / f"{i}.pkl"
+            process = Popen(['python', 'plan.py', str(fn), str(output_file), str(self.dynamics_ensemble_path),
+                             str(self.obs_dim), str(self.action_dim), str(self.epsilon_planning),
+                             str(self.planning_quantile)])
+            processes.append(process)
+
+        for i, process in enumerate(processes):
+            process.wait()
+            output_file = output_path / f"{i}.pkl"
+            with output_file.open('rb') as f:
+                edges_to_add = pickle.load(f)
+            self.add_edges(edges_to_add)
+        self.graph_stitching_done = True
+
+    def add_edges(self, edges_to_add):
+        for start, end, action, reward in edges_to_add:
             if start is None:
                 continue
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
-        self.graph_stitching_done = True
 
     def add_dataset_edges(self):
         if self.graph_stitching_done:
