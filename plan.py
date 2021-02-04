@@ -69,13 +69,13 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
         if quantiles.min() < epsilon:
             # success!
             min_index = quantiles.argmin()
-            return row[0], row[1], samples[min_index, :], reward_outputs[:, min_index].mean()
+            return np.array([row[0], row[1], *samples[min_index, :].tolist(), reward_outputs[:, min_index].mean()])
         elites = samples[torch.argsort(quantiles)[:num_elites], ...]
         new_mean = torch.mean(elites, axis=0)
         new_var = torch.var(elites, axis=0)
         mean = alpha * mean + (1 - alpha) * new_mean
         var = alpha * var + (1 - alpha) * new_var
-    return None, None, None, None
+    return None
 
 
 def main(args):
@@ -83,9 +83,11 @@ def main(args):
     ensemble = load_ensemble(args.ensemble_path, args.obs_dim, args.action_dim)
     outputs = []
     for row in input_data:
-        outputs.append(CEM(row, args.obs_dim, args.action_dim, ensemble, args.epsilon, args.quantile))
-    with open(args.output_file, 'wb') as f:
-        pickle.dump(outputs, f)
+        data = CEM(row, args.obs_dim, args.action_dim, ensemble, args.epsilon, args.quantile)
+        if data is not None:
+            outputs.append(data)
+    outputs = np.array(outputs)
+    np.save(args.output_file, outputs)
 
 
 if __name__ == '__main__':

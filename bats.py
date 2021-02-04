@@ -146,6 +146,7 @@ class BATSTrainer:
             print('skipping graph stitching')
             return
         print('testing possible stitches')
+        start = time.time()
         chunksize = possible_stitches.shape[0] // self.num_cpus
         input_path = self.output_dir / 'input'
         output_path = self.output_dir / 'output'
@@ -154,24 +155,28 @@ class BATSTrainer:
             cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize, :]
             fn = input_path / f"{i}.npy"
             np.save(fn, cpu_chunk)
-            output_file = output_path / f"{i}.pkl"
+            output_file = output_path / f"{i}.npy"
             process = Popen(['python', 'plan.py', str(fn), str(output_file), str(self.dynamics_ensemble_path),
                              str(self.obs_dim), str(self.action_dim), str(self.epsilon_planning),
                              str(self.planning_quantile)])
             processes.append(process)
 
+        edges_added = 0
         for i, process in enumerate(processes):
             process.wait()
-            output_file = output_path / f"{i}.pkl"
-            with output_file.open('rb') as f:
-                edges_to_add = pickle.load(f)
+            output_file = output_path / f"{i}.npy"
+            edges_to_add = np.load(output_file)
             self.add_edges(edges_to_add)
+            edges_added += edges_to_add.shape[0]
+        print(f"tested {possible_stitches.shape[0]} edges in {time.time() - start:.2f}s and found {edges_added} good edges")
         self.graph_stitching_done = True
 
     def add_edges(self, edges_to_add):
-        for start, end, action, reward in edges_to_add:
-            if start is None:
-                continue
+        starts = edges_to_add[:, 0].astype(int)
+        ends = edges_to_add[:, 1].astype(int)
+        actions = edges_to_add[:, 2:self.action_dim + 2]
+        rewards = edges_to_add[:, -1]
+        for start, end, action, reward in zip(starts, ends, actions, rewards):
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
