@@ -2,15 +2,12 @@ from graph_tool import Graph, load_graph, ungroup_vector_property
 import util
 import time
 import numpy as np
-from functools import partial
-import torch
-import multiprocessing
-from multiprocessing import Pool
+from subprocess import Popen
 from tqdm import trange, tqdm
-from modelling.dynamics_construction import train_ensemble, load_ensemble
+from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import train_policy, load_policy
 from sklearn.neighbors import radius_neighbors_graph
-from ipdb import set_trace as db
+from ipdb import set_trace as db  # NOQA
 # torch.multiprocessing.set_sharing_strategy('file_system')
 # torch.multiprocessing.set_start_method('spawn')
 
@@ -78,7 +75,6 @@ class BATSTrainer:
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
-        self.pool = Pool(self.num_cpus)
         self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 100000)
 
         # parameters for evaluation
@@ -111,9 +107,7 @@ class BATSTrainer:
             stitches_path = kwargs['load_neighbors'] / 'possible_stitches.npy'
             self.possible_stitches = np.load(stitches_path)
         if kwargs['load_model'] is not None:
-            self.dynamics_ensemble = load_ensemble(str(kwargs['load_model']),
-                                                   obs_dim=self.obs_dim,
-                                                   act_dim=self.action_dim)
+            self.dynamics_ensemble_path = str(kwargs['load_model'])
 
     def get_vertex(self, obs):
         return self.G.vertex(self.vertices[obs.tobytes()])
@@ -135,25 +129,20 @@ class BATSTrainer:
         self.find_possible_stitches()
         self.train_dynamics()
         self.G.save(str(self.output_dir / 'dataset.gt'))
-        edges_to_add = None
+        processes = None
         for _ in trange(self.num_stitching_iters):
             self.value_iteration()
             self.compute_stitch_priorities()
             stitches_to_try = self.get_prioritized_stitch_chunk()
-            if edges_to_add is not None:
-                self.add_edges(edges_to_add)
-                self.pool.close()
-                self.pool.join()
-                self.pool = Pool(self.num_cpus)
+            if processes is not None:
+                self.block_add_edges(processes)
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
-            edges_to_add = self.test_neighbor_edges(stitches_to_try)
+            processes = self.test_neighbor_edges(stitches_to_try)
             self.G.save(str(self.output_dir / 'mdp.gt'))
             if stitches_to_try.shape[0] == 0:
                 break
-        self.pool.close()
-        edges_to_add = edges_to_add.get()
-        self.add_edges(edges_to_add)
+        self.block_add_edges(processes)
         self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration()
         self.G.save(str(self.output_dir / 'vi.gt'))
@@ -163,11 +152,12 @@ class BATSTrainer:
         self.evaluate()
 
     def train_dynamics(self):
-        if self.dynamics_ensemble or self.graph_stitching_done:
+        if self.dynamics_ensemble_path or self.graph_stitching_done:
             print('skipping dynamics ensemble training')
             return
         print("training ensemble of dynamics models")
-        self.dynamics_ensemble = train_ensemble(self.dataset, **self.dynamics_train_params)
+        train_ensemble(self.dataset, **self.dynamics_train_params)
+        self.dynamics_ensemble_path = str(self.output_dir)
 
     def test_neighbor_edges(self, possible_stitches):
         '''
@@ -181,44 +171,41 @@ class BATSTrainer:
             print('skipping graph stitching')
             return
         print('testing possible stitches')
-        plan_fun = partial(util.CEM,
-                           self.obs_dim,
-                           self.action_dim,
-                           self.dynamics_ensemble,
-                           self.epsilon_planning,
-                           self.planning_quantile)
-        edges_to_add = []
-        for row in possible_stitches:
-            edges_to_add.append(self.pool.apply_async(plan_fun, [row]))
-        return edges_to_add
-        '''
-        n_possible_stitches = possible_stitches.shape[0]
-        n_stitching_chunks = util.ceildiv(n_possible_stitches, self.stitching_chunk_size)
-        for i in trange(n_stitching_chunks):
-            possible_stitch_chunk = torch.Tensor(possible_stitches[i * self.stitching_chunk_size:(i + 1) * self.stitching_chunk_size])  # NOQA
-            chunksize = possible_stitch_chunk.shape[0]
-            with Pool(processes=self.num_cpus) as pool:
-                edges_to_add += list(tqdm(pool.imap(plan_fn, possible_stitch_chunk), total=chunksize))
-        print('checked all stitches, adding to graph')
-        for start, end, action, reward in tqdm(edges_to_add):
-            if start is None:
-                continue
-            e = self.G.add_edge(start, end)
-            self.G.ep.action[e] = action
-            self.G.ep.reward[e] = reward
-        '''
+        chunksize = possible_stitches.shape[0] // self.num_cpus
+        input_path = self.output_dir / 'input'
+        output_path = self.output_dir / 'output'
+        processes = []
+        for i in range(self.num_cpus):
+            cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize, :]
+            fn = input_path / f"{i}.npy"
+            np.save(fn, cpu_chunk)
+            output_file = output_path / f"{i}.npy"
+            process = Popen(['python', 'plan.py', str(fn), str(output_file), str(self.dynamics_ensemble_path),
+                             str(self.obs_dim), str(self.action_dim), str(self.epsilon_planning),
+                             str(self.planning_quantile)])
+            processes.append(process)
+        return processes
+
+    def block_add_edges(self, processes):
+        edges_added = 0
+        output_path = self.output_dir / 'output'
+        for i, process in enumerate(processes):
+            process.wait()
+            output_file = output_path / f"{i}.npy"
+            edges_to_add = np.load(output_file)
+            self.add_edges(edges_to_add)
+            edges_added += edges_to_add.shape[0]
+        self.graph_stitching_done = True
 
     def add_edges(self, edges_to_add):
-        total = 0
-        for edge in tqdm(edges_to_add):
-            start, end, action, reward = edge.get()
-            if start is None:
-                continue
-            total += 1
+        starts = edges_to_add[:, 0].astype(int)
+        ends = edges_to_add[:, 1].astype(int)
+        actions = edges_to_add[:, 2:self.action_dim + 2]
+        rewards = edges_to_add[:, -1]
+        for start, end, action, reward in zip(starts, ends, actions, rewards):
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
-        print(f"Added {total} edges!")
 
     def add_dataset_edges(self):
         if self.graph_stitching_done:
