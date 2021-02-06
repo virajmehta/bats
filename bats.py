@@ -75,7 +75,7 @@ class BATSTrainer:
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
-        self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 100000)
+        self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 2000000)
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
@@ -195,7 +195,7 @@ class BATSTrainer:
             edges_to_add = np.load(output_file)
             self.add_edges(edges_to_add)
             edges_added += edges_to_add.shape[0]
-        self.graph_stitching_done = True
+        processes = None
 
     def add_edges(self, edges_to_add):
         starts = edges_to_add[:, 0].astype(int)
