@@ -45,7 +45,7 @@ def make_base_graph(dataset):
     graph.vp.vertex_idx = graph.new_vertex_property('int')
     graph.vp.obs = graph.new_vertex_property('vector<float>')
     graph.vp.value = graph.new_vertex_property('float')
-    graph.vp.best_child= graph.new_vertex_property('int')
+    graph.vp.best_action_idx = graph.new_vertex_property('int')
     graph.vp.start = graph.new_vertex_property('bool')
     graph.vp.terminal = graph.new_vertex_property('bool')
     graph.vp.traj = graph.new_vertex_property('int')
@@ -161,14 +161,15 @@ def try_to_stitch(node, parent, child):
                                + 3 * g / (2 * l) * np.sin(nxttheta + np.pi))
     if np.abs(act2) > max_torque:
         return None, None
-    rew1 = angle_normalize(ntheta) ** 2 + 0.1 * ndot ** 2 + 0.001 * (act1 ** 2)
-    rew2 = (angle_normalize(nxttheta) ** 2 + 0.1 * nxtdot ** 2
-            + 0.001 * (act2 ** 2))
+    cost1 = (angle_normalize(ntheta) ** 2 + 0.1 * ndot ** 2
+             + 0.001 * (act1 ** 2))
+    cost2 = (angle_normalize(nxttheta) ** 2 + 0.1 * nxtdot ** 2
+             + 0.001 * (act2 ** 2))
     nxt = np.array([nxttheta, nxtdot])
     return ((state_to_obs(node).flatten(), state_to_obs(nxt).flatten(),
-                act1 / 2, rew1),
+                act1 / 2, -cost1),
             (state_to_obs(nxt).flatten(), state_to_obs(child).flatten(),
-                act2 / 2, rew2))
+                act2 / 2, -cost2))
 
 
 def obs_to_state(obs):
@@ -197,7 +198,7 @@ def add_blank_node(obs, node_idx, graph,
     graph.vp.vertex_idx[new_node] = node_idx
     graph.vp.obs[new_node] = obs
     graph.vp.value[new_node] = 0
-    graph.vp.best_child[new_node] = -1
+    graph.vp.best_action_idx[new_node] = -1
     graph.vp.start[new_node] = start
     graph.vp.terminal[new_node] = terminal
     graph.vp.traj[new_node] = traj

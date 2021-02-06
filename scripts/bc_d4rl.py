@@ -6,8 +6,9 @@ import argparse
 import d4rl
 import h5py
 import gym
+import numpy as np
 
-from modelling.policy_construction import train_policy
+from modelling.policy_construction import behavior_clone
 
 
 def train(args):
@@ -20,11 +21,12 @@ def train(args):
         with h5py.File(args.dataset_path, 'r') as hdata:
             for k, v in hdata.items():
                 dataset[k] = v[()]
+    dataset['weights'] = np.minimum(np.exp(dataset['rewards'] - 6), 20)
     train_params = vars(args)
     del train_params['env']
     del train_params['pudb']
     del train_params['dataset_path']
-    train_policy(dataset, **train_params)
+    behavior_clone(dataset, **train_params)
 
 def parse_args():
     parser = argparse.ArgumentParser()

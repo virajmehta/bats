@@ -93,6 +93,7 @@ class ModelTrainer(object):
             validation: Optional[DataLoader] = None,
             early_stop_wait_time: Optional[int] = None,
             dont_reset_model: bool = False,
+            last_column_is_weights: bool = False,
     ) -> None:
         """Fit the model on a dataset. Returns train and validation losses.
         Args:
@@ -112,11 +113,14 @@ class ModelTrainer(object):
         for _ in range(epochs):
             self.model.train(True)
             for batch in dataset:
-                self.batch_train(batch)
+                self.batch_train(batch,
+                                 last_column_is_weights=last_column_is_weights)
             self.model.train(False)
             if validation is not None:
                 for batch in validation:
-                    self.batch_train(batch, validation=True)
+                    self.batch_train(batch,
+                                 validation=True,
+                                 last_column_is_weights=last_column_is_weights)
             self.end_epoch()
             if early_stop_wait_time is not None and validation is not None:
                 time_gap = self._total_epochs - self._best_val_loss_epoch
@@ -130,13 +134,17 @@ class ModelTrainer(object):
             self,
             batch: Sequence[torch.Tensor],
             validation: bool = False,
+            last_column_is_weights: bool = False,
     ) -> float:
         """Do a train step on batch. If validation batch, just log stats."""
+        forward_in = batch[:-1] if last_column_is_weights else batch
         if validation:
             with torch.no_grad():
-                model_out = self.model.forward(batch)
+                model_out = self.model.forward(forward_in)
         else:
-            model_out = self.model.forward(batch)
+            model_out = self.model.forward(forward_in)
+        if last_column_is_weights:
+            model_out['weights'] = batch[-1]
         loss, bstats = self.model.loss(model_out)
         stat_dict = self._val_stats if validation else self._tr_stats
         for k, v in bstats.items():

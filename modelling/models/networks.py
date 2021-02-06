@@ -9,6 +9,8 @@ from typing import Optional, Sequence, Tuple
 
 import torch
 
+from modelling.utils.torch_utils import torch_to, arctanh
+
 
 class MLP(torch.nn.Module):
     """MLP Network."""
@@ -21,6 +23,7 @@ class MLP(torch.nn.Module):
         hidden_activation=torch.nn.functional.relu,
         output_activation=None,
         linear_wrapper=None,
+        tanh_transform=False,
     ):
         """Constructor."""
         super(MLP, self).__init__()
@@ -38,6 +41,7 @@ class MLP(torch.nn.Module):
             self.n_layers = len(hidden_sizes) + 1
         self.hidden_activation = hidden_activation
         self.output_activation = output_activation
+        self.tanh_transform = tanh_transform
 
     def forward(
             self,
@@ -73,6 +77,7 @@ class GaussianNet(torch.nn.Module):
         latent_dim: int,
         hidden_activation=torch.nn.functional.relu,
         linear_wrappers = [None, None, None],
+        tanh_transform=False,
     ):
         """Constructor."""
         super(GaussianNet, self).__init__()
@@ -98,6 +103,7 @@ class GaussianNet(torch.nn.Module):
             hidden_activation=hidden_activation,
             linear_wrapper=linear_wrappers[2],
         )
+        self.tanh_transform = tanh_transform
 
     def forward(
             self,
@@ -106,3 +112,37 @@ class GaussianNet(torch.nn.Module):
         """Forward pass through network. Returns (mean, logvar)"""
         latent = self.encode_net.forward(net_in)
         return self.mean_net.forward(latent), self.logvar_net.forward(latent)
+
+    def get_action(
+            self,
+            net_in: torch.Tensor,
+            deterministic=False,
+    ) -> torch.Tensor:
+        """If policy, get an action."""
+        mean, logvar = self.forward(net_in)
+        if deterministic:
+            samples = mean
+        else:
+            samples = ((torch_to(torch.randn(mean.shape)) + mean)
+                        * (0.5 * logvar).exp())
+        if self.tanh_transform:
+            return torch.tanh(samples)
+        return samples
+
+    def get_log_prob(
+        self,
+        mean: torch.Tensor,
+        logvar: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> torch.Tensor:
+        if self.tanh_transform:
+            bound = 1 - 1e-6
+            labels = arctanh(torch.clamp(labels, -bound, bound))
+        sq_diffs = (mean - labels) ** 2
+        mse = torch.mean(sq_diffs)
+        log_prob = -1 * (torch.exp(-logvar) * sq_diffs + logvar)
+        if self.tanh_transform:
+            log_prob -= 2 * (torch_to(torch.sqrt(torch.Tensor([2])))
+                             - labels
+                             - torch.nn.functional.softplus(-2 * labels))
+        return log_prob
