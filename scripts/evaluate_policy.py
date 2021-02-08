@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from env_wrapper import NormalizedBoxEnv
 from modelling.policy_construction import load_policy
+from modelling.utils.torch_utils import unroll
 
 
 def train(args):
@@ -30,22 +31,6 @@ def train(args):
         pbar.set_postfix_str('Return: %f' % evals[-1])
         pbar.update(1)
     print('Returns: %f +- %f' % (np.mean(evals), np.std(evals)))
-
-
-def unroll(env, policy, max_ep_len=float('inf')):
-    t = 0
-    done = False
-    s = env.reset()
-    ret = 0
-    while not done and t < max_ep_len:
-        with torch.no_grad():
-            a = policy.get_action(torch.Tensor(s),
-                                  deterministic=True).cpu().numpy()
-        n, r, done, _ = env.step(a)
-        tup = (s, a, r, n, done)
-        ret += r
-        s = n
-    return ret
 
 
 def parse_args():

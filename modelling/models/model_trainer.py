@@ -137,6 +137,8 @@ class ModelTrainer(object):
         if not self._silent:
             self._pbar.close()
         self._pbar = None
+        if validation is None:
+            self.model.save_model(os.path.join(self._save_path, 'model.pt'))
 
     def batch_train(
             self,

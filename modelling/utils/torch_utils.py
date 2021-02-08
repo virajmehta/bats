@@ -49,6 +49,22 @@ def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
     return eps * std + mu
 
 
+def unroll(env, policy, max_ep_len=float('inf')):
+    t = 0
+    done = False
+    s = env.reset()
+    ret = 0
+    while not done and t < max_ep_len:
+        with torch.no_grad():
+            a = policy.get_action(torch.Tensor(s),
+                                  deterministic=True).cpu().numpy()
+        n, r, done, _ = env.step(a)
+        tup = (s, a, r, n, done)
+        ret += r
+        s = n
+    return ret
+
+
 def swish(x):
     return x * torch.sigmoid(x)
 
