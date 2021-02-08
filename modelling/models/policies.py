@@ -243,7 +243,7 @@ class StochasticPolicy(BaseModel):
         # Get the policy loss.
         lls = self._gaussian_net.get_log_prob(mean, logvar, labels)
         if 'weighting' in forward_out:
-             lls *= forward_out['weighting']
+             lls *= forward_out['weighting'].flatten()
         loss = (self.log_alpha.exp().detach() * log_pi - lls).mean()
         stats = OrderedDict(
             Loss=loss.item(),
@@ -263,6 +263,8 @@ class StochasticPolicy(BaseModel):
         if self._tanh_transform:
             mean_est = torch.tanh(mean_est)
         stats['MSE'] = ((mean_est - labels) ** 2).mean()
+        if 'weighting' in forward_out:
+            stats['Weighting'] = forward_out['weighting'].cpu().mean().item()
         return loss_dict, stats
 
     def get_parameter_sets(self) -> Dict[str, torch.Tensor]:

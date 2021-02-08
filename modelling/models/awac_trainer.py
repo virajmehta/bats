@@ -153,7 +153,7 @@ class AWACTrainer(object):
         weighting = self.get_advantage_weighting(st, at, values=vt)
         # Get the policy loss.
         policy_out = self.policy.forward(batch[:2])
-        policy_out['weights'] = weighting
+        policy_out['weighting'] = weighting
         policy_losses, policy_stats = self.policy.loss(policy_out)
         losses.update({'policy_%s' % k: v for k, v in policy_losses.items()})
         bstats.update({'policy/%s' % k: v for k, v in policy_stats.items()})
