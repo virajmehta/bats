@@ -34,7 +34,8 @@ class ModelTrainer(object):
             save_path_exists_ok: bool = True,
             save_best_model: bool = True,
             validation_tune_metric: str = 'Loss',
-            optimizer=None,
+            optimizers=None,
+            track_stats: Sequence[str] = [],
     ) -> None:
         """Constructor.
         Args:
@@ -53,19 +54,25 @@ class ModelTrainer(object):
                 validation loss under model.pt
             validation_tune_metric: The metric to print and do overfitting
                 detection on.
-            optimizer: Custom optimizer, use Adam if None.
+            optimizer: Sequence of custom optimizer, use Adam if None.
+            track_stats: List of stats to track on progress bar.
         """
         set_cuda_device(cuda_device)
         self.model = torch_to(model)
         self.model.train(False)
-        if optimizer is None:
-            self.optimizer = torch.optim.Adam(
-                    self.model.parameters(),
-                    lr=learning_rate,
-                    weight_decay=weight_decay,
-            )
+        if optimizers is None:
+            psets = self.model.get_parameter_sets()
+            if type(learning_rate) is not dict:
+                learning_rate = {k: learning_rate for k in psets.keys()}
+            if type(weight_decay) is not dict:
+                weight_decay = {k: weight_decay for k in psets.keys()}
+            self.optimizers = {k: torch.optim.Adam(
+                    v,
+                    lr=learning_rate[k],
+                    weight_decay=weight_decay[k],
+            ) for k, v in psets.items()}
         else:
-            self.optimizer = optimizer
+            self.optimizers = optimizers
         self._save_path = save_path
         if save_path is not None:
             os.makedirs(save_path, exist_ok=save_path_exists_ok)
@@ -85,6 +92,7 @@ class ModelTrainer(object):
         self._best_val_loss = float('inf')
         self._best_val_loss_epoch = 0
         self._validation_tune_metric = validation_tune_metric
+        self._track_stats = track_stats
 
     def fit(
             self,
@@ -145,15 +153,16 @@ class ModelTrainer(object):
             model_out = self.model.forward(forward_in)
         if last_column_is_weights:
             model_out['weights'] = batch[-1]
-        loss, bstats = self.model.loss(model_out)
+        losses, bstats = self.model.loss(model_out)
         stat_dict = self._val_stats if validation else self._tr_stats
         for k, v in bstats.items():
             dict_append(stat_dict, k, v)
         if not validation:
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-        return loss.item()
+            for loss_name, loss in losses.items():
+                self.optimizers[loss_name].zero_grad()
+                loss.backward()
+                self.optimizers[loss_name].step()
+        return {k: loss.item() for k, loss in losses.items()}
 
     def get_stats(self) -> Dict[str, Any]:
         """Get the statistics collected."""
@@ -198,6 +207,10 @@ class ModelTrainer(object):
             if val_header in self._stats:
                 print_stats['ValLoss'] = self._stats[val_header][-1]
                 print_stats['BestValLoss'] = self._best_val_loss
+            for ts in self._track_stats:
+                key = '%s/avg/train' % ts
+                if key in self._stats:
+                    print_stats[ts] = self._stats[key][-1]
             self._pbar.set_postfix(ordered_dict=print_stats)
             self._pbar.update(1)
         # Save model.

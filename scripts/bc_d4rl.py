@@ -21,7 +21,7 @@ def train(args):
         with h5py.File(args.dataset_path, 'r') as hdata:
             for k, v in hdata.items():
                 dataset[k] = v[()]
-    dataset['weights'] = np.minimum(np.exp(dataset['rewards'] - 6), 20)
+    # dataset['weights'] = np.minimum(np.exp(dataset['rewards'] - 6), 20)
     train_params = vars(args)
     del train_params['env']
     del train_params['pudb']
@@ -32,9 +32,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--save_dir')
     parser.add_argument('--env')
-    parser.add_argument('--epochs', type=int, default=250)
-    parser.add_argument('--od_wait', type=int, default=25)
-    parser.add_argument('--val_size', type=float, default=1000)
+    parser.add_argument('--epochs', type=int, default=500)
+    parser.add_argument('--od_wait', type=int, default=None)
+    parser.add_argument('--val_size', type=float, default=0)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--dataset_path', type=str, default=None)

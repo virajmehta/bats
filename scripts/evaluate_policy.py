@@ -61,4 +61,7 @@ def parse_args():
     return parser.parse_args()
 
 if __name__ == '__main__':
-    train(parse_args())
+    args = parse_args()
+    if args.pudb:
+        import pudb; pudb.set_trace()
+    train(args)

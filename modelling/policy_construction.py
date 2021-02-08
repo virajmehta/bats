@@ -20,8 +20,8 @@ def behavior_clone(
     hidden_sizes='256,256',
     deterministic=False, # Whether we have deterministic policy.
     standardize_targets=False,
-    od_wait=25,  # Epochs of no validation improvement before break.
-    val_size=1000,
+    od_wait=None,  # Epochs of no validation improvement before break.
+    val_size=0,
     batch_size=256,
     learning_rate=1e-3,
     weight_decay=0,
@@ -65,6 +65,7 @@ def behavior_clone(
             weight_decay=weight_decay,
             cuda_device=cuda_device,
             save_path=save_dir,
+            track_stats=['MSE', 'LogPis'],
     )
     trainer.fit(tr_data, epochs, val_data, od_wait,
                 last_column_is_weights=has_weights)
@@ -113,5 +114,6 @@ def get_policy(
             mean_hidden_sizes=[],
             logvar_hidden_sizes=[],
             tanh_transform=True,
-            standardize_targets=standardize_targets
+            target_entropy=-3,
+            standardize_targets=standardize_targets,
         )

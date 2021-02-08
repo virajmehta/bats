@@ -6,13 +6,13 @@ Date: 11/20/2020
 """
 import abc
 from collections import OrderedDict
-from typing import Any, Dict, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import torch
 
 from modelling.models.base_model import BaseModel
 from modelling.models.networks import MLP, GaussianNet
-from modelling.utils.torch_utils import torch_to
+from modelling.utils.torch_utils import torch_to, reparameterize
 
 
 class Policy(BaseModel, abc.ABCMeta):
@@ -107,7 +107,7 @@ class DeterministicPolicy(Policy):
             ModelLoss=loss.item(),
         )
         stats['Loss'] = loss.item()
-        return loss, stats
+        return {'Model': loss}, stats
 
 
 class StochasticPolicy(BaseModel):
@@ -122,6 +122,9 @@ class StochasticPolicy(BaseModel):
         mean_hidden_sizes: Sequence[int],
         logvar_hidden_sizes: Sequence[int],
         tanh_transform: bool = True,
+        train_alpha_entropy: bool = True,
+        log_alpha_entropy: float = 0,
+        target_entropy: Optional[float] = -3,
         hidden_activation=torch.nn.functional.relu,
         standardize_targets: bool = False,
     ):
@@ -134,13 +137,13 @@ class StochasticPolicy(BaseModel):
                 mean and logvar networks.
             mean_hidden_sizes: Hidden size of the mean networks.
             logvar_hidden_sizes: Hidden size of the logvar networks.
+            tanh_transform: Whether to do tanh transform on output actions.
+            train_alpha_entropy: Whether to train alpha entropy.
+            log_alpha_entropy: The coefficient on entropy term for loss.
+            target_entropy: Target entropy used for tuning alpha. If none,
+                then the target is -action_dim.
             hidden_activation: Activation of the networks hidden layers.
-            logvar_bounds: Bounds on the logvariance.
-            bound_loss_coef: Coefficient on bound in the loss.
             standardize_targets: Whether to standardize the targets to predict.
-            linear_wrappers: Wrapper for linear layers such as regularizers,
-                order is [encoder, mean, logvar].
-            bound_loss_function: Loss function for the logvar bounds.
         """
         super(StochasticPolicy, self).__init__([input_dim, output_dim])
         self.input_dim = input_dim
@@ -155,7 +158,16 @@ class StochasticPolicy(BaseModel):
             hidden_activation=hidden_activation,
             tanh_transform=tanh_transform,
         )
+        self._tanh_transform = tanh_transform
         self._standardize_targets = standardize_targets
+        self._train_alpha_entropy = train_alpha_entropy
+        self.log_alpha = torch.nn.Parameter(
+                torch.Tensor([log_alpha_entropy]),
+                requires_grad=train_alpha_entropy,
+        )
+        if target_entropy is None:
+            target_entropy = -1* output_dim
+        self._target_entropy = target_entropy
 
     def __call__(self, net_in, unstandardize_targets=True):
         """Get the mean and logvar at specified condition points."""
@@ -176,13 +188,36 @@ class StochasticPolicy(BaseModel):
         """Get action from policy."""
         mean, logvar = self.__call__(states)
         if deterministic:
-            return mean
-        return reparameterize(mean, logvar)
+            action = mean
+        else:
+            action = reparameterize(mean, logvar)
+        if self._tanh_transform:
+            return torch.tanh(action)
+        return action
+
+    def get_log_prob(
+        self,
+        mean: torch.Tensor,
+        logvar: torch.Tensor,
+        actions: torch.Tensor,
+    ) -> torch.Tensor:
+        return self._gaussian_net.get_log_prob(mean, logvar, actions)
+
+    def sample_actions_and_logprobs(
+            self,
+            states: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        mean, logvar = self.__call__(states)
+        actions = self._gaussian_net.sample_from_mean_logvar(mean, logvar)
+        logprobs = self._gaussian_net.get_log_prob(mean, logvar, actions)
+        return actions, logprobs
 
     def model_forward(self, batch: Sequence[torch.Tensor]) -> Dict[str, Any]:
         """Forward pass data through the model."""
         xi, yi = batch
         mean, logvar = self._gaussian_net(xi)
+        log_pi = self._gaussian_net.sample_logpis_from_mean_logvar(
+                mean, logvar)
         if self._standardize_targets:
             targets = yi
         else:
@@ -191,6 +226,7 @@ class StochasticPolicy(BaseModel):
             mean=mean,
             logvar=logvar,
             labels=targets,
+            log_pi=log_pi,
         )
 
     def loss(
@@ -203,13 +239,35 @@ class StochasticPolicy(BaseModel):
         mean = forward_out['mean']
         logvar = forward_out['logvar']
         labels = forward_out['labels']
-        nlls = -1 * self._gaussian_net.get_log_prob(mean, logvar, labels)
+        log_pi = forward_out['log_pi']
+        # Get the policy loss.
+        lls = self._gaussian_net.get_log_prob(mean, logvar, labels)
         if 'weighting' in forward_out:
-             nlls *= forward_out['weighting']
-        loss = nlls.mean()
+             lls *= forward_out['weighting']
+        loss = (self.log_alpha.exp().detach() * log_pi - lls).mean()
         stats = OrderedDict(
-            ModelLoss=loss.item(),
+            Loss=loss.item(),
+            Alpha=self.log_alpha.exp().detach().cpu().item(),
+            PIWidths=(0.5 * logvar.detach().cpu()).exp().mean().item(),
+            LogPis=log_pi.detach().cpu().mean().item(),
         )
-        stats['Loss'] = loss.item()
-        return loss, stats
+        loss_dict = {'Model': loss}
+        # Get alpha loss if training alpha.
+        if self._train_alpha_entropy:
+            alpha_loss = -(self.log_alpha.exp()
+                           * (log_pi + self._target_entropy).detach()).mean()
+            stats['AlphaLoss'] = alpha_loss.item()
+            loss_dict['Alpha'] = alpha_loss
+        # Compute the MSE for statistics.
+        mean_est = mean.detach()
+        if self._tanh_transform:
+            mean_est = torch.tanh(mean_est)
+        stats['MSE'] = ((mean_est - labels) ** 2).mean()
+        return loss_dict, stats
 
+    def get_parameter_sets(self) -> Dict[str, torch.Tensor]:
+        """Get mapping from string description of parameters to parameters."""
+        return_dict = {'Model': list(self._gaussian_net.parameters())}
+        if self._train_alpha_entropy:
+            return_dict['Alpha'] = [self.log_alpha]
+        return return_dict
