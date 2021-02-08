@@ -79,7 +79,7 @@ class QNet(BaseModel):
         loss = error.mean()
         stats = OrderedDict(
             Loss=loss.item(),
-            TargetValue=targets.detach().cpu().mean().item(),
+            Value=targets.detach().cpu().mean().item(),
         )
         return {'Model': loss}, stats
 

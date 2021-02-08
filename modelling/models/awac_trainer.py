@@ -94,7 +94,7 @@ class AWACTrainer(object):
         self._stats = OrderedDict()
         self._tr_stats = OrderedDict()
         if track_stats is None:
-            track_stats = ['Returns', 'policy/Loss'] + ['qnet%d/Loss' % i
+            track_stats = ['Returns', 'policy/Loss'] + ['qnet%d/Value' % i
                                              for i in range(len(qnets))]
         self._track_stats = track_stats
         self._env = env
@@ -143,7 +143,7 @@ class AWACTrainer(object):
             batch: Sequence[torch.Tensor],
     ) -> float:
         """Do a train step on batch. If validation batch, just log stats."""
-        st, at = batch[0], batch[1]
+        st, at, rews, nxts, terms = batch[:5]
         if len(batch) > 5:
             vt = batch[-1]
         else:
@@ -165,9 +165,9 @@ class AWACTrainer(object):
                 qnet_out['targets'] = vt
             else:
                 with torch.no_grad():
-                    qtvals = qtarg(batch[3], self.policy.get_action(batch[3]))
-                targets = batch[2] + self._gamma * batch[4] * qtvals
-            qnet_out = qnet.forward([batch[0], batch[1], targets])
+                    qtvals = qtarg(nxts, self.policy.get_action(nxts))
+                targets = rews + self._gamma * (1. - terms) * qtvals
+            qnet_out = qnet.forward([st, at, targets])
             qnet_losses, qnet_stats = qnet.loss(qnet_out)
             losses.update({'qnet%d_%s' % (qidx, k): v
                            for k, v in qnet_losses.items()})
