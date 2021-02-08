@@ -296,8 +296,11 @@ class BATSTrainer:
         self.possible_stitch_priorities = priorities
 
     def get_prioritized_stitch_chunk(self):
-        indices = np.argpartition(self.possible_stitch_priorities,
-                                  self.stitching_chunk_size)[:self.stitching_chunk_size]
+        if self.stitching_chunk_size >= len(self.possible_stitch_priorities):
+            indices = np.arange(len(self.possible_stitch_priorities)).astype(int)
+        else:
+            indices = np.argpartition(self.possible_stitch_priorities,
+                                      self.stitching_chunk_size)[:self.stitching_chunk_size]
         stitch_chunk = self.possible_stitches[indices]
         self.possible_stitches = np.delete(self.possible_stitches, indices, axis=0)
         return stitch_chunk
