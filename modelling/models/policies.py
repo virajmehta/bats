@@ -122,6 +122,7 @@ class StochasticPolicy(BaseModel):
         mean_hidden_sizes: Sequence[int],
         logvar_hidden_sizes: Sequence[int],
         tanh_transform: bool = True,
+        add_entropy_bonus: bool = False,
         train_alpha_entropy: bool = True,
         log_alpha_entropy: float = 0,
         target_entropy: Optional[float] = -3,
@@ -160,6 +161,7 @@ class StochasticPolicy(BaseModel):
         )
         self._tanh_transform = tanh_transform
         self._standardize_targets = standardize_targets
+        self._add_entropy_bonus = add_entropy_bonus
         self._train_alpha_entropy = train_alpha_entropy
         self.log_alpha = torch.nn.Parameter(
                 torch.Tensor([log_alpha_entropy]),
@@ -244,7 +246,10 @@ class StochasticPolicy(BaseModel):
         lls = self._gaussian_net.get_log_prob(mean, logvar, labels)
         if 'weighting' in forward_out:
              lls *= forward_out['weighting'].flatten()
-        loss = (self.log_alpha.exp().detach() * log_pi - lls).mean()
+        loss = -1 * lls
+        if self._add_entropy_bonus:
+            loss += self.log_alpha.exp().detach() * log_pi
+        loss = loss.mean()
         stats = OrderedDict(
             Loss=loss.item(),
             Alpha=self.log_alpha.exp().detach().cpu().item(),
@@ -262,7 +267,7 @@ class StochasticPolicy(BaseModel):
         mean_est = mean.detach()
         if self._tanh_transform:
             mean_est = torch.tanh(mean_est)
-        stats['MSE'] = ((mean_est - labels) ** 2).mean()
+        stats['MSE'] = ((mean_est - labels) ** 2).mean().item()
         if 'weighting' in forward_out:
             stats['Weighting'] = forward_out['weighting'].cpu().mean().item()
         return loss_dict, stats

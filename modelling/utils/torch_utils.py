@@ -46,7 +46,7 @@ def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
     """Do the reparameterization trick."""
     std = torch.exp(0.5 * logvar)
     eps = torch.randn_like(std)
-    return eps * std + mu
+    return torch_to(eps * std + mu)
 
 
 def unroll(env, policy, max_ep_len=float('inf')):

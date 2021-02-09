@@ -32,6 +32,7 @@ def learn_awac_policy(
     env = None, # Gym environment for doing evaluations.
     max_ep_len: int = 1000,
     num_eval_eps: int = 10,
+    train_loops_per_epoch: int = 1,
 ):
     obs_dim = dataset['observations'].shape[1]
     act_dim = dataset['actions'].shape[1]
@@ -60,6 +61,7 @@ def learn_awac_policy(
         env=env,
         max_ep_len=max_ep_len,
         num_eval_eps=num_eval_eps,
+        train_loops_per_epoch=train_loops_per_epoch,
     )
     # Organize data and train.
     rand_idx = np.arange(dataset['observations'].shape[0])
@@ -72,7 +74,7 @@ def learn_awac_policy(
         torch.Tensor(dataset['terminals'][rand_idx]),
     ]
     if 'values' in dataset:
-        tensor_data.append(dataset['values'][rand_idx])
+        tensor_data.append(torch.Tensor(dataset['values'][rand_idx]))
     use_gpu = cuda_device != ''
     trainer.train(
         dataset=DataLoader(
@@ -176,8 +178,8 @@ def split_supervised_data(tensor_data, val_size, batch_size, use_gpu):
     td_size = len(tensor_data)
     if val_size > 0:
         tensor_data = train_test_split(*tensor_data, test_size=val_size)
-        tensor_data = ([tensor_data[i] for i in range(0, td_size, 2)]
-                       + [tensor_data[i] for i in range(1, td_size, 2)])
+        tensor_data = ([tensor_data[i] for i in range(0, len(tensor_data), 2)]
+                    + [tensor_data[i] for i in range(1, len(tensor_data), 2)])
         val_data = DataLoader(
             TensorDataset(*tensor_data[td_size:]),
             batch_size=batch_size,
@@ -236,7 +238,8 @@ def get_policy(
             mean_hidden_sizes=[],
             logvar_hidden_sizes=[],
             tanh_transform=True,
-            target_entropy=-3,
+            train_alpha_entropy=False,
+            add_entropy_bonus=False,
             standardize_targets=standardize_targets,
         )
 

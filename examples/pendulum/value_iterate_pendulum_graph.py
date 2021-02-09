@@ -52,13 +52,14 @@ def value_iteration(graph, gamma=0.99):
         vidxs = neighbors[:, 0]
         values = neighbors[:, 1]
         edges = graph.get_out_edges(v, eprops=[graph.ep.reward])
+        edges = edges[graph.get_out_degrees(edges[:, 1]) > 0]
         rewards = edges[:, 2]
         backups = rewards + gamma * values
         best_arm = np.argmax(backups)
         updated_value = backups[best_arm]
         total_change += np.abs(graph.vp.value[v] - updated_value)
         graph.vp.value[v] = updated_value
-        graph.vp.best_action_idx[v] = best_arm
+        graph.vp.best_child[v] = edges[best_arm, 1]
     return total_change / graph.num_vertices()
 
 

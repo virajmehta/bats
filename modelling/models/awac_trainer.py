@@ -37,6 +37,7 @@ class AWACTrainer(object):
             env = None, # Gym environment for doing evaluations.
             max_ep_len: int = 1000,
             num_eval_eps: int = 10,
+            train_loops_per_epoch=1, # Number of times to loop through dataset.
     ):
         # Put networks on correct device.
         set_cuda_device(cuda_device)
@@ -83,6 +84,7 @@ class AWACTrainer(object):
                 log_dir=os.path.join(save_path, 'tensorboard'))
         else:
             self._writer = None
+        self._train_loops_per_epoch = train_loops_per_epoch
         self._save_freq = save_freq
         self._silent = silent
         self._pbar = None
@@ -123,8 +125,9 @@ class AWACTrainer(object):
             self._pbar = tqdm(total=epochs)
         for _ in range(epochs):
             self._set_train(True)
-            for batch in dataset:
-                self.batch_train(batch)
+            for _ in range(self._train_loops_per_epoch):
+                for batch in dataset:
+                    self.batch_train(batch)
             self._set_train(False)
             self._evaluate_policy()
             self.end_epoch()
@@ -143,9 +146,9 @@ class AWACTrainer(object):
             batch: Sequence[torch.Tensor],
     ) -> float:
         """Do a train step on batch. If validation batch, just log stats."""
-        st, at, rews, nxts, terms = batch[:5]
+        st, at, rews, nxts, terms = [torch_to(b) for b in batch[:5]]
         if len(batch) > 5:
-            vt = batch[-1]
+            vt = torch_to(batch[-1])
         else:
             vt = None
         losses, bstats = OrderedDict(), OrderedDict()
@@ -157,16 +160,17 @@ class AWACTrainer(object):
         policy_losses, policy_stats = self.policy.loss(policy_out)
         losses.update({'policy_%s' % k: v for k, v in policy_losses.items()})
         bstats.update({'policy/%s' % k: v for k, v in policy_stats.items()})
+        # Form targets if no value is provided.
+        if vt is None:
+            pi_acts = self.policy.get_action(nxts)
+            with torch.no_grad():
+                qts = torch.min(torch.stack(
+                    [qt(nxts, pi_acts) for qt in self.qtargets]), dim=0)[0]
+            targets = rews + self._gamma * (1. - terms) * qts
+        else:
+            targets = vt
         # Get the Qnet losses.
         for qidx, qnet in enumerate(self.qnets):
-            qtarg = self.qtargets[qidx]
-            if vt is not None:
-                targets = vt
-                qnet_out['targets'] = vt
-            else:
-                with torch.no_grad():
-                    qtvals = qtarg(nxts, self.policy.get_action(nxts))
-                targets = rews + self._gamma * (1. - terms) * qtvals
             qnet_out = qnet.forward([st, at, targets])
             qnet_losses, qnet_stats = qnet.loss(qnet_out)
             losses.update({'qnet%d_%s' % (qidx, k): v

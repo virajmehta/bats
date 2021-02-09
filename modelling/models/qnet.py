@@ -52,7 +52,10 @@ class QNet(BaseModel):
             state = state.reshape(1, -1)
         if len(action.shape) == 1:
             action = action.reshape(1, -1)
-        return self._net.forward(torch_to(torch.cat([state, action], dim=1)))
+        return self._net.forward(torch.cat([
+            torch_to(state),
+            torch_to(action),
+        ], dim=1))
 
     def model_forward(self, batch: Sequence[torch.Tensor]) -> Dict[str, Any]:
         """Forward pass data through the model."""
