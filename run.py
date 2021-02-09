@@ -26,6 +26,8 @@ def parse_arguments():
     parser.add_argument('-lp', '--load_policy', type=Path, default=None, help="Load a behavior cloned policy from this directory")
     parser.add_argument('-ncpus', '--num_cpus', type=int, default=1)
     parser.add_argument('-odp', '--offline_dataset_path', type=Path, default=None, help='Path for dataset, will use d4rl dataset if none is provided.')
+    parser.add_argument('-scs', '--stitching_chunk_size', type=int, default=1000000, help='number of stitches to attempt in an iteration of stitching')
+    parser.add_argument('-ni', '--num_stitching_iters', type=int, default=50, help='number of iterations of stitching to do')
 
     return parser.parse_args()
 

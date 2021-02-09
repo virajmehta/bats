@@ -28,7 +28,7 @@ class BATSTrainer:
         self.dataset_size = self.dataset['observations'].shape[0]
 
         # set up the parameters for the dynamics model training
-        self.dynamics_ensemble = None
+        self.dynamics_ensemble_path = None
 
         self.dynamics_train_params = {}
         self.dynamics_train_params['n_members'] = kwargs.get('dynamics_n_members', 7)
