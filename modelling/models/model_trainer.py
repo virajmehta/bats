@@ -15,7 +15,8 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from modelling.models import BaseModel
-from modelling.utils.torch_utils import set_cuda_device, torch_to
+from modelling.models.policies import Policy
+from modelling.utils.torch_utils import set_cuda_device, torch_to, unroll
 from util import dict_append
 
 
@@ -36,6 +37,10 @@ class ModelTrainer(object):
             validation_tune_metric: str = 'Loss',
             optimizers=None,
             track_stats: Sequence[str] = [],
+            env = None, # Gym environment for doing evaluations.
+            max_ep_len: int = 1000,
+            num_eval_eps: int = 10,
+            train_loops_per_epoch=1, # Number of times to loop through dataset.
     ) -> None:
         """Constructor.
         Args:
@@ -81,6 +86,7 @@ class ModelTrainer(object):
         else:
             self._writer = None
         self._save_freq = save_freq
+        self._train_loops_per_epoch = train_loops_per_epoch
         self._silent = silent
         self._pbar = None
         self._save_best_model = save_best_model
@@ -93,6 +99,9 @@ class ModelTrainer(object):
         self._best_val_loss_epoch = 0
         self._validation_tune_metric = validation_tune_metric
         self._track_stats = track_stats
+        self._env = env
+        self._max_ep_len = max_ep_len
+        self._num_eval_eps = num_eval_eps
 
     def fit(
             self,
@@ -120,15 +129,19 @@ class ModelTrainer(object):
             self._pbar = tqdm(total=epochs)
         for _ in range(epochs):
             self.model.train(True)
-            for batch in dataset:
-                self.batch_train(batch,
-                                 last_column_is_weights=last_column_is_weights)
+            for _ in range(self._train_loops_per_epoch):
+                for batch in dataset:
+                    self.batch_train(
+                            batch,
+                            last_column_is_weights=last_column_is_weights,
+                    )
             self.model.train(False)
             if validation is not None:
                 for batch in validation:
                     self.batch_train(batch,
                                  validation=True,
                                  last_column_is_weights=last_column_is_weights)
+            self._evaluate_policy()
             self.end_epoch()
             if early_stop_wait_time is not None and validation is not None:
                 time_gap = self._total_epochs - self._best_val_loss_epoch
@@ -222,6 +235,12 @@ class ModelTrainer(object):
             itr_save = os.path.join(self._save_path,
                                     'itr_%d.pt' % self._total_epochs)
             self.model.save_model(itr_save)
+
+    def _evaluate_policy(self) -> None:
+        if issubclass(type(self.model), Policy) and self._env is not None:
+            dict_append(self._tr_stats, 'Returns',
+                        [unroll(self._env, self.model, self._max_ep_len)
+                         for _ in range(self._num_eval_eps)])
 
     def _update_stats(self) -> None:
         """Update the statistics for the epoch."""

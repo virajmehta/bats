@@ -1,5 +1,5 @@
 """
-QNetwork model.
+Critic model.
 """
 from collections import OrderedDict
 from typing import Any, Dict, Sequence, Tuple
@@ -11,7 +11,7 @@ from modelling.models.networks import MLP
 from modelling.utils.torch_utils import torch_to
 
 
-class QNet(BaseModel):
+class Critic(BaseModel):
     """Neural Network for regression."""
 
     def __init__(
@@ -33,7 +33,7 @@ class QNet(BaseModel):
             standardize_targets: Whether to standardize the targets to predict.
             linear_wrapper: Wrapper for linear layers such as regularizer.
         """
-        super(QNet, self).__init__([state_dim, act_dim, 1])
+        super(Critic, self).__init__([state_dim, act_dim, 1])
         self.input_dim = state_dim + act_dim
         self.output_dim = 1
         self._net = MLP(

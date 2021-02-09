@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 
 from modelling.models import ModelTrainer, DeterministicPolicy,\
-        StochasticPolicy, AWACTrainer, QNet
+        StochasticPolicy, AWACTrainer, Critic
 from util import s2i
 
 
@@ -39,12 +39,12 @@ def learn_awac_policy(
     # Initialize networks and make trainer.
     policy = get_policy(obs_dim, act_dim, policy_hidden_sizes, False)
     if qnets is None:
-        qnets, qtargets = [[get_qnet(obs_dim, act_dim, qnet_hidden_sizes)
+        qnets, qtargets = [[get_critic(obs_dim, act_dim, qnet_hidden_sizes)
                             for _ in range(n_qnets)] for _ in range(2)]
     else:
         qtargets = []
         for qnet in qnets:
-            qtarg = get_qnet(obs_dim, act_dim, qnet_hidden_sizes)
+            qtarg = get_critic(obs_dim, act_dim, qnet_hidden_sizes)
             qtarg.load_state_dict(qnet.state_dict())
             qtargets.append(qtarg)
     trainer = AWACTrainer(
@@ -87,6 +87,45 @@ def learn_awac_policy(
     )
     return policy, qnets
 
+def advantage_weighted_regression(
+    dataset,  # Dataset is a dictionary with obs, acts, and optionally adv.
+    save_dir,
+    epochs,
+    advnet=None, # Network that predicts advantages.
+    adv_weight=1,
+    max_weighting=20,
+    cuda_device='',
+    **kwargs
+):
+    """This is the same as behavior cloning but computes weights for you."""
+    if advnet is not None:
+        advdata = DataLoader(
+            TensorDataset(torch.Tensor(dataset['observations']),
+                          torch.Tensor(dataset['actions'])),
+            batch_size=1024,
+            shuffle=False,
+            pin_memory=cuda_device != '',
+        )
+        advantages = []
+        for batch in advdata:
+            with torch.no_grad():
+                advantages.append(advnet(batch[0], batch[1]))
+        dataset['weights'] = torch.clamp(
+                (torch.cat(advantages, dim=0) / adv_weight).exp(),
+                max=max_weighting)
+    elif 'advantages' in dataset:
+        dataset['weights'] = np.minimum(
+            np.exp(dataset['advantages'] / adv_weight), max_weighting)
+    else:
+        raise ValueError('Either need advantages in dataset or advnet.')
+    behavior_clone(
+        dataset=dataset,
+        save_dir=save_dir,
+        epochs=epochs,
+        cuda_device=cuda_device,
+        **kwargs
+    )
+
 
 def behavior_clone(
     dataset,  # Dataset is a dictionary containing 'observations' and 'actions'
@@ -103,6 +142,10 @@ def behavior_clone(
     cuda_device='',
     save_freq=-1,
     silent=False,
+    env = None, # Gym environment for doing evaluations.
+    max_ep_len: int = 1000,
+    num_eval_eps: int = 10,
+    train_loops_per_epoch: int = 1,
 ):
     use_gpu = cuda_device != ''
     # Get data into trainable form.
@@ -126,7 +169,11 @@ def behavior_clone(
             cuda_device=cuda_device,
             save_path=save_dir,
             save_freq=save_freq,
-            track_stats=['MSE', 'LogPis'],
+            track_stats=['Returns'],
+            env=env,
+            max_ep_len=max_ep_len,
+            num_eval_eps=num_eval_eps,
+            train_loops_per_epoch=train_loops_per_epoch,
     )
     trainer.fit(tr_data, epochs, val_data, od_wait,
                 last_column_is_weights=has_weights)
@@ -134,8 +181,9 @@ def behavior_clone(
     return policy
 
 
-def supervise_qlearning(
-    dataset,  # A dictionary containing 'observations', 'actions', 'values'
+def supervise_critic(
+    # A dictionary containing 'observations', 'actions', 'values', or 'advantage
+    dataset,
     save_dir,
     epochs,
     hidden_sizes='256,256',
@@ -152,16 +200,17 @@ def supervise_qlearning(
     # Get data into trainable form.
     x_data = torch.Tensor(dataset['observations'])
     y_data = torch.Tensor(dataset['actions'])
-    val_data = torch.Tensor(dataset['values'])
+    val_key = 'advantages' if 'advantages' in dataset else 'values'
+    val_data = torch.Tensor(dataset[val_key])
     tensor_data = [x_data, y_data, val_data]
     has_weights = 'weights' in dataset
     if has_weights:
         tensor_data.append(torch.Tensor(dataset['weights']))
     tr_data, val_data = split_supervised_data(
             tensor_data, val_size, batch_size, use_gpu)
-    qnet = get_qnet(x_data.shape[1], y_data.shape[1], hidden_sizes)
+    net = get_critic(x_data.shape[1], y_data.shape[1], hidden_sizes)
     trainer = ModelTrainer(
-            model=qnet,
+            model=net,
             learning_rate=learning_rate,
             weight_decay=weight_decay,
             cuda_device=cuda_device,
@@ -170,8 +219,8 @@ def supervise_qlearning(
     )
     trainer.fit(tr_data, epochs, val_data, od_wait,
                 last_column_is_weights=has_weights)
-    qnet.load_model(os.path.join(save_dir, 'model.pt'))
-    return qnet
+    net.load_model(os.path.join(save_dir, 'model.pt'))
+    return net
 
 
 def split_supervised_data(tensor_data, val_size, batch_size, use_gpu):
@@ -244,25 +293,25 @@ def get_policy(
         )
 
 
-def load_qnet(
+def load_critic(
     load_dir,
     obs_dim,
     act_dim,
     hidden_sizes='256,256',
     cuda_device='',
 ):
-    qnet = get_qnet(obs_dim, act_dim, hidden_sizes)
+    critic = get_critic(obs_dim, act_dim, hidden_sizes)
     device = 'cpu' if cuda_device == '' else 'cuda:' + cuda_device
-    qnet.load_model(os.path.join(load_dir, 'model.pt'), map_location=device)
-    return qnet
+    critic.load_model(os.path.join(load_dir, 'model.pt'), map_location=device)
+    return critic
 
 
-def get_qnet(
+def get_critic(
     obs_dim,
     act_dim,
     hidden_sizes='256,256',
 ):
-    return QNet(
+    return Critic(
         state_dim=obs_dim,
         act_dim=act_dim,
         hidden_sizes=s2i(hidden_sizes),

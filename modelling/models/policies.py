@@ -15,7 +15,7 @@ from modelling.models.networks import MLP, GaussianNet
 from modelling.utils.torch_utils import torch_to, reparameterize
 
 
-class Policy(BaseModel, abc.ABCMeta):
+class Policy(BaseModel, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def get_action(
@@ -110,7 +110,7 @@ class DeterministicPolicy(Policy):
         return {'Model': loss}, stats
 
 
-class StochasticPolicy(BaseModel):
+class StochasticPolicy(Policy):
     """Probabilistic Neural Network."""
 
     def __init__(
