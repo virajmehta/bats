@@ -2,6 +2,7 @@ from graph_tool import Graph, load_graph, ungroup_vector_property
 import util
 import time
 import numpy as np
+import pickle
 from subprocess import Popen
 from tqdm import trange, tqdm
 from modelling.dynamics_construction import train_ensemble
@@ -377,3 +378,6 @@ class BATSTrainer:
         return_std = np.std(returns)
         normalized_mean = self.env.get_normalized_score(return_mean)
         tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f} | Normalized mean | {normalized_mean:.2f}")  # NOQA
+        episode_path = self.output_dir / 'epsiodes.pk'
+        with episode_path.open('wb') as f:
+            pickle.dump(episodes, f)
