@@ -7,7 +7,10 @@ Date: 11/13/2020
 import abc
 from typing import Optional, Sequence, Tuple
 
+import numpy as np
 import torch
+
+from modelling.utils.torch_utils import torch_to, arctanh, reparameterize
 
 
 class MLP(torch.nn.Module):
@@ -21,6 +24,7 @@ class MLP(torch.nn.Module):
         hidden_activation=torch.nn.functional.relu,
         output_activation=None,
         linear_wrapper=None,
+        tanh_transform=False,
     ):
         """Constructor."""
         super(MLP, self).__init__()
@@ -38,6 +42,7 @@ class MLP(torch.nn.Module):
             self.n_layers = len(hidden_sizes) + 1
         self.hidden_activation = hidden_activation
         self.output_activation = output_activation
+        self.tanh_transform = tanh_transform
 
     def forward(
             self,
@@ -73,6 +78,7 @@ class GaussianNet(torch.nn.Module):
         latent_dim: int,
         hidden_activation=torch.nn.functional.relu,
         linear_wrappers = [None, None, None],
+        tanh_transform=False,
     ):
         """Constructor."""
         super(GaussianNet, self).__init__()
@@ -98,6 +104,7 @@ class GaussianNet(torch.nn.Module):
             hidden_activation=hidden_activation,
             linear_wrapper=linear_wrappers[2],
         )
+        self.tanh_transform = tanh_transform
 
     def forward(
             self,
@@ -106,3 +113,64 @@ class GaussianNet(torch.nn.Module):
         """Forward pass through network. Returns (mean, logvar)"""
         latent = self.encode_net.forward(net_in)
         return self.mean_net.forward(latent), self.logvar_net.forward(latent)
+
+    def sample(
+            self,
+            net_in: torch.Tensor,
+    ) -> torch.Tensor:
+        """If policy, get an action."""
+        mean, logvar = self.forward(net_in)
+        return self.sample_from_mean_logvar(mean, logvar)
+
+    def sample_from_mean_logvar(
+            self,
+            mean: torch.Tensor,
+            logvar: torch.Tensor,
+    ) -> torch.Tensor:
+        samples = reparameterize(mean, logvar)
+        if self.tanh_transform:
+            return torch.tanh(samples)
+        return samples
+
+    def sample_logpis(
+            self,
+            net_in: torch.Tensor,
+    ) -> torch.Tensor:
+        mean, logvar = self.forward(net_in)
+        return self.sample_logpis_from_mean_logvar(mean, logvar)
+
+    def sample_logpis_from_mean_logvar(
+            self,
+            mean: torch.Tensor,
+            logvar: torch.Tensor,
+    ) -> torch.Tensor:
+        samples = reparameterize(mean, logvar)
+        return self._normal_log_prob(mean, logvar, samples).sum(dim=1)
+
+    def get_log_prob(
+        self,
+        mean: torch.Tensor,
+        logvar: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> torch.Tensor:
+        if self.tanh_transform:
+            bound = 1 - 1e-6
+            labels = arctanh(torch.clamp(labels, -bound, bound))
+        log_prob = self._normal_log_prob(mean, logvar, labels)
+        if self.tanh_transform:
+            log_prob -= 2 * (torch_to((torch.Tensor([np.log(2)])))
+                             - labels
+                             - torch.nn.functional.softplus(-2 * labels))
+        return log_prob.sum(dim=1)
+
+    def _normal_log_prob(
+        self,
+        mean: torch.Tensor,
+        logvar: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> torch.Tensor:
+        sq_diffs = (mean - labels) ** 2
+        log_prob = (-torch.exp(-logvar) * sq_diffs
+                    - logvar
+                    - 0.5 * torch_to(torch.Tensor([np.log(2 * np.pi)])))
+        return log_prob

@@ -15,7 +15,8 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from modelling.models import BaseModel
-from modelling.utils.torch_utils import set_cuda_device, torch_to
+from modelling.models.policies import Policy
+from modelling.utils.torch_utils import set_cuda_device, torch_to, unroll
 from util import dict_append
 
 
@@ -34,7 +35,12 @@ class ModelTrainer(object):
             save_path_exists_ok: bool = True,
             save_best_model: bool = True,
             validation_tune_metric: str = 'Loss',
-            optimizer=None,
+            optimizers=None,
+            track_stats: Sequence[str] = [],
+            env = None, # Gym environment for doing evaluations.
+            max_ep_len: int = 1000,
+            num_eval_eps: int = 10,
+            train_loops_per_epoch=1, # Number of times to loop through dataset.
     ) -> None:
         """Constructor.
         Args:
@@ -53,19 +59,25 @@ class ModelTrainer(object):
                 validation loss under model.pt
             validation_tune_metric: The metric to print and do overfitting
                 detection on.
-            optimizer: Custom optimizer, use Adam if None.
+            optimizer: Sequence of custom optimizer, use Adam if None.
+            track_stats: List of stats to track on progress bar.
         """
         set_cuda_device(cuda_device)
         self.model = torch_to(model)
         self.model.train(False)
-        if optimizer is None:
-            self.optimizer = torch.optim.Adam(
-                    self.model.parameters(),
-                    lr=learning_rate,
-                    weight_decay=weight_decay,
-            )
+        if optimizers is None:
+            psets = self.model.get_parameter_sets()
+            if type(learning_rate) is not dict:
+                learning_rate = {k: learning_rate for k in psets.keys()}
+            if type(weight_decay) is not dict:
+                weight_decay = {k: weight_decay for k in psets.keys()}
+            self.optimizers = {k: torch.optim.Adam(
+                    v,
+                    lr=learning_rate[k],
+                    weight_decay=weight_decay[k],
+            ) for k, v in psets.items()}
         else:
-            self.optimizer = optimizer
+            self.optimizers = optimizers
         self._save_path = save_path
         if save_path is not None:
             os.makedirs(save_path, exist_ok=save_path_exists_ok)
@@ -74,6 +86,7 @@ class ModelTrainer(object):
         else:
             self._writer = None
         self._save_freq = save_freq
+        self._train_loops_per_epoch = train_loops_per_epoch
         self._silent = silent
         self._pbar = None
         self._save_best_model = save_best_model
@@ -85,6 +98,10 @@ class ModelTrainer(object):
         self._best_val_loss = float('inf')
         self._best_val_loss_epoch = 0
         self._validation_tune_metric = validation_tune_metric
+        self._track_stats = track_stats
+        self._env = env
+        self._max_ep_len = max_ep_len
+        self._num_eval_eps = num_eval_eps
 
     def fit(
             self,
@@ -93,6 +110,7 @@ class ModelTrainer(object):
             validation: Optional[DataLoader] = None,
             early_stop_wait_time: Optional[int] = None,
             dont_reset_model: bool = False,
+            last_column_is_weights: bool = False,
     ) -> None:
         """Fit the model on a dataset. Returns train and validation losses.
         Args:
@@ -111,12 +129,19 @@ class ModelTrainer(object):
             self._pbar = tqdm(total=epochs)
         for _ in range(epochs):
             self.model.train(True)
-            for batch in dataset:
-                self.batch_train(batch)
+            for _ in range(self._train_loops_per_epoch):
+                for batch in dataset:
+                    self.batch_train(
+                            batch,
+                            last_column_is_weights=last_column_is_weights,
+                    )
             self.model.train(False)
             if validation is not None:
                 for batch in validation:
-                    self.batch_train(batch, validation=True)
+                    self.batch_train(batch,
+                                 validation=True,
+                                 last_column_is_weights=last_column_is_weights)
+            self._evaluate_policy()
             self.end_epoch()
             if early_stop_wait_time is not None and validation is not None:
                 time_gap = self._total_epochs - self._best_val_loss_epoch
@@ -125,27 +150,34 @@ class ModelTrainer(object):
         if not self._silent:
             self._pbar.close()
         self._pbar = None
+        if validation is None:
+            self.model.save_model(os.path.join(self._save_path, 'model.pt'))
 
     def batch_train(
             self,
             batch: Sequence[torch.Tensor],
             validation: bool = False,
+            last_column_is_weights: bool = False,
     ) -> float:
         """Do a train step on batch. If validation batch, just log stats."""
+        forward_in = batch[:-1] if last_column_is_weights else batch
         if validation:
             with torch.no_grad():
-                model_out = self.model.forward(batch)
+                model_out = self.model.forward(forward_in)
         else:
-            model_out = self.model.forward(batch)
-        loss, bstats = self.model.loss(model_out)
+            model_out = self.model.forward(forward_in)
+        if last_column_is_weights:
+            model_out['weights'] = batch[-1]
+        losses, bstats = self.model.loss(model_out)
         stat_dict = self._val_stats if validation else self._tr_stats
         for k, v in bstats.items():
             dict_append(stat_dict, k, v)
         if not validation:
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-        return loss.item()
+            for loss_name, loss in losses.items():
+                self.optimizers[loss_name].zero_grad()
+                loss.backward()
+                self.optimizers[loss_name].step()
+        return {k: loss.item() for k, loss in losses.items()}
 
     def get_stats(self) -> Dict[str, Any]:
         """Get the statistics collected."""
@@ -190,6 +222,13 @@ class ModelTrainer(object):
             if val_header in self._stats:
                 print_stats['ValLoss'] = self._stats[val_header][-1]
                 print_stats['BestValLoss'] = self._best_val_loss
+            if 'Returns/avg' in self._stats:
+                print_stats['ReturnsAvg'] = self._stats['Returns/avg'][-1]
+                print_stats['ReturnsStd'] = self._stats['Returns/std'][-1]
+            for ts in self._track_stats:
+                key = '%s/avg/train' % ts
+                if key in self._stats:
+                    print_stats[ts] = self._stats[key][-1]
             self._pbar.set_postfix(ordered_dict=print_stats)
             self._pbar.update(1)
         # Save model.
@@ -199,6 +238,13 @@ class ModelTrainer(object):
             itr_save = os.path.join(self._save_path,
                                     'itr_%d.pt' % self._total_epochs)
             self.model.save_model(itr_save)
+
+    def _evaluate_policy(self) -> None:
+        if issubclass(type(self.model), Policy) and self._env is not None:
+            unrolls = [unroll(self._env, self.model, self._max_ep_len)
+                       for _ in range(self._num_eval_eps)]
+            dict_append(self._stats, 'Returns/avg', np.mean(unrolls))
+            dict_append(self._stats, 'Returns/std', np.std(unrolls))
 
     def _update_stats(self) -> None:
         """Update the statistics for the epoch."""

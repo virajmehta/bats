@@ -2,6 +2,7 @@
 Create a stitched together pendulum graph.
 """
 import argparse
+from collections import OrderedDict
 import os
 
 from graph_tool import Graph
@@ -45,7 +46,7 @@ def make_base_graph(dataset):
     graph.vp.vertex_idx = graph.new_vertex_property('int')
     graph.vp.obs = graph.new_vertex_property('vector<float>')
     graph.vp.value = graph.new_vertex_property('float')
-    graph.vp.best_child= graph.new_vertex_property('int')
+    graph.vp.best_child = graph.new_vertex_property('int')
     graph.vp.start = graph.new_vertex_property('bool')
     graph.vp.terminal = graph.new_vertex_property('bool')
     graph.vp.traj = graph.new_vertex_property('int')
@@ -111,7 +112,7 @@ def stitch_graph(dataset, graph):
     nxt_states = obs_to_state(nxt_obs)
     num_og_states = len(all_states)
     # Loop through
-    new_states = []
+    num_exacts, num_approx = 0, 0
     new_idx = num_og_states
     pbar = tqdm(total=num_og_states ** 2)
     for fidx, st in enumerate(all_states):
@@ -120,11 +121,12 @@ def stitch_graph(dataset, graph):
             if (tidx + 1 < num_og_states
                     and np.all(child == all_states[tidx + 1])
                     and abs(fidx - tidx) > 2):
-                add1, add2 = try_to_stitch(st, parent, child)
+                # Try an exact stitch.
+                add1, add2 = try_exact_stitch(st, parent, child)
                 if add1 is not None:
                     new_node = add_blank_node(add1[1], new_idx, graph,
                                               original=False)
-                    new_states.append(add1[1])
+                    num_exacts += 1
                     edge = graph.add_edge(graph.vertex(fidx), new_node)
                     graph.ep.action[edge] = float(add1[2])
                     graph.ep.reward[edge] = float(add1[3])
@@ -133,12 +135,24 @@ def stitch_graph(dataset, graph):
                     graph.ep.action[edge] = float(add2[2])
                     graph.ep.reward[edge] = float(add2[3])
                     graph.ep.original[edge] = False
-        pbar.set_postfix_str('Num Added: %d' % len(new_states))
+                # Try an approximate stitch.
+                appact, apprew = try_approx_stitch(st, parent, args)
+                if appact is not None:
+                    edge = graph.add_edge(graph.vertex(fidx),
+                                          graph.vertex(tidx))
+                    graph.ep.action[edge] = appact
+                    graph.ep.reward[edge] = apprew
+                    graph.ep.original[edge] = False
+                    num_approx += 1
+        pbar.set_postfix(OrderedDict(
+                NumExacts=num_exacts,
+                NumApprox=num_approx,
+        ))
         pbar.update(num_og_states)
-    return new_states
+    return num_exacts, num_approx
 
 
-def try_to_stitch(node, parent, child):
+def try_exact_stitch(node, parent, child):
     # Constants.
     g = 10.
     m = 1.
@@ -161,14 +175,40 @@ def try_to_stitch(node, parent, child):
                                + 3 * g / (2 * l) * np.sin(nxttheta + np.pi))
     if np.abs(act2) > max_torque:
         return None, None
-    rew1 = angle_normalize(ntheta) ** 2 + 0.1 * ndot ** 2 + 0.001 * (act1 ** 2)
-    rew2 = (angle_normalize(nxttheta) ** 2 + 0.1 * nxtdot ** 2
-            + 0.001 * (act2 ** 2))
+    cost1 = (angle_normalize(ntheta) ** 2 + 0.1 * ndot ** 2
+             + 0.001 * (act1 ** 2))
+    cost2 = (angle_normalize(nxttheta) ** 2 + 0.1 * nxtdot ** 2
+             + 0.001 * (act2 ** 2))
     nxt = np.array([nxttheta, nxtdot])
     return ((state_to_obs(node).flatten(), state_to_obs(nxt).flatten(),
-                act1 / 2, rew1),
+                act1 / 2, -cost1),
             (state_to_obs(nxt).flatten(), state_to_obs(child).flatten(),
-                act2 / 2, rew2))
+                act2 / 2, -cost2))
+
+
+def try_approx_stitch(tnode, fnode, args):
+    # Constants.
+    g = 10.
+    m = 1.
+    l = 1.
+    dt = 0.05
+    max_torque = 2.
+    # Grid search to find a close match in state space..
+    theta, dot = tnode
+    us = np.linspace(-2, 2, args.act_search_grid).reshape(-1, 1)
+    nxtdots = dot + (-3 * g / (2 * l) * np.sin(theta + np.pi)
+                     + 3 / (m * l ** 2) * us) * dt
+    nxtthetas = theta + dt * nxtdots
+    nxts = np.hstack([nxtthetas, nxtdots])
+    normdiffs = np.linalg.norm((fnode - nxts) / np.array([2 * np.pi, 16]),
+                               axis=1)
+    closest_idx = np.argmin(normdiffs)
+    if normdiffs[closest_idx] < args.tolerance:
+        act = float(us[closest_idx])
+        rew = -(angle_normalize(theta) ** 2 + 0.1 * dot ** 2
+                 + 0.001 * (act ** 2))
+        return act / 2, rew
+    return None, None
 
 
 def obs_to_state(obs):
@@ -209,6 +249,8 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--save_dir')
     parser.add_argument('--data_path')
+    parser.add_argument('--tolerance', type=float, default=0.005)
+    parser.add_argument('--act_search_grid', type=int, default=100)
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
