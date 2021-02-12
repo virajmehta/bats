@@ -136,6 +136,7 @@ def behavior_clone(
     standardize_targets=False,
     od_wait=None,  # Epochs of no validation improvement before break.
     val_size=0,
+    val_dataset=None, # Dataset w same structure as dataset but for validation.
     batch_size=256,
     learning_rate=1e-3,
     weight_decay=0,
@@ -149,18 +150,39 @@ def behavior_clone(
 ):
     use_gpu = cuda_device != ''
     # Get data into trainable form.
-    x_data = torch.Tensor(dataset['observations'])
-    y_data = torch.Tensor(dataset['actions'])
-    tensor_data = [x_data, y_data]
+    headers = ['observations', 'actions']
     has_weights = 'weights' in dataset
     if has_weights:
-        tensor_data.append(torch.Tensor(dataset['weights']))
-    tr_data, val_data = split_supervised_data(
-            tensor_data, val_size, batch_size, use_gpu)
-    policy = get_policy(x_data.shape[1], y_data.shape[1],
+        headers.append('weights')
+    shuff_idxs = np.arange(len(dataset['observations']))
+    np.random.shuffle(shuff_idxs)
+    tensor_data = [torch.Tensor(dataset[h][shuff_idxs]) for h in headers]
+    # Train-validation split.
+    if val_dataset is None:
+        tr_data, val_data = split_supervised_data(
+                tensor_data, val_size, batch_size, use_gpu)
+    else:
+        tr_data = DataLoader(
+            TensorDataset(*tensor_data),
+            batch_size=batch_size,
+            shuffle=not use_gpu,
+            pin_memory=use_gpu,
+        )
+        shuff_idxs = np.arange(len(val_dataset['observations']))
+        np.random.shuffle(shuff_idxs)
+        val_data = DataLoader(
+            TensorDataset(*[torch.Tensor(val_dataset[h][shuff_idxs])
+                            for h in headers]),
+            batch_size=batch_size,
+            shuffle=not use_gpu,
+            pin_memory=use_gpu,
+        )
+    # Initialize model.
+    tr_x, tr_y = tensor_data[:2]
+    policy = get_policy(tr_x.shape[1], tr_y.shape[1],
                         hidden_sizes, standardize_targets)
-    standardizers = [(torch.mean(x_data, dim=0), torch.std(x_data, dim=0)),
-                     (torch.mean(y_data, dim=0), torch.std(y_data, dim=0))]
+    standardizers = [(torch.mean(tr_x, dim=0), torch.std(tr_x, dim=0)),
+                     (torch.mean(tr_y, dim=0), torch.std(tr_y, dim=0))]
     policy.set_standardization(standardizers)
     trainer = ModelTrainer(
             model=policy,
@@ -169,7 +191,6 @@ def behavior_clone(
             cuda_device=cuda_device,
             save_path=save_dir,
             save_freq=save_freq,
-            track_stats=['Returns'],
             env=env,
             max_ep_len=max_ep_len,
             num_eval_eps=num_eval_eps,
@@ -287,8 +308,8 @@ def get_policy(
             mean_hidden_sizes=[],
             logvar_hidden_sizes=[],
             tanh_transform=True,
-            train_alpha_entropy=False,
-            add_entropy_bonus=False,
+            train_alpha_entropy=True,
+            add_entropy_bonus=True,
             standardize_targets=standardize_targets,
         )
 

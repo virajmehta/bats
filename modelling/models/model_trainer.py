@@ -222,6 +222,9 @@ class ModelTrainer(object):
             if val_header in self._stats:
                 print_stats['ValLoss'] = self._stats[val_header][-1]
                 print_stats['BestValLoss'] = self._best_val_loss
+            if 'Returns/avg' in self._stats:
+                print_stats['ReturnsAvg'] = self._stats['Returns/avg'][-1]
+                print_stats['ReturnsStd'] = self._stats['Returns/std'][-1]
             for ts in self._track_stats:
                 key = '%s/avg/train' % ts
                 if key in self._stats:
@@ -238,9 +241,10 @@ class ModelTrainer(object):
 
     def _evaluate_policy(self) -> None:
         if issubclass(type(self.model), Policy) and self._env is not None:
-            dict_append(self._tr_stats, 'Returns',
-                        [unroll(self._env, self.model, self._max_ep_len)
-                         for _ in range(self._num_eval_eps)])
+            unrolls = [unroll(self._env, self.model, self._max_ep_len)
+                       for _ in range(self._num_eval_eps)]
+            dict_append(self._stats, 'Returns/avg', np.mean(unrolls))
+            dict_append(self._stats, 'Returns/std', np.std(unrolls))
 
     def _update_stats(self) -> None:
         """Update the statistics for the epoch."""
