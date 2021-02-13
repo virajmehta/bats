@@ -78,7 +78,11 @@ class BaseModel(torch.nn.Module, metaclass=abc.ABCMeta):
     def loss(
             self,
             forward_out: Dict[str, Any],
-    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, Any]]:
         """Compute loss from the output of the network and targets.
         Returns the loss and additional stats.
         """
+
+    def get_parameter_sets(self) -> Dict[str, torch.Tensor]:
+        """Get mapping from string description of parameters to parameters."""
+        return {'Model': self.parameters()}

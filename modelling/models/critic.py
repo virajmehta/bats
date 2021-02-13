@@ -1,8 +1,5 @@
 """
-Neural Network for regression.
-
-Author: Ian Char
-Date: 11/20/2020
+Critic model.
 """
 from collections import OrderedDict
 from typing import Any, Dict, Sequence, Tuple
@@ -14,18 +11,17 @@ from modelling.models.networks import MLP
 from modelling.utils.torch_utils import torch_to
 
 
-class RegressionNN(BaseModel):
+class Critic(BaseModel):
     """Neural Network for regression."""
 
     def __init__(
         self,
-        input_dim: int,
-        output_dim: int,
+        state_dim: int,
+        act_dim: int,
         hidden_sizes: Sequence[int],
         hidden_activation=torch.nn.functional.relu,
         output_activation=None,
-        standardize_targets: bool = True,
-        linear_wrapper = None,
+        standardize_targets: bool = False,
     ):
         """Constructor.
         Args:
@@ -37,40 +33,39 @@ class RegressionNN(BaseModel):
             standardize_targets: Whether to standardize the targets to predict.
             linear_wrapper: Wrapper for linear layers such as regularizer.
         """
-        super(RegressionNN, self).__init__([input_dim, output_dim])
-        self.input_dim = input_dim
-        self.output_dim = output_dim
+        super(Critic, self).__init__([state_dim, act_dim, 1])
+        self.input_dim = state_dim + act_dim
+        self.output_dim = 1
         self._net = MLP(
-            input_dim=input_dim,
+            input_dim=state_dim + act_dim,
             hidden_sizes=hidden_sizes,
-            output_dim=output_dim,
+            output_dim=1,
             hidden_activation=hidden_activation,
             output_activation=output_activation,
         )
         self._criterion = torch.nn.MSELoss()
         self._standardize_targets = standardize_targets
 
-    def __call__(self, net_in, unstandardize_targets=True):
+    def __call__(self, state, action):
         """Get predictions from the network."""
-        net_in = torch_to(net_in)
-        net_in = self.standardize_batch([net_in])[0]
-        net_out = self._net.forward(net_in)
-        if self._standardize_targets and unstandardize_targets:
-            net_out = self.unstandardize_batch([net_in, net_out])[1]
-        return net_out
+        if len(state.shape) == 1:
+            state = state.reshape(1, -1)
+        if len(action.shape) == 1:
+            action = action.reshape(1, -1)
+        return self._net.forward(torch.cat([
+            torch_to(state),
+            torch_to(action),
+        ], dim=1))
 
     def model_forward(self, batch: Sequence[torch.Tensor]) -> Dict[str, Any]:
         """Forward pass data through the model."""
-        xi, yi = batch
-        preds = self._net.forward(xi)
-        if self._standardize_targets:
-            targets = yi
-        else:
-            targets = self.unstandardize_batch(batch)[1]
-        return OrderedDict(
+        st, at, targets = batch
+        preds = self._net.forward(torch.cat([st, at], dim=1))
+        od = OrderedDict(
             preds=preds,
-            labels=targets,
+            targets=targets,
         )
+        return od
 
     def loss(
             self,
@@ -80,10 +75,27 @@ class RegressionNN(BaseModel):
         Returns the loss and additional stats.
         """
         preds = forward_out['preds']
-        labels = forward_out['labels']
-        loss = self._criterion(preds, labels)
+        targets = forward_out['targets']
+        error = (preds - targets) ** 2
+        if 'weighting' in forward_out:
+            error *= forward_out['weighting']
+        loss = error.mean()
         stats = OrderedDict(
-            ModelLoss=loss.item(),
+            Loss=loss.item(),
+            Value=targets.detach().cpu().mean().item(),
         )
-        stats['Loss'] = loss.item()
-        return loss, stats
+        return {'Model': loss}, stats
+
+    def soft_update(
+            self,
+            other_net,
+            soft_tau: float = 5e-3,
+    ) -> None:
+        net_params = other_net._net.named_parameters()
+        target_params = self._net.named_parameters()
+        target_dict_params = dict(target_params)
+        for name1, param1 in net_params:
+            if name1 in target_dict_params:
+                target_dict_params[name1].data.copy_(soft_tau * param1.data
+                        + (1 - soft_tau) * target_dict_params[name1].data)
+        self._net.load_state_dict(target_dict_params)

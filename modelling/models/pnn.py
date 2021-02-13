@@ -118,7 +118,7 @@ class PNN(BaseModel):
             stats['BoundLoss'] = bound_loss.item()
             loss += bound_loss
         stats['Loss'] = loss.item()
-        return loss, stats
+        return {'Model': loss}, stats
 
     def get_mean_logvar(
             self,

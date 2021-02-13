@@ -12,6 +12,7 @@ from torch import nn
 
 torch_device = 'cpu'
 
+
 def set_cuda_device(device: str) -> None:
     """Set the cuda device to use. If blank string, use CPU."""
     global torch_device
@@ -20,9 +21,11 @@ def set_cuda_device(device: str) -> None:
     else:
         torch_device = 'cuda:' + device
 
+
 def torch_to(torch_obj: Any) -> Any:
     """Put the torch object onto a device."""
     return torch_obj.float().to(torch_device)
+
 
 def create_simple_net(
         in_dim: int,
@@ -38,14 +41,37 @@ def create_simple_net(
         layers.append(nn.Linear(layer_sizes[lidx], layer_sizes[lidx + 1]))
     return nn.Sequential(*layers)
 
+
 def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
     """Do the reparameterization trick."""
     std = torch.exp(0.5 * logvar)
     eps = torch.randn_like(std)
-    return eps * std + mu
+    return torch_to(eps * std + mu)
+
+
+def unroll(env, policy, max_ep_len=float('inf')):
+    t = 0
+    done = False
+    s = env.reset()
+    ret = 0
+    while not done and t < max_ep_len:
+        with torch.no_grad():
+            a = policy.get_action(torch.Tensor(s),
+                                  deterministic=True).cpu().numpy()
+        n, r, done, _ = env.step(a)
+        tup = (s, a, r, n, done)
+        ret += r
+        s = n
+    return ret
+
 
 def swish(x):
     return x * torch.sigmoid(x)
+
+
+def arctanh(x):
+    return 0.5 * (torch.log(1 + x) - torch.log(1 - x))
+
 
 class Standardizer(nn.Module):
 
