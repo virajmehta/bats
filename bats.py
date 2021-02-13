@@ -6,7 +6,8 @@ import pickle
 from subprocess import Popen
 from tqdm import trange, tqdm
 from modelling.dynamics_construction import train_ensemble
-from modelling.policy_construction import train_policy, load_policy
+from modelling.policy_construction import load_policy, behavior_clone
+from modelling.utils.graph_util import make_boltzmann_policy_dataset
 from sklearn.neighbors import radius_neighbors_graph
 from ipdb import set_trace as db  # NOQA
 # torch.multiprocessing.set_sharing_strategy('file_system')
@@ -45,6 +46,9 @@ class BATSTrainer:
         self.bc_params['save_dir'] = str(output_dir)
         self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
+        self.bc_parans['od_wait'] = kwargs.get('bc_od_wait', 10)
+        self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
+        self.temperature = kwargs.get('temperature', 1)
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
         # could do it this way or with knn, this is simpler to implement for now
@@ -356,22 +360,22 @@ class BATSTrainer:
 
     def train_bc(self):
         print("cloning a policy")
-        actions = []
-        bad_indices = []
-        for v in self.G.iter_vertices():
-            best_neighbor = self.G.vp.best_neighbor[v]
-            if best_neighbor == -1:
-                # there were no outgoing edges found from this vertex
-                bad_indices.append(v)
-                continue
-            e = self.G.edge(v, best_neighbor)
-            action = np.array(self.G.ep.action[e])
-            actions.append(action)
-        actions = np.stack(actions)
-        obs = np.delete(self.unique_obs, bad_indices, axis=0)
-        dataset = {'observations': obs,
-                   'actions': actions}
-        self.policy = train_policy(dataset, **self.bc_params)
+        start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+        data, val_data = make_boltzmann_policy_dataset(
+                graph=self.G,
+                n_collects=2 * self.G.num_vertices(),  # not sure what this should be
+                temperature=self.temperature,
+                max_ep_len=self.env._max_episode_steps,
+                n_val_collects=0.25 * self.G.num_vertices(),
+                val_start_prop=0.1,
+                silent=True,
+                starts=start_states)
+        self.policy = behavior_clone(dataset=data,
+                                     val_dataset=val_data,
+                                     env=self.env,
+                                     max_ep_len=self.env._max_episode_steps,
+                                     save_dir=self.output_dir,
+                                     **self.bc_params)
 
     def evaluate(self):
         # we have util.rollout ready for this purpose
