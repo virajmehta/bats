@@ -10,7 +10,7 @@ from copy import deepcopy
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('name', help="The name of the experiment and output directory.")
-    parser.add_argument('--env_name', default="halfcheetah-medium-v1", help="The name of the environment (will be checked at runtime for correctness).")  # NOQA
+    parser.add_argument('--env', dest='env_name', default="halfcheetah-medium-v1", help="The name of the environment (will be checked at runtime for correctness).")  # NOQA
     parser.add_argument('--gamma', type=float, default=0.99, help="Discount factor")
     parser.add_argument('-ow', dest='overwrite', action='store_true')
     parser.add_argument('-notqdm', dest="tqdm", action="store_false")
