@@ -27,7 +27,8 @@ def make_best_action_dataset(graph):
     for v in graph.iter_vertices():
         data['observations'].append(graph.vp.obs[v])
         data['actions'].append(graph.ep.action[
-            graph.edge(v, graph.vp.best_child[v])])
+            # graph.edge(v, graph.vp.best_child[v])])
+            graph.edge(v, graph.vp.best_neighbor[v])])
     data = {k: np.array(v) for k, v in data.items()}
     for k, v in data.items():
         if len(v.shape) == 1:
@@ -99,9 +100,11 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         while not done and t < max_ep_len:
             if temperature > 0:
                 childs = graph.get_out_neighbors(currv,
-                        vprops=[graph.vp.value, graph.vp.terminal])
+                        vprops=[graph.vp.value])
+                        # vprops=[graph.vp.value, graph.vp.terminal])
                 edges = graph.get_out_edges(currv, eprops=[graph.ep.reward])
-                qs = edges[:, -1] + gamma * childs[:, 1] * (1 - childs[:, 2])
+                qs = edges[:, -1] + gamma * childs[:, 1]
+                # qs = edges[:, -1] + gamma * childs[:, 1] * (1 - childs[:, 2])
                 if normalize_qs:
                     minq, maxq = np.min(qs), np.max(qs)
                     if minq ==  maxq:
@@ -112,11 +115,13 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 probs /= np.sum(probs)
                 nxtv = np.random.choice(childs[:, 0], p=probs)
             else:
-                nxtv = graph.vp.best_child[currv]
+                nxtv = graph.vp.best_neighbor[currv]
+                # nxtv = graph.vp.best_child[currv]
             data['observations'].append(np.array(graph.vp.obs[currv]))
             data['actions'].append(
                     np.array(graph.ep.action[graph.edge(currv, nxtv)]))
-            done = graph.vp.terminal[nxtv]
+            # done = graph.vp.terminal[nxtv]
+            done = False
             currv = nxtv
             n_added += 1
             t += 1
