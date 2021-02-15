@@ -9,15 +9,17 @@ from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import load_policy, behavior_clone
 from modelling.utils.graph_util import make_boltzmann_policy_dataset
 from sklearn.neighbors import radius_neighbors_graph
+from examples.mazes.maze_util import get_starts_from_graph
 from ipdb import set_trace as db  # NOQA
 # torch.multiprocessing.set_sharing_strategy('file_system')
 # torch.multiprocessing.set_start_method('spawn')
 
 
 class BATSTrainer:
-    def __init__(self, dataset, env, output_dir, **kwargs):
+    def __init__(self, dataset, env, output_dir, env_name, **kwargs):
         self.dataset = dataset
         self.env = env
+        self.env_name = env_name
         self.obs_dim = self.env.observation_space.high.shape[0]
         self.action_dim = self.env.action_space.high.shape[0]
         self.output_dir = output_dir
@@ -46,7 +48,6 @@ class BATSTrainer:
         self.bc_params['save_dir'] = str(output_dir)
         self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
-        self.bc_parans['od_wait'] = kwargs.get('bc_od_wait', 10)
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
         self.temperature = kwargs.get('temperature', 1)
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
@@ -360,18 +361,20 @@ class BATSTrainer:
 
     def train_bc(self):
         print("cloning a policy")
-        start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+        if 'maze' in self.env_name:
+            start_states = get_starts_from_graph(self.G, self.env)
+        else:
+            start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
         data, val_data = make_boltzmann_policy_dataset(
                 graph=self.G,
                 n_collects=2 * self.G.num_vertices(),  # not sure what this should be
                 temperature=self.temperature,
                 max_ep_len=self.env._max_episode_steps,
-                n_val_collects=0.25 * self.G.num_vertices(),
-                val_start_prop=0.1,
+                n_val_collects=0,
+                val_start_prop=0,
                 silent=True,
                 starts=start_states)
         self.policy = behavior_clone(dataset=data,
-                                     val_dataset=val_data,
                                      env=self.env,
                                      max_ep_len=self.env._max_episode_steps,
                                      save_dir=self.output_dir,
