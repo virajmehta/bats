@@ -26,7 +26,7 @@ class BATSTrainer:
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
         self.n_val_iterations = kwargs.get('n_val_iterations', 10)
-        self.n_val_iterations_end = kwargs.get('n_val_iterations', 50)
+        self.n_val_iterations_end = kwargs.get('n_val_iterations_end', 50)
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
@@ -146,10 +146,12 @@ class BATSTrainer:
                 self.block_add_edges(processes)
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
+            if stitches_to_try.shape[0] == 0:
+                # need to make the processes list empty so no more are added
+                processes = []
+                break
             processes = self.test_neighbor_edges(stitches_to_try)
             self.G.save(str(self.output_dir / 'mdp.gt'))
-            if stitches_to_try.shape[0] == 0:
-                break
         self.block_add_edges(processes)
         self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration(self.n_val_iterations_end)
@@ -202,7 +204,6 @@ class BATSTrainer:
             output_file = output_path / f"{i}.npy"
             edges_to_add = np.load(output_file)
             edges_added += self.add_edges(edges_to_add)
-        processes = None
 
     def add_edges(self, edges_to_add):
         starts = edges_to_add[:, 0].astype(int)
@@ -377,7 +378,6 @@ class BATSTrainer:
         self.policy = behavior_clone(dataset=data,
                                      env=self.env,
                                      max_ep_len=self.env._max_episode_steps,
-                                     save_dir=self.output_dir,
                                      **self.bc_params)
 
     def evaluate(self):

@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from modelling.models import ModelTrainer, PNN, RegressionNN
+from modelling.models import ModelTrainer, PNN  # , RegressionNN
 from modelling.utils.torch_utils import swish
 from util import s2i
 
@@ -104,10 +104,11 @@ def get_model(obs_dim, act_dim, model_type,
         model = get_pnn(obs_dim, act_dim, **model_params)
         optimizer = get_pnn_optimizer(model, learning_rate=learning_rate)
     elif model_type == 'NN':
-        model = get_nn(obs_dim, act_dim, **model_params)
-        optimizer = torch.optim.Adam(model.parameters(),
-                                     lr=learning_rate,
-                                     weight_decay=weight_decay)
+        raise NotImplementedError('we deprecated deterministic dynamics modelling')
+        # model = get_nn(obs_dim, act_dim, **model_params)
+        # optimizer = torch.optim.Adam(model.parameters(),
+                                     # lr=learning_rate,
+                                     # weight_decay=weight_decay)
     else:
         raise ValueError('Unknown model type: %s' % model_type)
     return model, optimizer
@@ -170,13 +171,14 @@ def get_nn(
         hidden_sizes='200,200,200,200',
         activation=swish,
 ):
-    return RegressionNN(
-        input_dim=obs_dim + act_dim,
-        output_dim=obs_dim + 1,
-        hidden_sizes=s2i(hidden_sizes),
-        hidden_activation=activation,
-        standardize_targets=False,
-    )
+    pass
+    # return RegressionNN(
+        # input_dim=obs_dim + act_dim,
+        # output_dim=obs_dim + 1,
+        # hidden_sizes=s2i(hidden_sizes),
+        # hidden_activation=activation,
+        # standardize_targets=False,
+    # )
 
 
 def prepare_data_for_dyn_training(dataset):

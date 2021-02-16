@@ -102,6 +102,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 childs = graph.get_out_neighbors(currv,
                         vprops=[graph.vp.value])
                         # vprops=[graph.vp.value, graph.vp.terminal])
+                if len(childs) == 0:
+                    break
                 edges = graph.get_out_edges(currv, eprops=[graph.ep.reward])
                 qs = edges[:, -1] + gamma * childs[:, 1]
                 # qs = edges[:, -1] + gamma * childs[:, 1] * (1 - childs[:, 2])
