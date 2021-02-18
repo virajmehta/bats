@@ -125,7 +125,7 @@ class StochasticPolicy(Policy):
         add_entropy_bonus: bool = False,
         train_alpha_entropy: bool = True,
         log_alpha_entropy: float = 0,
-        target_entropy: Optional[float] = -3,
+        target_entropy: Optional[float] = None,
         hidden_activation=torch.nn.functional.relu,
         standardize_targets: bool = False,
     ):

@@ -33,11 +33,13 @@ def learn_awac_policy(
     max_ep_len: int = 1000,
     num_eval_eps: int = 10,
     train_loops_per_epoch: int = 1,
+    target_entropy=None,
 ):
     obs_dim = dataset['observations'].shape[1]
     act_dim = dataset['actions'].shape[1]
     # Initialize networks and make trainer.
-    policy = get_policy(obs_dim, act_dim, policy_hidden_sizes, False)
+    policy = get_policy(obs_dim, act_dim, policy_hidden_sizes, False,
+                        target_entropy=target_entropy)
     if qnets is None:
         qnets, qtargets = [[get_critic(obs_dim, act_dim, qnet_hidden_sizes)
                             for _ in range(n_qnets)] for _ in range(2)]
@@ -147,6 +149,7 @@ def behavior_clone(
     max_ep_len: int = 1000,
     num_eval_eps: int = 10,
     train_loops_per_epoch: int = 1,
+    target_entropy=None,
 ):
     use_gpu = cuda_device != ''
     # Get data into trainable form.
@@ -180,7 +183,8 @@ def behavior_clone(
     # Initialize model.
     tr_x, tr_y = tensor_data[:2]
     policy = get_policy(tr_x.shape[1], tr_y.shape[1],
-                        hidden_sizes, standardize_targets)
+                        hidden_sizes, standardize_targets,
+                        target_entropy=target_entropy)
     standardizers = [(torch.mean(tr_x, dim=0), torch.std(tr_x, dim=0)),
                      (torch.mean(tr_y, dim=0), torch.std(tr_y, dim=0))]
     policy.set_standardization(standardizers)
@@ -289,6 +293,7 @@ def get_policy(
         hidden_sizes='256,256',
         deterministic=False,
         standardize_targets=False,
+        target_entropy=None,
 ):
     if deterministic:
         return DeterministicPolicy(
@@ -310,6 +315,7 @@ def get_policy(
             tanh_transform=True,
             train_alpha_entropy=True,
             add_entropy_bonus=True,
+            target_entropy=target_entropy,
             standardize_targets=standardize_targets,
         )
 

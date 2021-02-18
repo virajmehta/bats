@@ -47,6 +47,7 @@ def run(args):
         env=env,
         max_ep_len=env._max_episode_steps,
         train_loops_per_epoch=1,
+        target_entropy=args.target_entropy,
     )
 
 
@@ -62,6 +63,7 @@ def parse_args():
     parser.add_argument('--n_val_collects', type=int, default=0)
     parser.add_argument('--val_start_prop', type=float, default=0)
     parser.add_argument('--temperature', type=float, default=0)
+    parser.add_argument('--target_entropy', type=float, default=None)
     parser.add_argument('--use_any_start', action='store_true')
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--pudb', action='store_true')
