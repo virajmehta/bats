@@ -270,40 +270,6 @@ class BATSTrainer:
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
         save_npz(self.output_dir / self.neighbor_name, self.neighbors)
-        '''
-        possible_neighbors = np.column_stack(neighbors.nonzero())
-        print(f"found {possible_neighbors.shape[0] // 2} possible neighbors")
-        print(f"converting to edges")
-        possible_stitches = []
-        action_props = ungroup_vector_property(self.G.ep.action, range(self.action_dim))
-        state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
-        for row in tqdm(possible_neighbors):
-            # get all the possible neighbors of the row donating from v0 to v1
-            # since each pair should show up in both orders in the list, all pairs will get donations
-            # both ways
-            v0 = row[0]
-            v1 = row[1]
-            v1_obs = self.unique_obs[v1, :]
-            v0_in_neighbors = self.G.get_in_neighbors(v0, vprops=state_props)
-            v0_in_edges = self.G.get_in_edges(v0, eprops=action_props)
-            v0_in_targets = np.ones_like(v0_in_neighbors[:, :1]) * v1
-            possible_stitches.append(np.concatenate((v0_in_neighbors[:, :1],
-                                                     v0_in_targets,
-                                                     v0_in_neighbors[:, 1:],
-                                                     np.tile(v1_obs, (v0_in_neighbors.shape[0], 1)),
-                                                     v0_in_edges[:, 2:]), axis=-1))
-            v0_out_neighbors = self.G.get_out_neighbors(v0, vprops=state_props)
-            v0_out_edges = self.G.get_out_edges(v0, eprops=action_props)
-            v0_out_start = np.ones_like(v0_out_neighbors[:, :1]) * v1
-            possible_stitches.append(np.concatenate((v0_out_start,
-                                                     v0_out_neighbors[:, :1],
-                                                     np.tile(v1_obs, (v0_out_neighbors.shape[0], 1)),
-                                                     v0_out_neighbors[:, 1:],
-                                                     v0_out_edges[:, 2:]), axis=-1))
-
-        self.possible_stitches = np.concatenate(possible_stitches, axis=0)
-        print(f"found {self.possible_stitches.shape[0]} possible stitches")
-        '''
 
     def compute_stitch_priorities(self):
         print(f"Computing updated priorities for stitches")
@@ -386,8 +352,6 @@ class BATSTrainer:
                                      max_ep_len=self.env._max_episode_steps,
                                      **self.bc_params)
 
-
-
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
         pbar = tqdm(total=self.rollout_chunk_size)
@@ -408,7 +372,7 @@ class BATSTrainer:
                     childs = self.G.get_out_neighbors(currv, vprops=[self.G.vp.value])
                     edges = self.G.get_out_edges(currv, eprops=[self.G.ep.reward, *self.action_props])
                     if len(childs) == 0:
-                        new_stitches, new_advantages, n_stitches = self.get_possible_stitches(currv, childs[:, 0], edges[:, -self.action_dim:], 0)
+                        new_stitches, new_advantages, n_stitches = self.get_possible_stitches(currv, childs[:, 0], edges[:, -self.action_dim:], 0)  # NOQA
                         stitches += new_stitches
                         advantages += new_advantages
                         total_stitches += n_stitches
@@ -416,7 +380,7 @@ class BATSTrainer:
                         break
                     qs = edges[:, -1] + self.gamma * childs[:, 1]
                     minq, maxq = np.min(qs), np.max(qs)
-                    if minq ==  maxq:
+                    if minq == maxq:
                         norm_qs = np.ones(qs.shape)
                     else:
                         norm_qs = (qs - minq) / (maxq - minq)
@@ -431,7 +395,7 @@ class BATSTrainer:
                     reward = self.G.ep.reward[edge]
                     value = self.G.vp.value[nxtv]
                     Q = reward + self.gamma * value
-                new_stitches, new_advantages, n_stitches = self.get_possible_stitches(currv, childs[:, 0], edges[:, -self.action_dim:], Q)
+                new_stitches, new_advantages, n_stitches = self.get_possible_stitches(currv, childs[:, 0], edges[:, -self.action_dim:], Q)  # NOQA
                 stitches += new_stitches
                 advantages += new_advantages
                 total_stitches += n_stitches
@@ -500,4 +464,3 @@ class BATSTrainer:
             advantages.append(values - Q)
             n_stitches += values.shape[0]
         return possible_stitches, advantages, n_stitches
-
