@@ -10,7 +10,7 @@ from copy import deepcopy
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('name', help="The name of the experiment and output directory.")
-    parser.add_argument('--env_name', default="halfcheetah-medium-v1", help="The name of the environment (will be checked at runtime for correctness).")  # NOQA
+    parser.add_argument('--env', dest='env_name', default="halfcheetah-medium-v1", help="The name of the environment (will be checked at runtime for correctness).")  # NOQA
     parser.add_argument('--gamma', type=float, default=0.99, help="Discount factor")
     parser.add_argument('-ow', dest='overwrite', action='store_true')
     parser.add_argument('-notqdm', dest="tqdm", action="store_false")
@@ -28,6 +28,8 @@ def parse_arguments():
     parser.add_argument('-odp', '--offline_dataset_path', type=Path, default=None, help='Path for dataset, will use d4rl dataset if none is provided.')
     parser.add_argument('-scs', '--stitching_chunk_size', type=int, default=1000000, help='number of stitches to attempt in an iteration of stitching')
     parser.add_argument('-ni', '--num_stitching_iters', type=int, default=50, help='number of iterations of stitching to do')
+    parser.add_argument('-nvi', '--n_val_iterations', type=int, default=10, help='number of iterations of value iterations to do during each stitching iter')
+    parser.add_argument('-nvie', '--n_val_iterations_end', type=int, default=100, help='number of iterations of value iterations to do during each stitching iter')
 
     return parser.parse_args()
 

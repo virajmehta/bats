@@ -6,23 +6,27 @@ import pickle
 from subprocess import Popen
 from tqdm import trange, tqdm
 from modelling.dynamics_construction import train_ensemble
-from modelling.policy_construction import train_policy, load_policy
+from modelling.policy_construction import load_policy, behavior_clone
+from modelling.utils.graph_util import make_boltzmann_policy_dataset
 from sklearn.neighbors import radius_neighbors_graph
+from examples.mazes.maze_util import get_starts_from_graph
 from ipdb import set_trace as db  # NOQA
 # torch.multiprocessing.set_sharing_strategy('file_system')
 # torch.multiprocessing.set_start_method('spawn')
 
 
 class BATSTrainer:
-    def __init__(self, dataset, env, output_dir, **kwargs):
+    def __init__(self, dataset, env, output_dir, env_name, **kwargs):
         self.dataset = dataset
         self.env = env
+        self.env_name = env_name
         self.obs_dim = self.env.observation_space.high.shape[0]
         self.action_dim = self.env.action_space.high.shape[0]
         self.output_dir = output_dir
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
-        self.n_val_iterations = kwargs.get('n_val_iterations', 20)
+        self.n_val_iterations = kwargs.get('n_val_iterations', 10)
+        self.n_val_iterations_end = kwargs.get('n_val_iterations_end', 50)
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
@@ -44,6 +48,8 @@ class BATSTrainer:
         self.bc_params['save_dir'] = str(output_dir)
         self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
+        self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
+        self.temperature = kwargs.get('temperature', 1)
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
         # could do it this way or with knn, this is simpler to implement for now
@@ -66,6 +72,7 @@ class BATSTrainer:
         self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
         self.G.vp.start_node = self.G.new_vertex_property('bool')
         self.G.vp.occupancy = self.G.new_vertex_property('float')
+        self.G.vp.terminal = self.G.new_vertex_property('bool')
 
         # the actions are gonna be associated with each edge
         self.G.ep.action = self.G.new_edge_property("vector<float>")
@@ -132,20 +139,22 @@ class BATSTrainer:
         self.G.save(str(self.output_dir / 'dataset.gt'))
         processes = None
         for _ in trange(self.num_stitching_iters):
-            self.value_iteration()
+            self.value_iteration(self.n_val_iterations)
             self.compute_stitch_priorities()
             stitches_to_try = self.get_prioritized_stitch_chunk()
             if processes is not None:
                 self.block_add_edges(processes)
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
+            if stitches_to_try.shape[0] == 0:
+                # need to make the processes list empty so no more are added
+                processes = []
+                break
             processes = self.test_neighbor_edges(stitches_to_try)
             self.G.save(str(self.output_dir / 'mdp.gt'))
-            if stitches_to_try.shape[0] == 0:
-                break
         self.block_add_edges(processes)
         self.G.save(str(self.output_dir / 'mdp.gt'))
-        self.value_iteration()
+        self.value_iteration(self.n_val_iterations_end)
         self.G.save(str(self.output_dir / 'vi.gt'))
         self.graph_stitching_done = True
         self.value_iteration_done = True
@@ -194,19 +203,23 @@ class BATSTrainer:
             process.wait()
             output_file = output_path / f"{i}.npy"
             edges_to_add = np.load(output_file)
-            self.add_edges(edges_to_add)
-            edges_added += edges_to_add.shape[0]
-        processes = None
+            edges_added += self.add_edges(edges_to_add)
 
     def add_edges(self, edges_to_add):
         starts = edges_to_add[:, 0].astype(int)
         ends = edges_to_add[:, 1].astype(int)
         actions = edges_to_add[:, 2:self.action_dim + 2]
         rewards = edges_to_add[:, -1]
+        added = 0
         for start, end, action, reward in zip(starts, ends, actions, rewards):
+            if self.G.vp.terminal[start]:
+                # we don't want to add edges originating from terminal states
+                continue
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
+            added += 1
+        return added
 
     def add_dataset_edges(self):
         if self.graph_stitching_done:
@@ -224,11 +237,13 @@ class BATSTrainer:
                 start_nodes[vnum] = 1
             action = self.dataset['actions'][i, :]
             reward = self.dataset['rewards'][i]
+            terminal = self.dataset['terminals'][i]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
+            self.G.vp.terminal[v_to] = terminal
             last_obs = next_obs
         self.G.vp.start_node.get_array()[:] = start_nodes
 
@@ -306,7 +321,7 @@ class BATSTrainer:
         self.possible_stitches = np.delete(self.possible_stitches, indices, axis=0)
         return stitch_chunk
 
-    def value_iteration(self):
+    def value_iteration(self, n_iters):
         '''
         This value iteration step actually computes two things:
         the value function and the occupancy distribution. Since the value function is pretty
@@ -319,7 +334,7 @@ class BATSTrainer:
         # first we initialize the occupancies with the first nodes as 1
         self.G.vp.occupancy.get_array()[:] = self.G.vp.start_node.get_array().astype(float)
 
-        iterator = self.get_iterator(self.n_val_iterations)
+        iterator = self.get_iterator(n_iters)
         for i in iterator:
             for v in self.G.iter_vertices():
                 # should be a (num_neighbors, 2) ndarray where the first col is indices and second is values
@@ -347,22 +362,23 @@ class BATSTrainer:
 
     def train_bc(self):
         print("cloning a policy")
-        actions = []
-        bad_indices = []
-        for v in self.G.iter_vertices():
-            best_neighbor = self.G.vp.best_neighbor[v]
-            if best_neighbor == -1:
-                # there were no outgoing edges found from this vertex
-                bad_indices.append(v)
-                continue
-            e = self.G.edge(v, best_neighbor)
-            action = np.array(self.G.ep.action[e])
-            actions.append(action)
-        actions = np.stack(actions)
-        obs = np.delete(self.unique_obs, bad_indices, axis=0)
-        dataset = {'observations': obs,
-                   'actions': actions}
-        self.policy = train_policy(dataset, **self.bc_params)
+        if 'maze' in self.env_name:
+            start_states = get_starts_from_graph(self.G, self.env)
+        else:
+            start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+        data, val_data = make_boltzmann_policy_dataset(
+                graph=self.G,
+                n_collects=2 * self.G.num_vertices(),  # not sure what this should be
+                temperature=self.temperature,
+                max_ep_len=self.env._max_episode_steps,
+                n_val_collects=0,
+                val_start_prop=0,
+                silent=True,
+                starts=start_states)
+        self.policy = behavior_clone(dataset=data,
+                                     env=self.env,
+                                     max_ep_len=self.env._max_episode_steps,
+                                     **self.bc_params)
 
     def evaluate(self):
         # we have util.rollout ready for this purpose
