@@ -210,6 +210,8 @@ class BATSTrainer:
             process.wait()
             output_file = output_path / f"{i}.npy"
             edges_to_add = np.load(output_file)
+            if len(edges_to_add) == 0:
+                continue
             edges_added += self.add_edges(edges_to_add)
 
     def add_edges(self, edges_to_add):
