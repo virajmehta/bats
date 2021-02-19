@@ -78,6 +78,20 @@ def arctanh(x):
     return 0.5 * (torch.log(1 + x) - torch.log(1 - x))
 
 
+class IteratedDataLoader(object):
+
+    def __init__(self, dataloader):
+        self._dataloader = dataloader
+        self._iterator = iter(dataloader)
+
+    def next(self):
+        try:
+            batch = next(self._iterator)
+        except StopIteration:
+            self._iterator = iter(self._dataloader)
+            batch = next(self._iterator)
+        return batch
+
 class Standardizer(nn.Module):
 
     def __init__(

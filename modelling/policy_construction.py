@@ -9,8 +9,8 @@ from torch.nn.functional import tanh
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 
-from modelling.models import ModelTrainer, DeterministicPolicy,\
-        StochasticPolicy, AWACTrainer, Critic
+from modelling.models import DeterministicPolicy, StochasticPolicy, Critic
+from modelling.trainers import AWACTrainer, ModelTrainer
 from util import s2i
 
 
@@ -78,16 +78,10 @@ def learn_awac_policy(
     if 'values' in dataset:
         tensor_data.append(torch.Tensor(dataset['values'][rand_idx]))
     use_gpu = cuda_device != ''
-    trainer.train(
-        dataset=DataLoader(
-            TensorDataset(*tensor_data),
-            batch_size=batch_size,
-            pin_memory=use_gpu,
-            shuffle=not use_gpu,
-        ),
-        epochs=epochs
-    )
+    dataloader = get_qlearning_dataloader(dataset, cuda_device)
+    trainer.train(dataset=dataloader, epochs=epochs)
     return policy, qnets
+
 
 def advantage_weighted_regression(
     dataset,  # Dataset is a dictionary with obs, acts, and optionally adv.
@@ -247,6 +241,105 @@ def supervise_critic(
     net.load_model(os.path.join(save_dir, 'model.pt'))
     return net
 
+
+def sarsa_learn_critic(
+    # A dictionary containing the qlearning standards.
+    dataset,
+    policy,
+    save_dir,
+    epochs,
+    num_qs=1,
+    hidden_sizes='256,256',
+    gamma=0.99,
+    batch_size=256,
+    learning_rate=1e-3,
+    weight_decay=0,
+    cuda_device='',
+    save_freq=-1,
+    silent=False,
+):
+    use_gpu = cuda_device != ''
+    obs_dim = dataset['observations'].shape[1]
+    act_dim = dataset['actions'].shape[1]
+    dataloader = get_qlearning_dataloader(dataset, cuda_device, shuffle=True)
+    qnets = [get_critic(obs_dim, act_dim, hidden_sizes) for _ in range(num_qs)]
+    qts = [get_critic(obs_dim, act_dim, hidden_sizes) for _ in range(num_qs)]
+    trainer = ActorCriticTrainer(
+        policy=policy,
+        qnets=qnets,
+        qtargets=qts,
+        gamma=gamma,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        cuda_device=cuda_device,
+        save_freq=save_freq,
+        save_path=save_dir,
+    )
+    trainer.train(dataloader, epochs, train_policy=False)
+    return qnets
+
+
+def train_policy_to_maximize_critic(
+    # A dictionary containing observations and actions.
+    dataset,
+    env,
+    qnets,
+    save_dir,
+    epochs,
+    policy=None,
+    num_qs=1,
+    hidden_sizes='256,256',
+    batch_size=256,
+    learning_rate=1e-3,
+    weight_decay=0,
+    cuda_device='',
+    save_freq=-1,
+    silent=False,
+):
+    use_gpu = cuda_device != ''
+    obs_dim = dataset['observations'].shape[1]
+    act_dim = dataset['actions'].shape[1]
+    dataloader = DataLoader
+        TensorDataset(torch.Tensor(dataset['observations'])),
+        batch_size=batch_size,
+        shuffle=True,
+    )
+    if policy is None:
+        get_policy(obs_dim, act_dim, hidden_sizes)
+    trainer = ActorCriticTrainer(
+        policy=policy,
+        qnets=qnets,
+        qtargets=qnets,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        cuda_device=cuda_device,
+        save_freq=save_freq,
+        save_path=save_dir,
+        env=env,
+    )
+    trainer.train(dataloader, epochs, train_critic=False)
+    return policy
+
+
+def get_qlearning_dataloader(dataset, cuda_device, shuffle=False):
+    rand_idx = np.arange(dataset['observations'].shape[0])
+    np.random.shuffle(rand_idx)
+    tensor_data = [
+        torch.Tensor(dataset['observations'][rand_idx]),
+        torch.Tensor(dataset['actions'][rand_idx]),
+        torch.Tensor(dataset['rewards'][rand_idx]),
+        torch.Tensor(dataset['next_observations'][rand_idx]),
+        torch.Tensor(dataset['terminals'][rand_idx]),
+    ]
+    if 'values' in dataset:
+        tensor_data.append(torch.Tensor(dataset['values'][rand_idx]))
+    use_gpu = cuda_device != ''
+    return DataLoader(
+        TensorDataset(*tensor_data),
+        batch_size=batch_size,
+        pin_memory=use_gpu and not shuffle,
+        shuffle=shuffle or not use_gpu,
+    )
 
 def split_supervised_data(tensor_data, val_size, batch_size, use_gpu):
     td_size = len(tensor_data)
