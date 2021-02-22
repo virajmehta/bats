@@ -30,7 +30,8 @@ def get_possible_stitches(
         currv,
         children,
         child_actions,
-        Q):
+        Q,
+        max_stitches):
     neighbors = np.nonzero(all_neighbors[currv, :])[1]
     possible_stitches = []
     advantages = []
@@ -53,6 +54,8 @@ def get_possible_stitches(
                                                  out_edges[:, 2:]), axis=-1))
         advantages.append(out_neighbors[:, -1] - Q)
         n_stitches += out_start.shape[0]
+        if n_stitches >= max_stitches:
+            return possible_stitches, advantages, n_stitches
     # take all nearest neighbors to each child vertex and add them as edges to plan toward
     for i, child in enumerate(children):
         child_neighbors = np.nonzero(all_neighbors[child, :])[1]
@@ -73,6 +76,8 @@ def get_possible_stitches(
                                                  actions), axis=-1))
         advantages.append(values - Q)
         n_stitches += values.shape[0]
+        if n_stitches >= max_stitches:
+            return possible_stitches, advantages, n_stitches
     return possible_stitches, advantages, n_stitches
 
 
@@ -111,7 +116,8 @@ def main(args):
                                                                                      currv,
                                                                                      childs[:, 0].astype(int),
                                                                                      edges[:, -args.action_dim:],
-                                                                                     0)
+                                                                                     0,
+                                                                                     args.rollout_chunk_size - total_stitches)
                     stitches += new_stitches
                     advantages += new_advantages
                     total_stitches += n_stitches
@@ -142,7 +148,8 @@ def main(args):
                                                                              currv,
                                                                              childs[:, 0].astype(int),
                                                                              edges[:, -args.action_dim:],
-                                                                             Q)  # NOQA
+                                                                             Q,
+                                                                             args.rollout_chunk_size - total_stitches)  # NOQA
             stitches += new_stitches
             advantages += new_advantages
             total_stitches += n_stitches
