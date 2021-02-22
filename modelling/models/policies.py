@@ -259,8 +259,7 @@ class StochasticPolicy(Policy):
         loss_dict = {'Model': loss}
         # Get alpha loss if training alpha.
         if self._train_alpha_entropy:
-            alpha_loss = -(self.log_alpha.exp()
-                           * (log_pi + self._target_entropy).detach()).mean()
+            alpha_loss = self.get_alpha_loss(log_pi)
             stats['AlphaLoss'] = alpha_loss.item()
             loss_dict['Alpha'] = alpha_loss
         # Compute the MSE for statistics.
@@ -271,6 +270,15 @@ class StochasticPolicy(Policy):
         if 'weighting' in forward_out:
             stats['Weighting'] = forward_out['weighting'].cpu().mean().item()
         return loss_dict, stats
+
+
+    def get_alpha_loss(
+            self,
+            log_pi: torch.Tensor,
+    ):
+        return -(self.log_alpha.exp()
+                 * (log_pi + self._target_entropy).detach()).mean()
+
 
     def get_parameter_sets(self) -> Dict[str, torch.Tensor]:
         """Get mapping from string description of parameters to parameters."""

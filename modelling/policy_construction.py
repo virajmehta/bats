@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 
 from modelling.models import DeterministicPolicy, StochasticPolicy, Critic
-from modelling.trainers import AWACTrainer, ModelTrainer
+from modelling.trainers import ActorCriticTrainer, AWACTrainer, ModelTrainer
 from util import s2i
 
 
@@ -63,7 +63,6 @@ def learn_awac_policy(
         env=env,
         max_ep_len=max_ep_len,
         num_eval_eps=num_eval_eps,
-        train_loops_per_epoch=train_loops_per_epoch,
     )
     # Organize data and train.
     rand_idx = np.arange(dataset['observations'].shape[0])
@@ -78,8 +77,10 @@ def learn_awac_policy(
     if 'values' in dataset:
         tensor_data.append(torch.Tensor(dataset['values'][rand_idx]))
     use_gpu = cuda_device != ''
-    dataloader = get_qlearning_dataloader(dataset, cuda_device)
-    trainer.train(dataset=dataloader, epochs=epochs)
+    dataloader = get_qlearning_dataloader(dataset, cuda_device, batch_size,
+                                          shuffle=True)
+    trainer.train(dataset=dataloader, epochs=epochs,
+                  train_loops_per_epoch=train_loops_per_epoch)
     return policy, qnets
 
 
@@ -261,7 +262,8 @@ def sarsa_learn_critic(
     use_gpu = cuda_device != ''
     obs_dim = dataset['observations'].shape[1]
     act_dim = dataset['actions'].shape[1]
-    dataloader = get_qlearning_dataloader(dataset, cuda_device, shuffle=True)
+    dataloader = get_qlearning_dataloader(dataset, cuda_device, batch_size,
+                                          shuffle=True)
     qnets = [get_critic(obs_dim, act_dim, hidden_sizes) for _ in range(num_qs)]
     qts = [get_critic(obs_dim, act_dim, hidden_sizes) for _ in range(num_qs)]
     trainer = ActorCriticTrainer(
@@ -299,7 +301,7 @@ def train_policy_to_maximize_critic(
     use_gpu = cuda_device != ''
     obs_dim = dataset['observations'].shape[1]
     act_dim = dataset['actions'].shape[1]
-    dataloader = DataLoader
+    dataloader = DataLoader(
         TensorDataset(torch.Tensor(dataset['observations'])),
         batch_size=batch_size,
         shuffle=True,
@@ -321,7 +323,7 @@ def train_policy_to_maximize_critic(
     return policy
 
 
-def get_qlearning_dataloader(dataset, cuda_device, shuffle=False):
+def get_qlearning_dataloader(dataset, cuda_device, batch_size, shuffle=False):
     rand_idx = np.arange(dataset['observations'].shape[0])
     np.random.shuffle(rand_idx)
     tensor_data = [
