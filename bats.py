@@ -87,13 +87,15 @@ class BATSTrainer:
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
-        self.plan_cpu_frac = kwargs.get('plan_cpu_frac', 0.8)
+        self.plan_cpu_frac = kwargs.get('plan_cpu_frac', 0.5)
 
         self.plan_num_cpus = int(self.num_cpus * self.plan_cpu_frac)
         self.rollout_num_cpus = self.num_cpus - self.plan_num_cpus
         self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 2000000)
         self.rollout_chunk_size = kwargs.get('rollout_chunk_size', 10000000)
         self.stitches_tried = set()
+        # this saves an empty file so the child processes can see it
+        self.remove_neighbors([])
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
@@ -147,9 +149,11 @@ class BATSTrainer:
             self.start_states = get_starts_from_graph(self.G, self.env)
         else:
             self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+        np.save(self.start_state_path, self.start_states)
         self.find_possible_stitches()
         self.train_dynamics()
         self.G.save(str(self.output_dir / 'dataset.gt'))
+        self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
         for i in trange(self.num_stitching_iters):
             self.value_iteration(self.n_val_iterations)
@@ -193,10 +197,10 @@ class BATSTrainer:
         if self.graph_stitching_done:
             print('skipping graph stitching')
             return
-        print('testing possible stitches')
+        print(f'testing {possible_stitches.shape[0]} possible stitches')
         chunksize = possible_stitches.shape[0] // self.plan_num_cpus
-        input_path = self.output_dir / 'planning_input'
-        output_path = self.output_dir / 'planning_output'
+        input_path = self.output_dir / 'input'
+        output_path = self.output_dir / 'output'
         processes = []
         for i in range(self.plan_num_cpus):
             cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize, :]
@@ -211,7 +215,7 @@ class BATSTrainer:
 
     def block_add_edges(self, processes):
         edges_added = 0
-        output_path = self.output_dir / 'planning_output'
+        output_path = self.output_dir / 'output'
         for i, process in enumerate(processes):
             process.wait()
             output_file = output_path / f"{i}.npy"
@@ -219,6 +223,7 @@ class BATSTrainer:
             if len(edges_to_add) == 0:
                 continue
             edges_added += self.add_edges(edges_to_add)
+        print(f"adding {edges_added} edges")
 
     def add_edges(self, edges_to_add):
         starts = edges_to_add[:, 0].astype(int)
@@ -365,40 +370,46 @@ class BATSTrainer:
 
         chunksize = self.rollout_chunk_size // num_cpus
         output_path = self.output_dir / 'rollout_output'
+        output_path.mkdir(exist_ok=True)
         processes = []
+        print("Getting possible stitches by rolling out best Boltzmann policy")
         for i in range(num_cpus):
             output_file = output_path / f"{i}.npy"
-            process = Popen(['python',
-                             'rollout_stitches.py',
-                             str(self.output_dir / 'mdp.gt'),
-                             str(self.output_dir / self.neighbor_name),
-                             str(self.output_dir / 'stitches_tried.pkl'),
-                             str(self.start_state_path),
-                             str(output_file),
-                             str(self.action_dim),
-                             str(self.obs_dim),
-                             str(chunksize),
-                             str(self.temperature),
-                             str(self.gamma)])
+            args = ['python',
+                    'rollout_stitches.py',
+                    str(self.output_dir / 'mdp.gt'),
+                    str(self.output_dir / self.neighbor_name),
+                    str(self.output_dir / 'stitches_tried.pkl'),
+                    str(self.start_state_path),
+                    str(output_file),
+                    str(self.action_dim),
+                    str(self.obs_dim),
+                    str(chunksize),
+                    str(self.temperature),
+                    str(self.gamma)]
+            process = Popen(args)
             processes.append(process)
         all_advantages = []
         all_stitches = []
-        for process in processes:
-            output_file = output_path / f"{i}.npy"
+        for i, process in enumerate(processes):
             process.wait()
+            output_file = output_path / f"{i}.npy"
             outputs = np.load(output_file)
             advantages = outputs[:, 0]
             stitches = outputs[:, 1:]
             all_advantages.append(advantages)
             all_stitches.append(stitches)
-        advantages = np.unique(np.concatenate(all_advantages, axis=0), axis=0)
-        stitches = np.unique(np.concatenate(all_stitches, axis=0), axis=0)
+        all_advantages = np.concatenate(all_advantages, axis=0)
+        all_stitches = np.concatenate(all_stitches, axis=0)
+        stitches, unique_indices = np.unique(all_stitches, axis=0, return_index=True)
+        advantages = all_advantages[unique_indices]
         if self.stitching_chunk_size >= len(advantages):
             indices = np.arange(len(advantages)).astype(int)
         else:
             indices = np.argpartition(advantages, self.stitching_chunk_size)[:self.stitching_chunk_size]
         stitches_to_try = stitches[indices]
         self.remove_neighbors(stitches_to_try)
+        print(f'Choosing {len(indices)} edges out of {len(advantages)} from Boltzmann rollouts')
         return stitches_to_try
 
     def remove_neighbors(self, stitches_to_try):

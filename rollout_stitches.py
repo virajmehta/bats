@@ -8,16 +8,17 @@ import pickle
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('graph_path', type=Path)
+    parser.add_argument('graph_path', type=str)
     parser.add_argument('neighbors_path', type=Path)
     parser.add_argument('stitches_tried_path', type=Path)
-    parser.add_argument('start_state_path', type=Path)
+    parser.add_argument('start_states_path', type=Path)
     parser.add_argument('output_path', type=Path)
     parser.add_argument('action_dim', type=int)
     parser.add_argument('obs_dim', type=int)
     parser.add_argument('rollout_chunk_size', type=int)
     parser.add_argument('temperature', type=float)
     parser.add_argument('gamma', type=float)
+    return parser.parse_args()
 
 
 def get_possible_stitches(
@@ -54,7 +55,7 @@ def get_possible_stitches(
         n_stitches += out_start.shape[0]
     # take all nearest neighbors to each child vertex and add them as edges to plan toward
     for i, child in enumerate(children):
-        child_neighbors = np.nonzero(neighbors[child, :])[1]
+        child_neighbors = np.nonzero(all_neighbors[child, :])[1]
         deletes = []
         for j, child in enumerate(child_neighbors):
             if (currv, child) in stitches_tried:
@@ -84,9 +85,11 @@ def main(args):
     stitches = []
     advantages = []
     action_props = ungroup_vector_property(G.ep.action, range(args.action_dim))
-    state_props = ungroup_vector_property(G.ep.action, range(args.obs_dim))
+    state_props = ungroup_vector_property(G.vp.obs, range(args.obs_dim))
+    # max_ep_len = 1000
     max_ep_len = 1000
     max_eps = 2 * args.rollout_chunk_size / max_ep_len
+    # max_eps = 1000
     neps = 0
     total_stitches = 0
     while total_stitches < args.rollout_chunk_size and neps < max_eps:
@@ -106,7 +109,7 @@ def main(args):
                                                                                      state_props,
                                                                                      action_props,
                                                                                      currv,
-                                                                                     childs[:, 0],
+                                                                                     childs[:, 0].astype(int),
                                                                                      edges[:, -args.action_dim:],
                                                                                      0)
                     stitches += new_stitches
@@ -137,19 +140,24 @@ def main(args):
                                                                              state_props,
                                                                              action_props,
                                                                              currv,
-                                                                             childs[:, 0],
+                                                                             childs[:, 0].astype(int),
                                                                              edges[:, -args.action_dim:],
                                                                              Q)  # NOQA
             stitches += new_stitches
             advantages += new_advantages
             total_stitches += n_stitches
+            if total_stitches >= args.rollout_chunk_size:
+                break
             t += 1
             currv = nxtv
         neps += 1
     stitches = np.concatenate(stitches, axis=0)
-    advantages = np.concatenate(advantages, axis=0)
+    advantages = np.concatenate(advantages, axis=0)[:, np.newaxis]
     data = np.concatenate([advantages, stitches], axis=1)
-    np.save(data, args.output_path)
+    if advantages.shape[0] > args.rollout_chunk_size:
+        indices = np.argpartition(advantages[:, 0], args.rollout_chunk_size)[:args.rollout_chunk_size]
+        data = data[indices, :]
+    np.save(args.output_path, data)
 
 
 if __name__ == '__main__':
