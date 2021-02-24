@@ -93,6 +93,7 @@ class BATSTrainer:
         self.rollout_num_cpus = self.num_cpus - self.plan_num_cpus
         self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 2000000)
         self.rollout_chunk_size = kwargs.get('rollout_chunk_size', 10000000)
+        self.max_stitches = kwargs['max_stitches']
         self.stitches_tried = set()
         # this saves an empty file so the child processes can see it
         self.remove_neighbors([])
@@ -386,7 +387,8 @@ class BATSTrainer:
                     str(self.obs_dim),
                     str(chunksize),
                     str(self.temperature),
-                    str(self.gamma)]
+                    str(self.gamma),
+                    str(self.max_stitches)]
             process = Popen(args)
             processes.append(process)
         all_advantages = []

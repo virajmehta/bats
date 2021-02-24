@@ -18,8 +18,20 @@ def parse_arguments():
     parser.add_argument('rollout_chunk_size', type=int)
     parser.add_argument('temperature', type=float)
     parser.add_argument('gamma', type=float)
+    parser.add_argument('max_stitches', type=int)
     return parser.parse_args()
 
+
+def clip_possible_stitches(max_stitches, *args):
+    possible_stitches, advantages, n_stitches = get_possible_stitches(*args)
+    if n_stitches < max_stitches:
+        return possible_stitches, advantages, n_stitches
+    possible_stitches = np.concatenate(possible_stitches, axis=0)
+    advantages = np.concatenate(advantages, axis=0)
+    indices = np.argpartition(advantages, n_stitches - max_stitches)[-max_stitches:]
+    possible_stitches = possible_stitches[indices, ...]
+    advantages = advantages[indices]
+    return [possible_stitches], [advantages], max_stitches
 
 def get_possible_stitches(
         G,
@@ -108,16 +120,17 @@ def main(args):
                 childs = G.get_out_neighbors(currv, vprops=[G.vp.value])
                 edges = G.get_out_edges(currv, eprops=[G.ep.reward, *action_props])
                 if len(childs) == 0:
-                    new_stitches, new_advantages, n_stitches = get_possible_stitches(G,
-                                                                                     neighbors,
-                                                                                     stitches_tried,
-                                                                                     state_props,
-                                                                                     action_props,
-                                                                                     currv,
-                                                                                     childs[:, 0].astype(int),
-                                                                                     edges[:, -args.action_dim:],
-                                                                                     0,
-                                                                                     args.rollout_chunk_size - total_stitches)
+                    new_stitches, new_advantages, n_stitches = clip_possible_stitches(args.max_stitches,
+                                                                                      G,
+                                                                                      neighbors,
+                                                                                      stitches_tried,
+                                                                                      state_props,
+                                                                                      action_props,
+                                                                                      currv,
+                                                                                      childs[:, 0].astype(int),
+                                                                                      edges[:, -args.action_dim:],
+                                                                                      0,
+                                                                                      args.rollout_chunk_size - total_stitches)
                     stitches += new_stitches
                     advantages += new_advantages
                     total_stitches += n_stitches
@@ -140,16 +153,17 @@ def main(args):
                 reward = G.ep.reward[edge]
                 value = G.vp.value[nxtv]
                 Q = reward + args.gamma * value
-            new_stitches, new_advantages, n_stitches = get_possible_stitches(G,
-                                                                             neighbors,
-                                                                             stitches_tried,
-                                                                             state_props,
-                                                                             action_props,
-                                                                             currv,
-                                                                             childs[:, 0].astype(int),
-                                                                             edges[:, -args.action_dim:],
-                                                                             Q,
-                                                                             args.rollout_chunk_size - total_stitches)  # NOQA
+            new_stitches, new_advantages, n_stitches = clip_possible_stitches(args.max_stitches,
+                                                                              G,
+                                                                              neighbors,
+                                                                              stitches_tried,
+                                                                              state_props,
+                                                                              action_props,
+                                                                              currv,
+                                                                              childs[:, 0].astype(int),
+                                                                              edges[:, -args.action_dim:],
+                                                                              Q,
+                                                                              args.rollout_chunk_size - total_stitches)  # NOQA
             stitches += new_stitches
             advantages += new_advantages
             total_stitches += n_stitches

@@ -31,6 +31,7 @@ def parse_arguments():
     parser.add_argument('-ni', '--num_stitching_iters', type=int, default=50, help='number of iterations of stitching to do')
     parser.add_argument('-nvi', '--n_val_iterations', type=int, default=10, help='number of iterations of value iterations to do during each stitching iter')
     parser.add_argument('-nvie', '--n_val_iterations_end', type=int, default=100, help='number of iterations of value iterations to do during each stitching iter')
+    parser.add_argument('-ms', '--max_stitches', type=int, default=20, help='max stitches for a single state as the boltzmann rollouts proceed')
 
     return parser.parse_args()
 
