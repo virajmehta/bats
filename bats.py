@@ -3,6 +3,7 @@ import time
 import numpy as np
 import pickle
 from subprocess import Popen
+from multiprocessing import cpu_count
 from tqdm import trange, tqdm
 from scipy.sparse import save_npz, load_npz
 from modelling.dynamics_construction import train_ensemble
@@ -155,11 +156,13 @@ class BATSTrainer:
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
+        self.value_iteration(self.n_val_iterations_end)
         for i in trange(self.num_stitching_iters):
             self.value_iteration(self.n_val_iterations)
             # self.compute_stitch_priorities()
             # stitches_to_try = self.get_prioritized_stitch_chunk()
-            stitches_to_try = self.get_rollout_stitch_chunk(self.num_cpus if i == 0 else self.rollout_num_cpus)
+            n_cpus = self.rollout_num_cpus if i > 0 else min(self.num_cpus, cpu_count())
+            stitches_to_try = self.get_rollout_stitch_chunk(n_cpus)
             if processes is not None:
                 self.block_add_edges(processes)
             # edges_to_add should be an asynchronous result object, we'll run value iteration and

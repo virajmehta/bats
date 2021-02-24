@@ -4,6 +4,7 @@ from scipy.sparse import load_npz
 from pathlib import Path
 import numpy as np
 import pickle
+from ipdb import set_trace as db
 
 
 def parse_arguments():
@@ -23,13 +24,14 @@ def parse_arguments():
 
 def get_possible_stitches(
         G,
+        gamma,
         all_neighbors,
         stitches_tried,
         state_props,
         action_props,
         currv,
-        children,
-        child_actions,
+        children_values,
+        child_action_rewards,
         Q,
         max_stitches):
     neighbors = np.nonzero(all_neighbors[currv, :])[1]
@@ -39,7 +41,7 @@ def get_possible_stitches(
     n_stitches = 0
     for neigh in neighbors:
         out_neighbors = G.get_out_neighbors(neigh, vprops=[*state_props, G.vp.value])
-        out_edges = G.get_out_edges(neigh, eprops=action_props)
+        out_edges = G.get_out_edges(neigh, eprops=[*action_props, G.ep.reward])
         deletes = []
         for i, out_neighbor in enumerate(out_neighbors[:, 0]):
             if (currv, out_neighbor) in stitches_tried:
@@ -47,17 +49,24 @@ def get_possible_stitches(
         out_neighbors = np.delete(out_neighbors, deletes, axis=0)
         out_edges = np.delete(out_edges, deletes, axis=0)
         out_start = np.ones_like(out_neighbors[:, :1]) * currv
-        possible_stitches.append(np.concatenate((out_start,
-                                                 out_neighbors[:, :1],
-                                                 np.tile(G.vp.obs[currv], (out_neighbors.shape[0], 1)),
-                                                 out_neighbors[:, 1:-1],
-                                                 out_edges[:, 2:]), axis=-1))
-        advantages.append(out_neighbors[:, -1] - Q)
-        n_stitches += out_start.shape[0]
+        new_stitches = np.concatenate((out_start,
+                                       out_neighbors[:, :1],
+                                       np.tile(G.vp.obs[currv], (out_neighbors.shape[0], 1)),
+                                       out_neighbors[:, 1:-1],
+                                       out_edges[:, 2:-1]), axis=-1)
+        new_advantages = out_edges[:, -1] + gamma * out_neighbors[:, -1] - Q
+        deletes = new_advantages <= 0
+        new_stitches = np.delete(new_stitches, deletes, axis=0)
+        new_advantages = np.delete(new_advantages, deletes, axis=0)
+        n_stitches += new_advantages.shape[0]
+        possible_stitches.append(new_stitches)
+        advantages.append(new_advantages)
         if n_stitches >= max_stitches:
             return possible_stitches, advantages, n_stitches
     # take all nearest neighbors to each child vertex and add them as edges to plan toward
-    for i, child in enumerate(children):
+    for i, child_value in enumerate(children_values):
+        child = int(child_value[0])
+        value = child_value[1]
         child_neighbors = np.nonzero(all_neighbors[child, :])[1]
         deletes = []
         for j, child in enumerate(child_neighbors):
@@ -66,16 +75,23 @@ def get_possible_stitches(
         child_neighbors = np.delete(child_neighbors, deletes, axis=0)
         child_neighbor_obs = G.get_vertices(state_props)[child_neighbors, 1:]
         values = G.vp.value.get_array()[child_neighbors]
-        action = child_actions[i, :]
-        actions = np.tile(action, (len(child_neighbors), 1))
+        action_reward = child_action_rewards[i, :]
+        action_rewards = np.tile(action_reward, (len(child_neighbors), 1))
+        actions = action_rewards[:, 1:]
+        rewards = action_rewards[:, 0]
         out_start = np.ones((len(child_neighbors), 1)) * currv
-        possible_stitches.append(np.concatenate((out_start,
-                                                 child_neighbors[:, np.newaxis],
-                                                 np.tile(G.vp.obs[currv], (len(child_neighbors), 1)),
-                                                 child_neighbor_obs,
-                                                 actions), axis=-1))
-        advantages.append(values - Q)
-        n_stitches += values.shape[0]
+        new_stitches = np.concatenate((out_start,
+                                       child_neighbors[:, np.newaxis],
+                                       np.tile(G.vp.obs[currv], (len(child_neighbors), 1)),
+                                       child_neighbor_obs,
+                                       actions), axis=-1)
+        new_advantages = rewards + gamma * values - Q
+        deletes = new_advantages <= 0
+        new_stitches = np.delete(new_stitches, deletes, axis=0)
+        new_advantages = np.delete(new_advantages, deletes, axis=0)
+        possible_stitches.append(new_stitches)
+        advantages.append(new_advantages)
+        n_stitches += new_advantages.shape[0]
         if n_stitches >= max_stitches:
             return possible_stitches, advantages, n_stitches
     return possible_stitches, advantages, n_stitches
@@ -109,20 +125,21 @@ def main(args):
                 edges = G.get_out_edges(currv, eprops=[G.ep.reward, *action_props])
                 if len(childs) == 0:
                     new_stitches, new_advantages, n_stitches = get_possible_stitches(G,
+                                                                                     args.gamma,
                                                                                      neighbors,
                                                                                      stitches_tried,
                                                                                      state_props,
                                                                                      action_props,
                                                                                      currv,
-                                                                                     childs[:, 0].astype(int),
-                                                                                     edges[:, -args.action_dim:],
+                                                                                     childs,
+                                                                                     edges[:, 2:],
                                                                                      0,
                                                                                      args.rollout_chunk_size - total_stitches)
                     stitches += new_stitches
                     advantages += new_advantages
                     total_stitches += n_stitches
                     break
-                qs = edges[:, -1] + args.gamma * childs[:, 1]
+                qs = edges[:, 2] + args.gamma * childs[:, 1]
                 minq, maxq = np.min(qs), np.max(qs)
                 if minq == maxq:
                     norm_qs = np.ones(qs.shape)
@@ -141,13 +158,14 @@ def main(args):
                 value = G.vp.value[nxtv]
                 Q = reward + args.gamma * value
             new_stitches, new_advantages, n_stitches = get_possible_stitches(G,
+                                                                             args.gamma,
                                                                              neighbors,
                                                                              stitches_tried,
                                                                              state_props,
                                                                              action_props,
                                                                              currv,
-                                                                             childs[:, 0].astype(int),
-                                                                             edges[:, -args.action_dim:],
+                                                                             childs,
+                                                                             edges[:, 2:],
                                                                              Q,
                                                                              args.rollout_chunk_size - total_stitches)  # NOQA
             stitches += new_stitches
