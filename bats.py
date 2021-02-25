@@ -82,6 +82,8 @@ class BATSTrainer:
         self.G.ep.action = self.G.new_edge_property("vector<float>")
         # we also associate the rewards with each edge
         self.G.ep.reward = self.G.new_edge_property("float")
+        # whether an edge is real or imagined
+        self.G.ep.imagined = self.G.new_edge_property('bool')
 
         self.action_props = ungroup_vector_property(self.G.ep.action, range(self.action_dim))
         self.state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
@@ -244,6 +246,7 @@ class BATSTrainer:
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
+            self.G.ep.imagined[e] = True
             added += 1
         return added
 
@@ -269,6 +272,7 @@ class BATSTrainer:
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
+            self.G.ep.imagined[e] = False
             self.G.vp.terminal[v_to] = terminal
             last_obs = next_obs
         self.G.vp.start_node.get_array()[:] = start_nodes
