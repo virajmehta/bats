@@ -4,7 +4,6 @@ from scipy.sparse import load_npz
 from pathlib import Path
 import numpy as np
 import pickle
-from ipdb import set_trace as db
 
 
 def parse_arguments():
@@ -23,16 +22,16 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def clip_possible_stitches(max_stitches, *args):
+def clip_possible_stitches(max_node_stitches, *args):
     possible_stitches, advantages, n_stitches = get_possible_stitches(*args)
-    if n_stitches < max_stitches:
+    if n_stitches < max_node_stitches:
         return possible_stitches, advantages, n_stitches
     possible_stitches = np.concatenate(possible_stitches, axis=0)
     advantages = np.concatenate(advantages, axis=0)
-    indices = np.argpartition(advantages, n_stitches - max_stitches)[-max_stitches:]
+    indices = np.argpartition(advantages, n_stitches - max_node_stitches)[-max_node_stitches:]
     possible_stitches = possible_stitches[indices, ...]
     advantages = advantages[indices]
-    return [possible_stitches], [advantages], max_stitches
+    return [possible_stitches], [advantages], max_node_stitches
 
 def get_possible_stitches(
         G,
@@ -138,13 +137,14 @@ def main(args):
                 if len(childs) == 0:
                     new_stitches, new_advantages, n_stitches = clip_possible_stitches(args.max_stitches,
                                                                                       G,
+                                                                                      args.gamma,
                                                                                       neighbors,
                                                                                       stitches_tried,
                                                                                       state_props,
                                                                                       action_props,
                                                                                       currv,
-                                                                                      childs[:, 2:],
-                                                                                      edges[:, -args.action_dim:],
+                                                                                      childs,
+                                                                                      edges[:, 2:],
                                                                                       0,
                                                                                       args.rollout_chunk_size - total_stitches)
                     stitches += new_stitches
@@ -171,13 +171,14 @@ def main(args):
                 Q = reward + args.gamma * value
             new_stitches, new_advantages, n_stitches = clip_possible_stitches(args.max_stitches,
                                                                               G,
+                                                                              args.gamma,
                                                                               neighbors,
                                                                               stitches_tried,
                                                                               state_props,
                                                                               action_props,
                                                                               currv,
-                                                                              childs[:, 2:],
-                                                                              edges[:, -args.action_dim:],
+                                                                              childs,
+                                                                              edges[:, 2:],
                                                                               Q,
                                                                               args.rollout_chunk_size - total_stitches)  # NOQA
             stitches += new_stitches
