@@ -1,7 +1,9 @@
 from graph_tool import Graph, load_graph, ungroup_vector_property
+from graph_tool.spectral import adjacency
 import util
 import time
 import numpy as np
+from scipy.sparse import diags
 import pickle
 from subprocess import Popen
 from tqdm import trange, tqdm
@@ -332,33 +334,29 @@ class BATSTrainer:
             return
         print("performing value iteration")
         # first we initialize the occupancies with the first nodes as 1
-        self.G.vp.occupancy.get_array()[:] = self.G.vp.start_node.get_array().astype(float)
-
-        iterator = self.get_iterator(n_iters)
-        for i in iterator:
-            for v in self.G.iter_vertices():
-                # should be a (num_neighbors, 2) ndarray where the first col is indices and second is values
-                neighbor_values = self.G.get_out_neighbors(v, vprops=[self.G.vp.value])
-                if len(neighbor_values) == 0:
-                    # the state has no actions in our graph
-                    self.G.vp.value[v] = 0
-                    self.G.vp.best_neighbor[v] = -1
-                    continue
-                values = neighbor_values[:, 1]
-                neighbors = neighbor_values[:, 0]
-                # should be a (num_neighbors, 3) ndarray where the first col is v second col is indices, third is reward
-                edges = self.G.get_out_edges(v, eprops=[self.G.ep.reward])
-                rewards = edges[:, 2]
-                backups = rewards + self.gamma * values
-                best_arm = np.argmax(backups)
-                value = backups[best_arm]
-                if self.use_occupancy:
-                    boltzmann_backups = np.exp(backups)
-                    boltzmann_backups /= boltzmann_backups.sum()
-                    occupancies = boltzmann_backups * self.G.vp.occupancy[v] * self.gamma
-                    self.G.vp.occupancies.get_array()[neighbors] += occupancies
-                self.G.vp.value[v] = value
-                self.G.vp.best_neighbor[v] = neighbors[best_arm]
+        if self.use_occupancy:
+            raise NotImplementedError('Deprecating for now, not sure if we '
+                                      'are still using or not.')
+        # Construct sparse adjacency, reward, sparse value matrices.
+        reward_mat = adjacency(self.G, weight=self.G.ep.reward)
+        target_val = diags(
+            (self.gamma * self.G.vp.value.get_array()
+                        * (1 - self.G.vp.terminal.get_array())),
+            format='csr',
+        )
+        # WARNING: graph-tool returns transpose of standard adjacency matrix
+        #          hence the line target_val * adjmat (instead of reverse).
+        adjmat = adjacency(self.G)
+        target_mat = target_val * adjmat
+        qs = reward_mat + target_mat
+        # HACKINESS ALERT: To ignore zero entries in mat, add large value to
+        #                  the non-zero entries.
+        bst_childs = np.asarray((qs + adjmat * 1e4).argmax(axis=0)).flatten()
+        values = np.asarray(
+                # TODO: I hate how I have to make arange here, how do I not?
+                qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
+        self.G.vp.best_neighbor.a = bst_childs
+        self.G.vp.value.a = values
 
     def train_bc(self):
         print("cloning a policy")

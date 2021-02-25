@@ -58,7 +58,7 @@ def train_ensemble(
                 cuda_device=cuda_device,
                 save_path=model_save,
                 silent=silent,
-                optimizer=optimizer,
+                optimizers={'Model': optimizer},
                 validation_tune_metric=tune_metric,
         )
         trainer.fit(tr_data, epochs, val_data, od_wait)

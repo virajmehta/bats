@@ -6,8 +6,12 @@ import os
 
 from graph_tool import load_graph
 from graph_tool.draw import graph_draw
+from graph_tool.spectral import adjacency
 import numpy as np
+from scipy.sparse import diags
 from tqdm import tqdm
+
+OFFSET = 10000
 
 
 def run(args):
@@ -23,8 +27,8 @@ def run(args):
         pbar.set_postfix_str('Average Change: %f' % changes[-1])
         pbar.update(1)
     graph_draw(graph, vertex_fill_color=graph.vp.value,
-               output=os.path.join(args.graph_dir, 'converged_graph.png'))
-    graph.save(os.path.join(args.graph_dir, 'converged_graph.gt'))
+               output=os.path.join(args.graph_dir, 'converged_graphv2.png'))
+    graph.save(os.path.join(args.graph_dir, 'converged_graphv2.gt'))
     np.save(os.path.join(args.graph_dir, 'value_itr_stats.npy'),
             np.array(changes))
 
@@ -46,21 +50,22 @@ def trim_loose_threads(graph):
 
 
 def value_iteration(graph, gamma=0.99):
-    total_change = 0
-    for v in graph.iter_vertices():
-        neighbors = graph.get_out_neighbors(v, vprops=[graph.vp.value])
-        vidxs = neighbors[:, 0]
-        values = neighbors[:, 1]
-        edges = graph.get_out_edges(v, eprops=[graph.ep.reward])
-        edges = edges[graph.get_out_degrees(edges[:, 1]) > 0]
-        rewards = edges[:, 2]
-        backups = rewards + gamma * values
-        best_arm = np.argmax(backups)
-        updated_value = backups[best_arm]
-        total_change += np.abs(graph.vp.value[v] - updated_value)
-        graph.vp.value[v] = updated_value
-        graph.vp.best_child[v] = edges[best_arm, 1]
-    return total_change / graph.num_vertices()
+    reward_mat = adjacency(graph, weight=graph.ep.reward)
+    target_val = diags(
+            gamma * graph.vp.value.get_array(),
+            # gamma * graph.vp.value.get_array() * (1 - graph.vp.terminal.get_array()),
+            format='csr',
+    )
+    adjmat = adjacency(graph)
+    target_mat = target_val * adjmat
+    qs = reward_mat + target_mat
+    bst_childs = np.asarray((qs + adjmat * OFFSET).argmax(axis=0)).flatten()
+    bst_vals = np.asarray(
+            qs[bst_childs, np.arange(graph.num_vertices())]).flatten()
+    diff = np.mean(graph.vp.value.get_array() - bst_vals)
+    graph.vp.best_child.a = bst_childs
+    graph.vp.value.a = bst_vals
+    return diff
 
 
 def parse_args():
