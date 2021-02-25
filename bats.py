@@ -276,6 +276,7 @@ class BATSTrainer:
             self.G.vp.terminal[v_to] = terminal
             last_obs = next_obs
         self.G.vp.start_node.get_array()[:] = start_nodes
+        print(f"Found {int(start_nodes.sum())} start nodes")
 
     def find_possible_stitches(self):
         '''
