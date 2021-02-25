@@ -1,20 +1,19 @@
 from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
-import util
 import time
 import numpy as np
 from scipy.sparse import diags
 import pickle
 from subprocess import Popen
+from multiprocessing import cpu_count
 from tqdm import trange, tqdm
+from scipy.sparse import save_npz, load_npz
 from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import load_policy, behavior_clone
 from modelling.utils.graph_util import make_boltzmann_policy_dataset
 from sklearn.neighbors import radius_neighbors_graph
 from examples.mazes.maze_util import get_starts_from_graph
 from ipdb import set_trace as db  # NOQA
-# torch.multiprocessing.set_sharing_strategy('file_system')
-# torch.multiprocessing.set_start_method('spawn')
 
 
 class BATSTrainer:
@@ -56,8 +55,9 @@ class BATSTrainer:
 
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
-        self.possible_stitches = None
-        self.possible_stitch_priorities = None
+        self.neighbors = None
+        # self.possible_stitch_priorities = None
+
         # set up graph
         self.G = Graph()
         self.value_iteration_done = False
@@ -75,17 +75,33 @@ class BATSTrainer:
         self.G.vp.start_node = self.G.new_vertex_property('bool')
         self.G.vp.occupancy = self.G.new_vertex_property('float')
         self.G.vp.terminal = self.G.new_vertex_property('bool')
+        self.start_states = None
+        self.start_state_path = self.output_dir / 'starts.npy'
 
         # the actions are gonna be associated with each edge
         self.G.ep.action = self.G.new_edge_property("vector<float>")
         # we also associate the rewards with each edge
         self.G.ep.reward = self.G.new_edge_property("float")
+        # whether an edge is real or imagined
+        self.G.ep.imagined = self.G.new_edge_property('bool')
+
+        self.action_props = ungroup_vector_property(self.G.ep.action, range(self.action_dim))
+        self.state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
 
         # parameters for planning
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
+        self.plan_cpu_frac = kwargs.get('plan_cpu_frac', 0.5)
+
+        self.plan_num_cpus = int(self.num_cpus * self.plan_cpu_frac)
+        self.rollout_num_cpus = self.num_cpus - self.plan_num_cpus
         self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 2000000)
+        self.rollout_chunk_size = kwargs.get('rollout_chunk_size', 10000000)
+        self.max_stitches = kwargs['max_stitches']
+        self.stitches_tried = set()
+        # this saves an empty file so the child processes can see it
+        self.remove_neighbors([])
 
         # parameters for evaluation
         self.num_eval_episodes = kwargs.get("num_eval_episodes", 20)
@@ -113,9 +129,10 @@ class BATSTrainer:
             self.G = load_graph(str(graph_path))
             self.graph_stitching_done = True
             return
+        self.neighbor_name = 'neighbors.npz'
         if kwargs['load_neighbors'] is not None:
-            stitches_path = kwargs['load_neighbors'] / 'possible_stitches.npy'
-            self.possible_stitches = np.load(stitches_path)
+            neighbors_path = kwargs['load_neighbors'] / self.neighbor_name
+            self.neighbors = load_npz(neighbors_path)
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = str(kwargs['load_model'])
 
@@ -131,19 +148,26 @@ class BATSTrainer:
     def train(self):
         if self.graph_stitching_done:
             self.train_bc()
-        if self.policy is not None:
-            self.evaluate()
-            return
         # if this order is changed loading behavior might break
         self.add_dataset_edges()
+        # get a list of the start states for the graph
+        if 'maze' in self.env_name:
+            self.start_states = get_starts_from_graph(self.G, self.env)
+        else:
+            self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+        np.save(self.start_state_path, self.start_states)
         self.find_possible_stitches()
         self.train_dynamics()
         self.G.save(str(self.output_dir / 'dataset.gt'))
+        self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
-        for _ in trange(self.num_stitching_iters):
+        self.value_iteration(self.n_val_iterations_end)
+        for i in trange(self.num_stitching_iters):
             self.value_iteration(self.n_val_iterations)
-            self.compute_stitch_priorities()
-            stitches_to_try = self.get_prioritized_stitch_chunk()
+            # self.compute_stitch_priorities()
+            # stitches_to_try = self.get_prioritized_stitch_chunk()
+            n_cpus = self.rollout_num_cpus if i > 0 else min(self.num_cpus, cpu_count())
+            stitches_to_try = self.get_rollout_stitch_chunk(n_cpus)
             if processes is not None:
                 self.block_add_edges(processes)
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
@@ -161,7 +185,6 @@ class BATSTrainer:
         self.graph_stitching_done = True
         self.value_iteration_done = True
         self.train_bc()
-        self.evaluate()
 
     def train_dynamics(self):
         if self.dynamics_ensemble_path or self.graph_stitching_done:
@@ -182,12 +205,12 @@ class BATSTrainer:
         if self.graph_stitching_done:
             print('skipping graph stitching')
             return
-        print('testing possible stitches')
-        chunksize = possible_stitches.shape[0] // self.num_cpus
+        print(f'testing {possible_stitches.shape[0]} possible stitches')
+        chunksize = possible_stitches.shape[0] // self.plan_num_cpus
         input_path = self.output_dir / 'input'
         output_path = self.output_dir / 'output'
         processes = []
-        for i in range(self.num_cpus):
+        for i in range(self.plan_num_cpus):
             cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize, :]
             fn = input_path / f"{i}.npy"
             np.save(fn, cpu_chunk)
@@ -205,7 +228,10 @@ class BATSTrainer:
             process.wait()
             output_file = output_path / f"{i}.npy"
             edges_to_add = np.load(output_file)
+            if len(edges_to_add) == 0:
+                continue
             edges_added += self.add_edges(edges_to_add)
+        print(f"adding {edges_added} edges")
 
     def add_edges(self, edges_to_add):
         starts = edges_to_add[:, 0].astype(int)
@@ -220,6 +246,7 @@ class BATSTrainer:
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
+            self.G.ep.imagined[e] = True
             added += 1
         return added
 
@@ -245,6 +272,7 @@ class BATSTrainer:
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
+            self.G.ep.imagined[e] = False
             self.G.vp.terminal[v_to] = terminal
             last_obs = next_obs
         self.G.vp.start_node.get_array()[:] = start_nodes
@@ -255,47 +283,16 @@ class BATSTrainer:
         where N is the number of possible stitches and D is 2 + (2 * obs_dim) + action_dim
         where each row is start_vertex, end_vertex, start_obs, end_obs, initial_action
         '''
-        if self.possible_stitches is not None or self.graph_stitching_done:
+        if self.neighbors is not None or self.graph_stitching_done:
             print(f'skipping the nearest neighbors step, loaded {self.possible_stitches.shape[0]} possible stitches')
             return
         print("finding possible neighbors")
         # this is the only step with quadratic time complexity, watch out for how long it takes
         start = time.time()
-        neighbors = radius_neighbors_graph(self.unique_obs, self.epsilon_neighbors, n_jobs=-1)
-        possible_neighbors = np.column_stack(neighbors.nonzero())
+        self.neighbors = radius_neighbors_graph(self.unique_obs, self.epsilon_neighbors, n_jobs=-1).astype(bool)
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
-        print(f"found {possible_neighbors.shape[0] // 2} possible neighbors")
-        print(f"converting to edges")
-        possible_stitches = []
-        action_props = ungroup_vector_property(self.G.ep.action, range(self.action_dim))
-        state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
-        for row in tqdm(possible_neighbors):
-            # get all the possible neighbors of the row donating from v0 to v1
-            # since each pair should show up in both orders in the list, all pairs will get donations
-            # both ways
-            v0 = row[0]
-            v1 = row[1]
-            v1_obs = self.unique_obs[v1, :]
-            v0_in_neighbors = self.G.get_in_neighbors(v0, vprops=state_props)
-            v0_in_edges = self.G.get_in_edges(v0, eprops=action_props)
-            v0_in_targets = np.ones_like(v0_in_neighbors[:, :1]) * v1
-            possible_stitches.append(np.concatenate((v0_in_neighbors[:, :1],
-                                                     v0_in_targets,
-                                                     v0_in_neighbors[:, 1:],
-                                                     np.tile(v1_obs, (v0_in_neighbors.shape[0], 1)),
-                                                     v0_in_edges[:, 2:]), axis=-1))
-            v0_out_neighbors = self.G.get_out_neighbors(v0, vprops=state_props)
-            v0_out_edges = self.G.get_out_edges(v0, eprops=action_props)
-            v0_out_start = np.ones_like(v0_out_neighbors[:, :1]) * v1
-            possible_stitches.append(np.concatenate((v0_out_start,
-                                                     v0_out_neighbors[:, :1],
-                                                     np.tile(v1_obs, (v0_out_neighbors.shape[0], 1)),
-                                                     v0_out_neighbors[:, 1:],
-                                                     v0_out_edges[:, 2:]), axis=-1))
-
-        self.possible_stitches = np.concatenate(possible_stitches, axis=0)
-        print(f"found {self.possible_stitches.shape[0]} possible stitches")
-        np.save(self.output_dir / 'possible_stitches.npy', self.possible_stitches)
+        print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
+        save_npz(self.output_dir / self.neighbor_name, self.neighbors)
 
     def compute_stitch_priorities(self):
         print(f"Computing updated priorities for stitches")
@@ -360,10 +357,6 @@ class BATSTrainer:
 
     def train_bc(self):
         print("cloning a policy")
-        if 'maze' in self.env_name:
-            start_states = get_starts_from_graph(self.G, self.env)
-        else:
-            start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
         data, val_data = make_boltzmann_policy_dataset(
                 graph=self.G,
                 n_collects=2 * self.G.num_vertices(),  # not sure what this should be
@@ -372,26 +365,63 @@ class BATSTrainer:
                 n_val_collects=0,
                 val_start_prop=0,
                 silent=True,
-                starts=start_states)
+                starts=self.start_states)
         self.policy = behavior_clone(dataset=data,
                                      env=self.env,
                                      max_ep_len=self.env._max_episode_steps,
                                      **self.bc_params)
 
-    def evaluate(self):
-        # we have util.rollout ready for this purpose
-        print("evaluating policy")
-        episodes = []
-        returns = []
-        for i in self.get_iterator(self.num_eval_episodes):
-            episode = util.rollout(self.policy, self.env)
-            episodes.append(episode)
-            ep_return = util.get_return(episode)
-            returns.append(ep_return)
-        return_mean = np.mean(returns)
-        return_std = np.std(returns)
-        normalized_mean = self.env.get_normalized_score(return_mean)
-        tqdm.write(f"Mean Return | {return_mean:.2f} | Std Return | {return_std:.2f} | Normalized mean | {normalized_mean:.2f}")  # NOQA
-        episode_path = self.output_dir / 'epsiodes.pk'
-        with episode_path.open('wb') as f:
-            pickle.dump(episodes, f)
+    def get_rollout_stitch_chunk(self, num_cpus):
+        # need to be less than rollout_chunk_size
+
+        chunksize = self.rollout_chunk_size // num_cpus
+        output_path = self.output_dir / 'rollout_output'
+        output_path.mkdir(exist_ok=True)
+        processes = []
+        print("Getting possible stitches by rolling out best Boltzmann policy")
+        for i in range(num_cpus):
+            output_file = output_path / f"{i}.npy"
+            args = ['python',
+                    'rollout_stitches.py',
+                    str(self.output_dir / 'mdp.gt'),
+                    str(self.output_dir / self.neighbor_name),
+                    str(self.output_dir / 'stitches_tried.pkl'),
+                    str(self.start_state_path),
+                    str(output_file),
+                    str(self.action_dim),
+                    str(self.obs_dim),
+                    str(chunksize),
+                    str(self.temperature),
+                    str(self.gamma),
+                    str(self.max_stitches)]
+            process = Popen(args)
+            processes.append(process)
+        all_advantages = []
+        all_stitches = []
+        for i, process in enumerate(processes):
+            process.wait()
+            output_file = output_path / f"{i}.npy"
+            outputs = np.load(output_file)
+            advantages = outputs[:, 0]
+            stitches = outputs[:, 1:]
+            all_advantages.append(advantages)
+            all_stitches.append(stitches)
+        all_advantages = np.concatenate(all_advantages, axis=0)
+        all_stitches = np.concatenate(all_stitches, axis=0)
+        stitches, unique_indices = np.unique(all_stitches, axis=0, return_index=True)
+        advantages = all_advantages[unique_indices]
+        if self.stitching_chunk_size >= len(advantages):
+            indices = np.arange(len(advantages)).astype(int)
+        else:
+            indices = np.argpartition(advantages, self.stitching_chunk_size)[:self.stitching_chunk_size]
+        stitches_to_try = stitches[indices]
+        self.remove_neighbors(stitches_to_try)
+        print(f'Choosing {len(indices)} edges out of {len(advantages)} from Boltzmann rollouts')
+        return stitches_to_try
+
+    def remove_neighbors(self, stitches_to_try):
+        for stitch in stitches_to_try:
+            self.stitches_tried.add(tuple(stitch[:2]))
+        neighbors_tried_path = self.output_dir / 'stitches_tried.pkl'
+        with open(neighbors_tried_path, 'wb') as f:
+            pickle.dump(self.stitches_tried, f)
