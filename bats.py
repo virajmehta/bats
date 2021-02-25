@@ -340,7 +340,8 @@ class BATSTrainer:
         # Construct sparse adjacency, reward, sparse value matrices.
         reward_mat = adjacency(self.G, weight=self.G.ep.reward)
         target_val = diags(
-            self.gamma * self.G.vp.value.get_array() * (1 - self.G.vp.terminal),
+            (self.gamma * self.G.vp.value.get_array()
+                        * (1 - self.G.vp.terminal.get_array())),
             format='csr',
         )
         # WARNING: graph-tool returns transpose of standard adjacency matrix
@@ -349,7 +350,7 @@ class BATSTrainer:
         target_mat = target_val * adjmat
         qs = reward_mat + target_mat
         # HACKINESS ALERT: To ignore zero entries in mat, add large value to
-        #                  the non-zero entries. TODO find better solution.
+        #                  the non-zero entries.
         bst_childs = np.asarray((qs + adjmat * 1e4).argmax(axis=0)).flatten()
         values = np.asarray(
                 # TODO: I hate how I have to make arange here, how do I not?
