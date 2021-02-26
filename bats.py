@@ -133,6 +133,8 @@ class BATSTrainer:
         if kwargs['load_neighbors'] is not None:
             neighbors_path = kwargs['load_neighbors'] / self.neighbor_name
             self.neighbors = load_npz(neighbors_path)
+            our_neighbor_path = self.output_dir / self.neighbor_name
+            save_npz(our_neighbor_path, self.neighbors)
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = str(kwargs['load_model'])
 
