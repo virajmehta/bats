@@ -5,7 +5,6 @@ import numpy as np
 from scipy.sparse import diags
 import pickle
 from subprocess import Popen
-from multiprocessing import cpu_count
 from tqdm import trange, tqdm
 from scipy.sparse import save_npz, load_npz
 from modelling.dynamics_construction import train_ensemble
@@ -92,10 +91,6 @@ class BATSTrainer:
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
-        self.plan_cpu_frac = kwargs.get('plan_cpu_frac', 0.5)
-
-        self.plan_num_cpus = int(self.num_cpus * self.plan_cpu_frac)
-        self.rollout_num_cpus = self.num_cpus - self.plan_num_cpus
         self.stitching_chunk_size = kwargs.get('stitching_chunk_size', 2000000)
         self.rollout_chunk_size = kwargs.get('rollout_chunk_size', 10000000)
         self.max_stitches = kwargs['max_stitches']
@@ -166,21 +161,14 @@ class BATSTrainer:
         self.value_iteration(self.n_val_iterations_end)
         for i in trange(self.num_stitching_iters):
             self.value_iteration(self.n_val_iterations)
-            # self.compute_stitch_priorities()
-            # stitches_to_try = self.get_prioritized_stitch_chunk()
-            n_cpus = self.rollout_num_cpus if i > 0 else min(self.num_cpus, cpu_count())
-            stitches_to_try = self.get_rollout_stitch_chunk(n_cpus)
-            if processes is not None:
-                self.block_add_edges(processes)
+            stitches_to_try = self.get_rollout_stitch_chunk()
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
             if stitches_to_try.shape[0] == 0:
-                # need to make the processes list empty so no more are added
-                processes = []
                 break
             processes = self.test_neighbor_edges(stitches_to_try)
+            self.block_add_edges(processes)
             self.G.save(str(self.output_dir / 'mdp.gt'))
-        self.block_add_edges(processes)
         self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration(self.n_val_iterations_end)
         self.G.save(str(self.output_dir / 'vi.gt'))
@@ -208,11 +196,11 @@ class BATSTrainer:
             print('skipping graph stitching')
             return
         print(f'testing {possible_stitches.shape[0]} possible stitches')
-        chunksize = possible_stitches.shape[0] // self.plan_num_cpus
+        chunksize = possible_stitches.shape[0] // self.num_cpus
         input_path = self.output_dir / 'input'
         output_path = self.output_dir / 'output'
         processes = []
-        for i in range(self.plan_num_cpus):
+        for i in range(self.num_cpus):
             cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize, :]
             fn = input_path / f"{i}.npy"
             np.save(fn, cpu_chunk)
@@ -375,15 +363,15 @@ class BATSTrainer:
                                      max_ep_len=self.env._max_episode_steps,
                                      **self.bc_params)
 
-    def get_rollout_stitch_chunk(self, num_cpus):
+    def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
 
-        chunksize = self.rollout_chunk_size // num_cpus
+        chunksize = self.rollout_chunk_size // self.num_cpus
         output_path = self.output_dir / 'rollout_output'
         output_path.mkdir(exist_ok=True)
         processes = []
         print("Getting possible stitches by rolling out best Boltzmann policy")
-        for i in range(num_cpus):
+        for i in range(self.num_cpus):
             output_file = output_path / f"{i}.npy"
             args = ['python',
                     'rollout_stitches.py',
