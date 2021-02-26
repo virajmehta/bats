@@ -285,7 +285,7 @@ class BATSTrainer:
         where each row is start_vertex, end_vertex, start_obs, end_obs, initial_action
         '''
         if self.neighbors is not None or self.graph_stitching_done:
-            print(f'skipping the nearest neighbors step, loaded {self.possible_stitches.shape[0]} possible stitches')
+            print(f'skipping the nearest neighbors step, loaded {self.neighbors.nnz} neighbors')
             return
         print("finding possible neighbors")
         # this is the only step with quadratic time complexity, watch out for how long it takes
@@ -331,30 +331,31 @@ class BATSTrainer:
             print("skipping value iteration")
             return
         print("performing value iteration")
-        # first we initialize the occupancies with the first nodes as 1
-        if self.use_occupancy:
-            raise NotImplementedError('Deprecating for now, not sure if we '
-                                      'are still using or not.')
-        # Construct sparse adjacency, reward, sparse value matrices.
-        reward_mat = adjacency(self.G, weight=self.G.ep.reward)
-        target_val = diags(
-            (self.gamma * self.G.vp.value.get_array()
-                        * (1 - self.G.vp.terminal.get_array())),
-            format='csr',
-        )
-        # WARNING: graph-tool returns transpose of standard adjacency matrix
-        #          hence the line target_val * adjmat (instead of reverse).
-        adjmat = adjacency(self.G)
-        target_mat = target_val * adjmat
-        qs = reward_mat + target_mat
-        # HACKINESS ALERT: To ignore zero entries in mat, add large value to
-        #                  the non-zero entries.
-        bst_childs = np.asarray((qs + adjmat * 1e4).argmax(axis=0)).flatten()
-        values = np.asarray(
-                # TODO: I hate how I have to make arange here, how do I not?
-                qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
-        self.G.vp.best_neighbor.a = bst_childs
-        self.G.vp.value.a = values
+        for i in trange(n_iters):
+            # first we initialize the occupancies with the first nodes as 1
+            if self.use_occupancy:
+                raise NotImplementedError('Deprecating for now, not sure if we '
+                                          'are still using or not.')
+            # Construct sparse adjacency, reward, sparse value matrices.
+            reward_mat = adjacency(self.G, weight=self.G.ep.reward)
+            target_val = diags(
+                (self.gamma * self.G.vp.value.get_array()
+                            * (1 - self.G.vp.terminal.get_array())),
+                format='csr',
+            )
+            # WARNING: graph-tool returns transpose of standard adjacency matrix
+            #          hence the line target_val * adjmat (instead of reverse).
+            adjmat = adjacency(self.G)
+            target_mat = target_val * adjmat
+            qs = reward_mat + target_mat
+            # HACKINESS ALERT: To ignore zero entries in mat, add large value to
+            #                  the non-zero entries.
+            bst_childs = np.asarray((qs + adjmat * 1e4).argmax(axis=0)).flatten()
+            values = np.asarray(
+                    # TODO: I hate how I have to make arange here, how do I not?
+                    qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
+            self.G.vp.best_neighbor.a = bst_childs
+            self.G.vp.value.a = values
 
     def train_bc(self):
         print("cloning a policy")
