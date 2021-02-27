@@ -14,6 +14,8 @@ def parse_arguments():
     parser.add_argument('action_dim', type=int)
     parser.add_argument('epsilon', type=float)
     parser.add_argument('quantile', type=float)
+    parser.add_argument('mean_file', nargs='?', default=None)
+    parser.add_argument('std_file', nargs='?', default=None)
     return parser.parse_args()
 
 
@@ -21,7 +23,7 @@ def prepare_model_inputs_torch(obs, actions):
     return torch.cat([obs, actions], dim=-1)
 
 
-def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
+def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, mean, std, **kwargs):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
     initializes the mean with the init action.
@@ -64,6 +66,8 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
         state_outputs = model_outputs[:, :, 1:]
         reward_outputs = model_outputs[:, :, 0]
         displacements = state_outputs + start_states - end_state
+        if std is not None:
+            displacements /= std
         distances = torch.linalg.norm(displacements, dim=-1)
         quantiles = torch.quantile(distances, quantile, dim=0)
         if quantiles.min() < epsilon:
@@ -80,10 +84,12 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, **kwargs):
 
 def main(args):
     input_data = np.load(args.input_file)
+    mean = np.load(args.mean_file) if args.mean_file else None
+    std = np.load(args.std_file) if args.std_file else None
     ensemble = load_ensemble(args.ensemble_path, args.obs_dim, args.action_dim)
     outputs = []
     for row in input_data:
-        data = CEM(row, args.obs_dim, args.action_dim, ensemble, args.epsilon, args.quantile)
+        data = CEM(row, args.obs_dim, args.action_dim, ensemble, args.epsilon, args.quantile, mean, std)
         if data is not None:
             outputs.append(data)
     outputs = np.array(outputs)

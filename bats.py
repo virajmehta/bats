@@ -107,6 +107,23 @@ class BATSTrainer:
         # printing parameters
         self.neighbor_print_period = 1000
 
+        # normalizing before neighbors
+        if kwargs['normalize_obs']:
+            self.mean = self.all_obs.mean(axis=0, keepdims=True)
+            self.std = self.all_obs.std(axis=0, keepdims=True)
+            self.neighbor_obs = (self.unique_obs  - self.mean) / self.std
+            self.mean_file = self.output_dir / 'mean.npy'
+            np.save(self.mean_file, self.mean)
+            self.std_file = self.output_dir / 'std.npy'
+            np.save(self.std_file, self.std)
+        else:
+            self.mean = None
+            self.std = None
+            self.mean_file = None
+            self.std_file = None
+            self.neighbor_obs = self.unique_obs
+
+
         self.use_occupancy = kwargs.get('use_occupancy', False)
         # check for all loads
         if kwargs['load_policy'] is not None:
@@ -205,9 +222,18 @@ class BATSTrainer:
             fn = input_path / f"{i}.npy"
             np.save(fn, cpu_chunk)
             output_file = output_path / f"{i}.npy"
-            process = Popen(['python', 'plan.py', str(fn), str(output_file), str(self.dynamics_ensemble_path),
-                             str(self.obs_dim), str(self.action_dim), str(self.epsilon_planning),
-                             str(self.planning_quantile)])
+            args = ['python',
+                    'plan.py',
+                    str(fn),
+                    str(output_file),
+                    str(self.dynamics_ensemble_path),
+                    str(self.obs_dim),
+                    str(self.action_dim),
+                    str(self.epsilon_planning),
+                    str(self.planning_quantile)]
+            if self.std_file:
+                args += [self.mean_file, self.std_file]
+            process = Popen(args)
             processes.append(process)
         return processes
 
@@ -280,7 +306,7 @@ class BATSTrainer:
         print("finding possible neighbors")
         # this is the only step with quadratic time complexity, watch out for how long it takes
         start = time.time()
-        self.neighbors = radius_neighbors_graph(self.unique_obs, self.epsilon_neighbors, n_jobs=-1).astype(bool)
+        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, n_jobs=-1).astype(bool)
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
         save_npz(self.output_dir / self.neighbor_name, self.neighbors)
