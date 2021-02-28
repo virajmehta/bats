@@ -178,13 +178,17 @@ class BATSTrainer:
         self.value_iteration(self.n_val_iterations_end)
         for i in trange(self.num_stitching_iters):
             self.value_iteration(self.n_val_iterations)
+            stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()
+            print(f"Time to find good stitches: {time.time() - stitch_start_time:.2f}s")
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
             if stitches_to_try.shape[0] == 0:
                 break
+            plan_start_time = time.time()
             processes = self.test_neighbor_edges(stitches_to_try)
             self.block_add_edges(processes)
+            print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
             self.G.save(str(self.output_dir / 'mdp.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration(self.n_val_iterations_end)
@@ -260,8 +264,12 @@ class BATSTrainer:
                 # we don't want to add edges originating from terminal states
                 continue
             e = self.G.add_edge(start, end)
+            if np.isnan(action).any():
+                db()
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
+            if np.isnan(reward):
+                db()
             self.G.ep.imagined[e] = True
             added += 1
         return added
@@ -370,6 +378,8 @@ class BATSTrainer:
             values = np.asarray(
                     # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
+            if np.isnan(values).any():
+                db()
             self.G.vp.best_neighbor.a = bst_childs
             self.G.vp.value.a = values
 
