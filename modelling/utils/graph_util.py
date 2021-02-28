@@ -141,6 +141,43 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     return data, val_data
 
 
+def get_best_policy_returns(
+        graph,
+        starts=None,
+        gamma=1,
+        horizon=1000,
+        silent=False,
+):
+    """For each start, trace through the graph MDP to estimate value.
+    Args:
+        graph: The MDP as a graph.
+        starts: User provided start states. Otherwise will look for vertex
+            property "start".
+        gamma: Discount factor.
+        horizon: Time to run in the MDP.
+    Returns: The list of tuples (return, start_obs).
+    """
+    returns = []
+    # Get the start states.
+    if starts is None:
+        starts = np.argwhere(graph.get_vertices(
+            vprops=[graph.vp.start])[:, 1]).flatten()
+    # Do rollouts at start states.
+    itr = starts if silent else tqdm(starts)
+    for sidx in itr:
+        start_ob = graph.vp.observation[sidx]
+        currv = sidx
+        ret = 0
+        for t in range(horizon):
+            nxtv = graph.vp.best_neighbor[currv]
+            ret += gamma ** t * graph.ep.reward[graph.edge(currv, nxtv)]
+            if graph.vp.terminal[nxtv]:
+                break
+            currv = nxtv
+        retturns.append((ret, start_ob))
+    return returns
+
+
 def make_advantage_dataset(graph, gamma=0.99, suboptimal_only=False):
     data = {k: [] for k in ['observations', 'actions', 'advantages']}
     for v in graph.iter_vertices():
