@@ -169,6 +169,7 @@ class BATSTrainer:
             self.start_states = get_starts_from_graph(self.G, self.env)
         else:
             self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+        print(f"Found {len(self.start_states)} start nodes")
         np.save(self.start_state_path, self.start_states)
         self.find_possible_stitches()
         self.train_dynamics()
@@ -300,7 +301,6 @@ class BATSTrainer:
             self.G.vp.terminal[v_to] = terminal
             last_obs = next_obs
         self.G.vp.start_node.get_array()[:] = start_nodes
-        print(f"Found {int(start_nodes.sum())} start nodes")
 
     def find_possible_stitches(self):
         '''
