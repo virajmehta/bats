@@ -236,6 +236,8 @@ class BATSTrainer:
                     str(self.action_dim),
                     str(self.epsilon_planning),
                     str(self.planning_quantile)]
+            print(' '.join(args))
+            time.sleep(10)
             if self.std_file:
                 args += [self.mean_file, self.std_file]
             process = Popen(args)
@@ -366,7 +368,7 @@ class BATSTrainer:
             # WARNING: graph-tool returns transpose of standard adjacency matrix
             #          hence the line target_val * adjmat (instead of reverse).
             adjmat = adjacency(self.G)
-            out_degrees = adjmat.sum(axis=0)
+            out_degrees = np.array(adjmat.sum(axis=0))[0, ...]
             is_dead_end = out_degrees == 0
             target_mat = target_val * adjmat
             qs = reward_mat + target_mat
