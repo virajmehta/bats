@@ -157,9 +157,9 @@ def get_best_policy_returns(
             property "start".
         gamma: Discount factor.
         horizon: Time to run in the MDP.
-    Returns: The list of tuples (return, start_obs, traj_length).
+    Returns: List of tuples of the form (return, observations, actions)
     """
-    returns = []
+    to_return = []
     # Get the start states.
     if starts is None:
         starts = np.argwhere(graph.get_vertices(
@@ -168,19 +168,22 @@ def get_best_policy_returns(
     if not silent:
         pbar = tqdm(total=len(starts))
     for sidx in starts:
-        start_ob = graph.vp.obs[sidx]
+        observations = []
+        actions = []
         currv = sidx
         ret = 0
         t = 0
         while t < horizon:
             nxtv = graph.vp.best_neighbor[currv]
+            observataions.append(graph.vp.obs[currv])
+            actions.append(graph.ep.action[graph.edge(currv, nxtv)])
             ret += gamma ** t * graph.ep.reward[graph.edge(currv, nxtv)]
             t += 1
             if not ignore_terminals:
                 if graph.vp.terminal[nxtv]:
                     break
             currv = nxtv
-        returns.append((ret, start_ob, t))
+        to_return.append((ret, np.vstack(observations), np.vstack(actions))
         if not silent:
             pbar.set_postfix(OrderedDict(Return=ret))
             pbar.update(1)
