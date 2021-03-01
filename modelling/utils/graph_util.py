@@ -1,6 +1,7 @@
 """
 Util for graph interaction with models.
 """
+from collections import OrderedDict
 import numpy as np
 from tqdm import tqdm
 
@@ -69,7 +70,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             starts = np.arange(graph.num_vertices())
         else:
             starts = np.argwhere(graph.get_vertices(
-                vprops=[graph.vp.start])[:, 1]).flatten()
+                vprops=[graph.vp.start_node])[:, 1]).flatten()
     # Get separate into train and validation set starts.
     np.random.shuffle(starts)
     if len(starts) > 1 and val_start_prop > 0 and n_val_collects > 0:
@@ -155,26 +156,34 @@ def get_best_policy_returns(
             property "start".
         gamma: Discount factor.
         horizon: Time to run in the MDP.
-    Returns: The list of tuples (return, start_obs).
+    Returns: The list of tuples (return, start_obs, traj_length).
     """
     returns = []
     # Get the start states.
     if starts is None:
         starts = np.argwhere(graph.get_vertices(
-            vprops=[graph.vp.start])[:, 1]).flatten()
+            vprops=[graph.vp.start_node])[:, 1]).flatten()
     # Do rollouts at start states.
-    itr = starts if silent else tqdm(starts)
-    for sidx in itr:
-        start_ob = graph.vp.observation[sidx]
+    if not silent:
+        pbar = tqdm(total=len(starts))
+    for sidx in starts:
+        start_ob = graph.vp.obs[sidx]
         currv = sidx
         ret = 0
-        for t in range(horizon):
+        t = 0
+        while t < horizon:
             nxtv = graph.vp.best_neighbor[currv]
             ret += gamma ** t * graph.ep.reward[graph.edge(currv, nxtv)]
+            t += 1
             if graph.vp.terminal[nxtv]:
                 break
             currv = nxtv
-        retturns.append((ret, start_ob))
+        returns.append((ret, start_ob, t))
+        if not silent:
+            pbar.set_postfix(OrderedDict(Return=ret))
+            pbar.update(1)
+    if not silent:
+        pbar.close()
     return returns
 
 

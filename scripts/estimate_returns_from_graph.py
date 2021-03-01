@@ -15,11 +15,14 @@ def run(args):
     returns = get_best_policy_returns(graph, horizon=args.horizon)
     rets = np.array([r[0] for r in returns]).reshape(-1, 1)
     obs = np.vstack([r[1] for r in returns])
-    print('Average Returns: %f' % np.mean(rets))
+    ts = np.array([r[2] for r in returns]).reshape(-1, 1)
+    print('Returns: %f +- %f' % (np.mean(rets), np.std(rets)))
+    print('Trajectory Length: %f +- %f' % (np.mean(ts), np.std(ts)))
     if args.save_path is not None:
         with h5py.File(args.save_path, 'w') as wd:
             wd.create_dataset('observations', data=obs)
             wd.create_dataset('returns', data=rets)
+            wd.create_dataset('trajectory_length', data=ts)
 
 def parse_args():
     parser = argparse.ArgumentParser()
