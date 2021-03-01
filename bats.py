@@ -49,7 +49,7 @@ class BATSTrainer:
         self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
-        self.temperature = kwargs.get('temperature', 1)
+        self.temperature = kwargs.get('temperature', 0.25)
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
         # could do it this way or with knn, this is simpler to implement for now
@@ -91,6 +91,7 @@ class BATSTrainer:
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
+        self.plan_cpus = self.num_cpus //  3
         self.stitching_chunk_size = kwargs['stitching_chunk_size']
         self.rollout_chunk_size = kwargs['stitching_chunk_size']
         self.max_stitches = kwargs['max_stitches']
@@ -218,11 +219,11 @@ class BATSTrainer:
             print('skipping graph stitching')
             return
         print(f'testing {possible_stitches.shape[0]} possible stitches')
-        chunksize = possible_stitches.shape[0] // self.num_cpus
+        chunksize = possible_stitches.shape[0] // self.plan_cpus
         input_path = self.output_dir / 'input'
         output_path = self.output_dir / 'output'
         processes = []
-        for i in range(self.num_cpus):
+        for i in range(self.plan_cpus):
             cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize, :]
             fn = input_path / f"{i}.npy"
             np.save(fn, cpu_chunk)
@@ -236,8 +237,6 @@ class BATSTrainer:
                     str(self.action_dim),
                     str(self.epsilon_planning),
                     str(self.planning_quantile)]
-            print(' '.join(args))
-            time.sleep(10)
             if self.std_file:
                 args += [self.mean_file, self.std_file]
             process = Popen(args)
