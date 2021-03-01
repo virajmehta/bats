@@ -265,12 +265,8 @@ class BATSTrainer:
                 # we don't want to add edges originating from terminal states
                 continue
             e = self.G.add_edge(start, end)
-            if np.isnan(action).any():
-                db()
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
-            if np.isnan(reward):
-                db()
             self.G.ep.imagined[e] = True
             added += 1
         return added
@@ -378,8 +374,6 @@ class BATSTrainer:
             values = np.asarray(
                     # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
-            if np.isnan(values).any():
-                db()
             self.G.vp.best_neighbor.a = bst_childs
             self.G.vp.value.a = values
 
@@ -444,7 +438,7 @@ class BATSTrainer:
             indices = np.argpartition(advantages, self.stitching_chunk_size)[:self.stitching_chunk_size]
         stitches_to_try = stitches[indices]
         self.remove_neighbors(stitches_to_try)
-        print(f'Choosing {len(indices)} edges out of {len(advantages)} from Boltzmann rollouts')
+        print(f'Choosing {len(indices)} edges from Boltzmann rollouts')
         return stitches_to_try
 
     def remove_neighbors(self, stitches_to_try):
