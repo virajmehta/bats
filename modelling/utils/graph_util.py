@@ -147,6 +147,7 @@ def get_best_policy_returns(
         starts=None,
         gamma=1,
         horizon=1000,
+        ignore_terminals=False,
         silent=False,
 ):
     """For each start, trace through the graph MDP to estimate value.
@@ -175,8 +176,9 @@ def get_best_policy_returns(
             nxtv = graph.vp.best_neighbor[currv]
             ret += gamma ** t * graph.ep.reward[graph.edge(currv, nxtv)]
             t += 1
-            if graph.vp.terminal[nxtv]:
-                break
+            if not ignore_terminals:
+                if graph.vp.terminal[nxtv]:
+                    break
             currv = nxtv
         returns.append((ret, start_ob, t))
         if not silent:
