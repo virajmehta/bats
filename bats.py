@@ -366,6 +366,8 @@ class BATSTrainer:
             # WARNING: graph-tool returns transpose of standard adjacency matrix
             #          hence the line target_val * adjmat (instead of reverse).
             adjmat = adjacency(self.G)
+            out_degrees = adjmat.sum(axis=0)
+            is_dead_end = out_degrees == 0
             target_mat = target_val * adjmat
             qs = reward_mat + target_mat
             # HACKINESS ALERT: To ignore zero entries in mat, add large value to
@@ -374,6 +376,8 @@ class BATSTrainer:
             values = np.asarray(
                     # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
+            values[is_dead_end] = 0
+            bst_childs[is_dead_end] = -1
             self.G.vp.best_neighbor.a = bst_childs
             self.G.vp.value.a = values
 
