@@ -2,7 +2,6 @@ import argparse
 import torch
 import numpy as np
 import pickle
-from tqdm import tqdm
 from modelling.dynamics_construction import load_ensemble
 
 
@@ -89,7 +88,7 @@ def main(args):
     std = np.load(args.std_file) if args.std_file else None
     ensemble = load_ensemble(args.ensemble_path, args.obs_dim, args.action_dim)
     outputs = []
-    for row in tqdm(input_data):
+    for row in input_data:
         data = CEM(row, args.obs_dim, args.action_dim, ensemble, args.epsilon, args.quantile, mean, std)
         if data is not None:
             outputs.append(data)
