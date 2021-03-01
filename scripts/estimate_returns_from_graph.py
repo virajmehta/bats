@@ -18,10 +18,16 @@ def run(args):
     if args.env is not None and 'maze' in args.env:
         env = gym.make(args.env)
         starts = get_starts_from_graph(graph, env)
+        horizon = env._max_episode_steps
+        # Only need this since most mazes don't have terminal prop yet.
+        ignore_terminals = True
     else:
         starts = None
+        horizon = args.horizon
+        ignore_terminals = False
     returns = get_best_policy_returns(graph, starts=starts,
-                                      horizon=args.horizon)
+                                      horizon=horizon,
+                                      ignore_terminals=ignore_terminals)
     rets = np.array([r[0] for r in returns]).reshape(-1, 1)
     obs = np.vstack([r[1] for r in returns])
     ts = np.array([r[2] for r in returns]).reshape(-1, 1)
