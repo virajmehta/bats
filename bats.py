@@ -111,7 +111,7 @@ class BATSTrainer:
         if kwargs['normalize_obs']:
             self.mean = all_obs.mean(axis=0, keepdims=True)
             self.std = all_obs.std(axis=0, keepdims=True)
-            self.neighbor_obs = (self.unique_obs  - self.mean) / self.std
+            self.neighbor_obs = (self.unique_obs - self.mean) / self.std
             self.mean_file = self.output_dir / 'mean.npy'
             np.save(self.mean_file, self.mean)
             self.std_file = self.output_dir / 'std.npy'
@@ -122,7 +122,6 @@ class BATSTrainer:
             self.mean_file = None
             self.std_file = None
             self.neighbor_obs = self.unique_obs
-
 
         self.use_occupancy = kwargs.get('use_occupancy', False)
         # check for all loads
@@ -261,8 +260,8 @@ class BATSTrainer:
         rewards = edges_to_add[:, -1]
         added = 0
         for start, end, action, reward in zip(starts, ends, actions, rewards):
-            if self.G.vp.terminal[start]:
-                # we don't want to add edges originating from terminal states
+            if self.G.vp.terminal[start] or (start, end) in self.stitches_tried:
+                # we don't want to add edges originating from terminal states or if we already did
                 continue
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
