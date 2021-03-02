@@ -356,7 +356,6 @@ class BATSTrainer:
             return
         print("performing value iteration")
         for i in trange(n_iters):
-            db()
             # first we initialize the occupancies with the first nodes as 1
             if self.use_occupancy:
                 raise NotImplementedError('Deprecating for now, not sure if we '
