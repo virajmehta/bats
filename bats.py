@@ -3,6 +3,7 @@ from graph_tool.spectral import adjacency
 import time
 import numpy as np
 from scipy.sparse import diags
+from collections import defaultdict
 import pickle
 from subprocess import Popen
 from tqdm import trange, tqdm
@@ -125,6 +126,9 @@ class BATSTrainer:
             self.neighbor_obs = self.unique_obs
 
         self.use_occupancy = kwargs.get('use_occupancy', False)
+        # save graph stats stuff
+        self.stats = defaultdict(list)
+        seld.stats_path = self.output_dir / 'graph_stats.npz'
         # check for all loads
         if kwargs['load_policy'] is not None:
             self.policy = load_policy(str(kwargs['load_policy']), self.obs_dim, self.action_dim,
@@ -149,6 +153,13 @@ class BATSTrainer:
             save_npz(our_neighbor_path, self.neighbors)
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = str(kwargs['load_model'])
+
+    def save_graph_stats(self):
+        np.savez(self.stats_path, **self.stats)
+
+    def add_stat(self, name, value):
+        self.stats[name].append(value)
+        print(f"{name}: {value:.2f}")
 
     def get_vertex(self, obs):
         return self.G.vertex(self.vertices[obs.tobytes()])
@@ -178,7 +189,6 @@ class BATSTrainer:
         processes = None
         self.value_iteration(self.n_val_iterations_end)
         for i in trange(self.num_stitching_iters):
-            self.value_iteration(self.n_val_iterations)
             stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()
             print(f"Time to find good stitches: {time.time() - stitch_start_time:.2f}s")
@@ -190,6 +200,9 @@ class BATSTrainer:
             processes = self.test_neighbor_edges(stitches_to_try)
             self.block_add_edges(processes)
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
+            vi_start_time = time.time()
+            self.value_iteration(self.n_val_iterations)
+            print(f"Time for value iteration: {time.time() - vi_start_time:.2f}s")
             self.G.save(str(self.output_dir / 'mdp.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration(self.n_val_iterations_end)
@@ -369,6 +382,8 @@ class BATSTrainer:
             # WARNING: graph-tool returns transpose of standard adjacency matrix
             #          hence the line target_val * adjmat (instead of reverse).
             adjmat = adjacency(self.G)
+            if adjmat.max() > 1:
+                db()
             out_degrees = np.array(adjmat.sum(axis=0))[0, ...]
             is_dead_end = out_degrees == 0
             target_mat = target_val * adjmat
@@ -379,12 +394,25 @@ class BATSTrainer:
             values = np.asarray(
                     # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
+            old_values = self.G.vp.value.get_array()
             values[is_dead_end] = 0
             bst_childs[is_dead_end] = -1
             self.G.vp.best_neighbor.a = bst_childs
             self.G.vp.value.a = values
+
             if not np.isfinite(values).all():
                 db()
+        bellman_error = np.mean(np.square(values - old_values))
+        self.add_stat("Bellman MSE", bellman_error)
+        start_value = np.mean(values[self.start_states])
+        self.add_stat("Mean Start Value", start_value)
+        mean_value = np.mean(values)
+        self.add_stat("Mean Value", mean_value)
+        min_value = np.min(values)
+        self.add_stat("Min Value", min_value)
+        max_value = np.max(values)
+        self.add_stat("Max Value", max_value)
+
 
     def train_bc(self):
         print("cloning a policy")
