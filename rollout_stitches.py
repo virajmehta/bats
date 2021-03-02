@@ -4,6 +4,7 @@ from scipy.sparse import load_npz
 from pathlib import Path
 import numpy as np
 import pickle
+from ipdb import set_trace as db
 
 
 def parse_arguments():

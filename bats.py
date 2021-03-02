@@ -268,6 +268,8 @@ class BATSTrainer:
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
+            if not np.isfinite(reward):
+                db()
             self.G.ep.imagined[e] = True
             added += 1
         return added
@@ -291,6 +293,7 @@ class BATSTrainer:
             terminal = self.dataset['terminals'][i]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
+            self.stitches_tried.add((v_from, v_to))
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
@@ -353,6 +356,7 @@ class BATSTrainer:
             return
         print("performing value iteration")
         for i in trange(n_iters):
+            db()
             # first we initialize the occupancies with the first nodes as 1
             if self.use_occupancy:
                 raise NotImplementedError('Deprecating for now, not sure if we '
@@ -381,6 +385,8 @@ class BATSTrainer:
             bst_childs[is_dead_end] = -1
             self.G.vp.best_neighbor.a = bst_childs
             self.G.vp.value.a = values
+            if not np.isfinite(values).all():
+                db()
 
     def train_bc(self):
         print("cloning a policy")
