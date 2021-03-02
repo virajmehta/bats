@@ -152,11 +152,7 @@ def main(args):
                     total_stitches += n_stitches
                     break
                 qs = edges[:, 2] + args.gamma * childs[:, 1]
-                minq, maxq = np.min(qs), np.max(qs)
-                if minq == maxq:
-                    norm_qs = np.ones(qs.shape)
-                else:
-                    norm_qs = (qs - minq) / (maxq - minq)
+                norm_qs = qs - np.max(qs)
                 probs = np.exp(norm_qs / args.temperature)
                 probs /= np.sum(probs)
                 arm = np.random.choice(childs.shape[0], p=probs)
