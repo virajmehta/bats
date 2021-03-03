@@ -26,8 +26,8 @@ class BATSTrainer:
         self.output_dir = output_dir
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
-        self.n_val_iterations = kwargs.get('n_val_iterations', 10)
-        self.n_val_iterations_end = kwargs.get('n_val_iterations_end', 50)
+        self.max_val_iterations = kwargs.get('max_val_iterations', 1000)
+        self.vi_tolerance = kwargs.get('vi_tolerance')
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
@@ -369,7 +369,8 @@ class BATSTrainer:
             print("skipping value iteration")
             return
         print("performing value iteration")
-        for i in trange(n_iters):
+        pbar = trange(n_iters)
+        for i in pbar:
             # first we initialize the occupancies with the first nodes as 1
             if self.use_occupancy:
                 raise NotImplementedError('Deprecating for now, not sure if we '
@@ -384,8 +385,6 @@ class BATSTrainer:
             # WARNING: graph-tool returns transpose of standard adjacency matrix
             #          hence the line target_val * adjmat (instead of reverse).
             adjmat = adjacency(self.G)
-            if adjmat.max() > 1:
-                db()
             out_degrees = np.array(adjmat.sum(axis=0))[0, ...]
             is_dead_end = out_degrees == 0
             target_mat = target_val * adjmat
@@ -397,14 +396,16 @@ class BATSTrainer:
                     # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
             old_values = self.G.vp.value.get_array()
+            bellman_error = np.mean(np.square(values - old_values))
+            pbar.set_description(f"Bellman error: {bellman_error:.3f}")
             values[is_dead_end] = 0
             bst_childs[is_dead_end] = -1
             self.G.vp.best_neighbor.a = bst_childs
             self.G.vp.value.a = values
+            if bellman_error < self.vi_tolerance:
+                break
+        pbar.close()
 
-            if not np.isfinite(values).all():
-                db()
-        bellman_error = np.mean(np.square(values - old_values))
         self.add_stat("Bellman MSE", bellman_error)
         start_value = np.mean(values[self.start_states])
         self.add_stat("Mean Start Value", start_value)
@@ -418,7 +419,6 @@ class BATSTrainer:
             change = start_value - self.stats['Mean Start Value'][-2]
             print(f'Change in Mean Start Value: {change:.2f}')
         self.save_stats()
-
 
     def train_bc(self):
         print("cloning a policy")
