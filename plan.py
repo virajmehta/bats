@@ -74,8 +74,8 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, mean, std, device
         if quantiles.min() < epsilon:
             # success!
             min_index = quantiles.argmin()
-            reward = np.quantile(reward_outputs[:, min_index], 0.4)
-            return np.array([row[0], row[1], *samples[min_index, :].tolist(), reward_outputs[:, min_index].mean()])
+            reward = np.quantile(reward_outputs[:, min_index], 0.3)
+            return np.array([row[0], row[1], *samples[min_index, :].tolist(), reward])
         elites = samples[torch.argsort(quantiles)[:num_elites], ...]
         new_mean = torch.mean(elites, axis=0)
         new_var = torch.var(elites, axis=0)
