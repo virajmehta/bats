@@ -128,7 +128,7 @@ class BATSTrainer:
         self.use_occupancy = kwargs.get('use_occupancy', False)
         # save graph stats stuff
         self.stats = defaultdict(list)
-        seld.stats_path = self.output_dir / 'graph_stats.npz'
+        self.stats_path = self.output_dir / 'graph_stats.npz'
         # check for all loads
         if kwargs['load_policy'] is not None:
             self.policy = load_policy(str(kwargs['load_policy']), self.obs_dim, self.action_dim,
@@ -154,7 +154,7 @@ class BATSTrainer:
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = str(kwargs['load_model'])
 
-    def save_graph_stats(self):
+    def save_stats(self):
         np.savez(self.stats_path, **self.stats)
 
     def add_stat(self, name, value):
@@ -274,14 +274,12 @@ class BATSTrainer:
         rewards = edges_to_add[:, -1]
         added = 0
         for start, end, action, reward in zip(starts, ends, actions, rewards):
-            if self.G.vp.terminal[start] or (start, end) in self.stitches_tried:
-                # we don't want to add edges originating from terminal states or if we already did
+            if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
+                # we don't want to add edges originating from terminal states
                 continue
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
             self.G.ep.reward[e] = reward
-            if not np.isfinite(reward):
-                db()
             self.G.ep.imagined[e] = True
             added += 1
         return added
@@ -297,15 +295,19 @@ class BATSTrainer:
         for i in iterator:
             obs = self.dataset['observations'][i, :]
             next_obs = self.dataset['next_observations'][i, :]
+            v_from = self.get_vertex(obs)
+            v_to = self.get_vertex(next_obs)
             if (last_obs != obs).any():
                 vnum = self.vertices[obs.tobytes()]
                 start_nodes[vnum] = 1
+            if (self.G.vertex_index[v_from], self.G.vertex_index[v_to]) in self.stitches_tried:  # NOQA
+                continue
             action = self.dataset['actions'][i, :]
             reward = self.dataset['rewards'][i]
             terminal = self.dataset['terminals'][i]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
-            self.stitches_tried.add((v_from, v_to))
+            self.stitches_tried.add((self.G.vertex_index[v_from], self.G.vertex_index[v_to]))
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
@@ -412,6 +414,10 @@ class BATSTrainer:
         self.add_stat("Min Value", min_value)
         max_value = np.max(values)
         self.add_stat("Max Value", max_value)
+        if len(self.stats['Mean Start Value']) > 1:
+            change = start_value - self.stats['Mean Start Value'][-2]
+            print(f'Change in Mean Start Value: {change:.2f}')
+        self.save_stats()
 
 
     def train_bc(self):
