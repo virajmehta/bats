@@ -187,7 +187,7 @@ class BATSTrainer:
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
-        self.value_iteration(self.n_val_iterations_end)
+        self.value_iteration(self.max_val_iterations)
         for i in trange(self.num_stitching_iters):
             stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()
