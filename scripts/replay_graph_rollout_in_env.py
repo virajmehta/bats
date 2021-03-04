@@ -52,8 +52,9 @@ def run(args):
         pbar.set_postfix(OrderedDict(ReplayReturn=repret))
         pbar.update(1)
     replay_returns = np.array(replay_returns)
-    print('Replay Returns: %f +- %f' % (np.mean(rets), np.std(rets)))
-    print('Average Error: %f' % (np.mean(rets, replay_returns)))
+    print('Replay Returns: %f +- %f' % (np.mean(replay_returns),
+                                        np.std(replay_returns)))
+    print('Average Error: %f' % (np.mean(rets - replay_returns)))
     if args.save_path is not None:
         with h5py.File(args.save_path, 'w') as wd:
             wd.create_dataset('returns', data=rets)

@@ -163,15 +163,19 @@ def ceildiv(a, b):
 
 
 def make_mujoco_resetter(env, task):
-    if 'maze' in task:
+    append_zero = True
+    if 'maze' in task.lower():
         midpt = 2
-    elif 'hopper' in task:
+        append_zero = False
+    elif 'hopper' in task.lower():
         midpt = 6
-    elif 'halfcheetah' in task or 'walker' in task:
+    elif 'halfcheetah' in task.lower() or 'walker' in task.lower():
         midpt = 9
     else:
         NotImplementedError('No resetter implemented for %s.' % task)
     def resetter(obs):
         env.reset()
-        env.env.set_state([obs[:midpt], obs[midpt:]])
+        if append_zero:
+            obs = np.append(0, obs)
+        env.env.set_state(obs[:midpt], obs[midpt:])
     return resetter

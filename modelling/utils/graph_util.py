@@ -175,7 +175,9 @@ def get_best_policy_returns(
         t = 0
         while t < horizon:
             nxtv = graph.vp.best_neighbor[currv]
-            observataions.append(graph.vp.obs[currv])
+            if nxtv == -1:
+                break
+            observations.append(graph.vp.obs[currv])
             actions.append(graph.ep.action[graph.edge(currv, nxtv)])
             ret += gamma ** t * graph.ep.reward[graph.edge(currv, nxtv)]
             t += 1
@@ -183,13 +185,13 @@ def get_best_policy_returns(
                 if graph.vp.terminal[nxtv]:
                     break
             currv = nxtv
-        to_return.append((ret, np.vstack(observations), np.vstack(actions))
+        to_return.append((ret, np.vstack(observations), np.vstack(actions)))
         if not silent:
             pbar.set_postfix(OrderedDict(Return=ret))
             pbar.update(1)
     if not silent:
         pbar.close()
-    return returns
+    return to_return
 
 
 def make_advantage_dataset(graph, gamma=0.99, suboptimal_only=False):
