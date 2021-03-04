@@ -1,6 +1,7 @@
 """
 Util for graph interaction with models.
 """
+from collections import OrderedDict
 import numpy as np
 from tqdm import tqdm
 
@@ -133,6 +134,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             if n_added >= n_collects:
                 break
         if not silent:
+            pbar.set_postfix(OrderedDict(Edges=n_edges, Imaginary=(n_imagined/ n_edges)))
             pbar.update(t)
     if not silent:
         pbar.close()
