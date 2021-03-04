@@ -6,6 +6,7 @@ from scipy.sparse import diags
 from collections import defaultdict
 import pickle
 from subprocess import Popen
+from copy import deepcopy
 from tqdm import trange, tqdm
 from scipy.sparse import save_npz, load_npz
 from modelling.dynamics_construction import train_ensemble
@@ -50,7 +51,10 @@ class BATSTrainer:
         self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
+        self.intermediate_bc_params = deepcopy(self.bc_params)
+        self.intermediate_bc_params['epochs'] = 20
         self.temperature = kwargs.get('temperature', 0.25)
+        self.bc_every_iter = kwargs['bc_every_iter']
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
         # could do it this way or with knn, this is simpler to implement for now
@@ -187,7 +191,7 @@ class BATSTrainer:
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
-        self.value_iteration(self.max_val_iterations)
+        self.value_iteration()
         for i in trange(self.num_stitching_iters):
             stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()
@@ -201,11 +205,15 @@ class BATSTrainer:
             self.block_add_edges(processes)
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
             vi_start_time = time.time()
-            self.value_iteration(self.n_val_iterations)
+            self.value_iteration()
             print(f"Time for value iteration: {time.time() - vi_start_time:.2f}s")
             self.G.save(str(self.output_dir / 'mdp.gt'))
+            if self.bc_every_iter:
+                bc_start_time = time.time()
+                self.train_bc(intermediate=True)
+                print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
         self.G.save(str(self.output_dir / 'mdp.gt'))
-        self.value_iteration(self.n_val_iterations_end)
+        self.value_iteration()
         self.G.save(str(self.output_dir / 'vi.gt'))
         self.graph_stitching_done = True
         self.value_iteration_done = True
@@ -359,7 +367,7 @@ class BATSTrainer:
         self.possible_stitches = np.delete(self.possible_stitches, indices, axis=0)
         return stitch_chunk
 
-    def value_iteration(self, n_iters):
+    def value_iteration(self):
         '''
         This value iteration step actually computes two things:
         the value function and the occupancy distribution. Since the value function is pretty
@@ -369,7 +377,7 @@ class BATSTrainer:
             print("skipping value iteration")
             return
         print("performing value iteration")
-        pbar = trange(n_iters)
+        pbar = trange(self.max_val_iterations)
         for i in pbar:
             # first we initialize the occupancies with the first nodes as 1
             if self.use_occupancy:
@@ -396,7 +404,7 @@ class BATSTrainer:
                     # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
             old_values = self.G.vp.value.get_array()
-            bellman_error = np.mean(np.square(values - old_values))
+            bellman_error = np.max(np.square(values - old_values))
             pbar.set_description(f"Bellman error: {bellman_error:.3f}")
             values[is_dead_end] = 0
             bst_childs[is_dead_end] = -1
@@ -406,7 +414,7 @@ class BATSTrainer:
                 break
         pbar.close()
 
-        self.add_stat("Bellman MSE", bellman_error)
+        self.add_stat("Bellman Max Error", bellman_error)
         start_value = np.mean(values[self.start_states])
         self.add_stat("Mean Start Value", start_value)
         mean_value = np.mean(values)
@@ -420,7 +428,7 @@ class BATSTrainer:
             print(f'Change in Mean Start Value: {change:.2f}')
         self.save_stats()
 
-    def train_bc(self):
+    def train_bc(self, intermediate=False):
         print("cloning a policy")
         data, val_data = make_boltzmann_policy_dataset(
                 graph=self.G,
@@ -431,10 +439,11 @@ class BATSTrainer:
                 val_start_prop=0,
                 silent=True,
                 starts=self.start_states)
+        params = self.intermediate_bc_params if intermediate else self.bc_params
         self.policy = behavior_clone(dataset=data,
                                      env=self.env,
                                      max_ep_len=self.env._max_episode_steps,
-                                     **self.bc_params)
+                                     **params)
 
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
