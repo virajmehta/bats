@@ -1,6 +1,7 @@
 """
 Util for graph interaction with models.
 """
+from collections import OrderedDict
 import numpy as np
 from tqdm import tqdm
 
@@ -69,7 +70,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             starts = np.arange(graph.num_vertices())
         else:
             starts = np.argwhere(graph.get_vertices(
-                vprops=[graph.vp.start])[:, 1]).flatten()
+                vprops=[graph.vp.start_node])[:, 1]).flatten()
     # Get separate into train and validation set starts.
     np.random.shuffle(starts)
     if len(starts) > 1 and val_start_prop > 0 and n_val_collects > 0:
@@ -142,6 +143,58 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         if len(v.shape) == 1:
             data[k] = v.reshape(-1, 1)
     return data, val_data
+
+
+def get_best_policy_returns(
+        graph,
+        starts=None,
+        gamma=1,
+        horizon=1000,
+        ignore_terminals=False,
+        silent=False,
+):
+    """For each start, trace through the graph MDP to estimate value.
+    Args:
+        graph: The MDP as a graph.
+        starts: User provided start states. Otherwise will look for vertex
+            property "start".
+        gamma: Discount factor.
+        horizon: Time to run in the MDP.
+    Returns: List of tuples of the form (return, observations, actions)
+    """
+    to_return = []
+    # Get the start states.
+    if starts is None:
+        starts = np.argwhere(graph.get_vertices(
+            vprops=[graph.vp.start_node])[:, 1]).flatten()
+    # Do rollouts at start states.
+    if not silent:
+        pbar = tqdm(total=len(starts))
+    for sidx in starts:
+        observations = []
+        actions = []
+        currv = sidx
+        ret = 0
+        t = 0
+        while t < horizon:
+            nxtv = graph.vp.best_neighbor[currv]
+            if nxtv == -1:
+                break
+            observations.append(graph.vp.obs[currv])
+            actions.append(graph.ep.action[graph.edge(currv, nxtv)])
+            ret += gamma ** t * graph.ep.reward[graph.edge(currv, nxtv)]
+            t += 1
+            if not ignore_terminals:
+                if graph.vp.terminal[nxtv]:
+                    break
+            currv = nxtv
+        to_return.append((ret, np.vstack(observations), np.vstack(actions)))
+        if not silent:
+            pbar.set_postfix(OrderedDict(Return=ret))
+            pbar.update(1)
+    if not silent:
+        pbar.close()
+    return to_return
 
 
 def make_advantage_dataset(graph, gamma=0.99, suboptimal_only=False):
