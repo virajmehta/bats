@@ -107,12 +107,15 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 edges = graph.get_out_edges(currv, eprops=[graph.ep.reward])
                 qs = edges[:, -1] + gamma * childs[:, 1]
                 # qs = edges[:, -1] + gamma * childs[:, 1] * (1 - childs[:, 2])
+                qs -= np.max(qs)
+                '''
                 if normalize_qs:
                     minq, maxq = np.min(qs), np.max(qs)
                     if minq ==  maxq:
                         qs = np.ones(qs.shape)
                     else:
                         qs = (qs - minq) / (maxq - minq)
+                '''
                 probs = np.exp(qs / temperature)
                 probs /= np.sum(probs)
                 nxtv = np.random.choice(childs[:, 0], p=probs)

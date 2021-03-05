@@ -3,8 +3,10 @@ from graph_tool.spectral import adjacency
 import time
 import numpy as np
 from scipy.sparse import diags
+from collections import defaultdict
 import pickle
 from subprocess import Popen
+from copy import deepcopy
 from tqdm import trange, tqdm
 from scipy.sparse import save_npz, load_npz
 from modelling.dynamics_construction import train_ensemble
@@ -25,8 +27,8 @@ class BATSTrainer:
         self.output_dir = output_dir
         self.gamma = kwargs.get('gamma', 0.99)
         self.tqdm = kwargs.get('tqdm', True)
-        self.n_val_iterations = kwargs.get('n_val_iterations', 10)
-        self.n_val_iterations_end = kwargs.get('n_val_iterations_end', 50)
+        self.max_val_iterations = kwargs.get('max_val_iterations', 1000)
+        self.vi_tolerance = kwargs.get('vi_tolerance')
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
@@ -49,7 +51,10 @@ class BATSTrainer:
         self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
-        self.temperature = kwargs.get('temperature', 1)
+        self.intermediate_bc_params = deepcopy(self.bc_params)
+        self.intermediate_bc_params['epochs'] = 20
+        self.temperature = kwargs.get('temperature', 0.25)
+        self.bc_every_iter = kwargs['bc_every_iter']
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
         # could do it this way or with knn, this is simpler to implement for now
@@ -91,6 +96,7 @@ class BATSTrainer:
         self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
+        self.plan_cpus = 2  # self.num_cpus //  10
         self.stitching_chunk_size = kwargs['stitching_chunk_size']
         self.rollout_chunk_size = kwargs['stitching_chunk_size']
         self.max_stitches = kwargs['max_stitches']
@@ -124,6 +130,9 @@ class BATSTrainer:
             self.neighbor_obs = self.unique_obs
 
         self.use_occupancy = kwargs.get('use_occupancy', False)
+        # save graph stats stuff
+        self.stats = defaultdict(list)
+        self.stats_path = self.output_dir / 'graph_stats.npz'
         # check for all loads
         if kwargs['load_policy'] is not None:
             self.policy = load_policy(str(kwargs['load_policy']), self.obs_dim, self.action_dim,
@@ -148,6 +157,13 @@ class BATSTrainer:
             save_npz(our_neighbor_path, self.neighbors)
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = str(kwargs['load_model'])
+
+    def save_stats(self):
+        np.savez(self.stats_path, **self.stats)
+
+    def add_stat(self, name, value):
+        self.stats[name].append(value)
+        print(f"{name}: {value:.2f}")
 
     def get_vertex(self, obs):
         return self.G.vertex(self.vertices[obs.tobytes()])
@@ -175,9 +191,8 @@ class BATSTrainer:
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
-        self.value_iteration(self.n_val_iterations_end)
+        self.value_iteration()
         for i in trange(self.num_stitching_iters):
-            self.value_iteration(self.n_val_iterations)
             stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()
             print(f"Time to find good stitches: {time.time() - stitch_start_time:.2f}s")
@@ -189,9 +204,16 @@ class BATSTrainer:
             processes = self.test_neighbor_edges(stitches_to_try)
             self.block_add_edges(processes)
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
+            vi_start_time = time.time()
+            self.value_iteration()
+            print(f"Time for value iteration: {time.time() - vi_start_time:.2f}s")
             self.G.save(str(self.output_dir / 'mdp.gt'))
+            if self.bc_every_iter:
+                bc_start_time = time.time()
+                self.train_bc(intermediate=True)
+                print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
         self.G.save(str(self.output_dir / 'mdp.gt'))
-        self.value_iteration(self.n_val_iterations_end)
+        self.value_iteration()
         self.G.save(str(self.output_dir / 'vi.gt'))
         self.graph_stitching_done = True
         self.value_iteration_done = True
@@ -217,11 +239,11 @@ class BATSTrainer:
             print('skipping graph stitching')
             return
         print(f'testing {possible_stitches.shape[0]} possible stitches')
-        chunksize = possible_stitches.shape[0] // self.num_cpus
+        chunksize = possible_stitches.shape[0] // self.plan_cpus
         input_path = self.output_dir / 'input'
         output_path = self.output_dir / 'output'
         processes = []
-        for i in range(self.num_cpus):
+        for i in range(self.plan_cpus):
             cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize, :]
             fn = input_path / f"{i}.npy"
             np.save(fn, cpu_chunk)
@@ -260,8 +282,8 @@ class BATSTrainer:
         rewards = edges_to_add[:, -1]
         added = 0
         for start, end, action, reward in zip(starts, ends, actions, rewards):
-            if self.G.vp.terminal[start] or (start, end) in self.stitches_tried:
-                # we don't want to add edges originating from terminal states or if we already did
+            if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
+                # we don't want to add edges originating from terminal states
                 continue
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
@@ -281,14 +303,19 @@ class BATSTrainer:
         for i in iterator:
             obs = self.dataset['observations'][i, :]
             next_obs = self.dataset['next_observations'][i, :]
+            v_from = self.get_vertex(obs)
+            v_to = self.get_vertex(next_obs)
             if (last_obs != obs).any():
                 vnum = self.vertices[obs.tobytes()]
                 start_nodes[vnum] = 1
+            if (self.G.vertex_index[v_from], self.G.vertex_index[v_to]) in self.stitches_tried:  # NOQA
+                continue
             action = self.dataset['actions'][i, :]
             reward = self.dataset['rewards'][i]
             terminal = self.dataset['terminals'][i]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
+            self.stitches_tried.add((self.G.vertex_index[v_from], self.G.vertex_index[v_to]))
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
@@ -340,7 +367,7 @@ class BATSTrainer:
         self.possible_stitches = np.delete(self.possible_stitches, indices, axis=0)
         return stitch_chunk
 
-    def value_iteration(self, n_iters):
+    def value_iteration(self):
         '''
         This value iteration step actually computes two things:
         the value function and the occupancy distribution. Since the value function is pretty
@@ -350,7 +377,8 @@ class BATSTrainer:
             print("skipping value iteration")
             return
         print("performing value iteration")
-        for i in trange(n_iters):
+        pbar = trange(self.max_val_iterations)
+        for i in pbar:
             # first we initialize the occupancies with the first nodes as 1
             if self.use_occupancy:
                 raise NotImplementedError('Deprecating for now, not sure if we '
@@ -365,6 +393,8 @@ class BATSTrainer:
             # WARNING: graph-tool returns transpose of standard adjacency matrix
             #          hence the line target_val * adjmat (instead of reverse).
             adjmat = adjacency(self.G)
+            out_degrees = np.array(adjmat.sum(axis=0))[0, ...]
+            is_dead_end = out_degrees == 0
             target_mat = target_val * adjmat
             qs = reward_mat + target_mat
             # HACKINESS ALERT: To ignore zero entries in mat, add large value to
@@ -373,10 +403,32 @@ class BATSTrainer:
             values = np.asarray(
                     # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
+            old_values = self.G.vp.value.get_array()
+            bellman_error = np.max(np.square(values - old_values))
+            pbar.set_description(f"Bellman error: {bellman_error:.3f}")
+            values[is_dead_end] = 0
+            bst_childs[is_dead_end] = -1
             self.G.vp.best_neighbor.a = bst_childs
             self.G.vp.value.a = values
+            if bellman_error < self.vi_tolerance:
+                break
+        pbar.close()
 
-    def train_bc(self):
+        self.add_stat("Bellman Max Error", bellman_error)
+        start_value = np.mean(values[self.start_states])
+        self.add_stat("Mean Start Value", start_value)
+        mean_value = np.mean(values)
+        self.add_stat("Mean Value", mean_value)
+        min_value = np.min(values)
+        self.add_stat("Min Value", min_value)
+        max_value = np.max(values)
+        self.add_stat("Max Value", max_value)
+        if len(self.stats['Mean Start Value']) > 1:
+            change = start_value - self.stats['Mean Start Value'][-2]
+            print(f'Change in Mean Start Value: {change:.2f}')
+        self.save_stats()
+
+    def train_bc(self, intermediate=False):
         print("cloning a policy")
         data, val_data = make_boltzmann_policy_dataset(
                 graph=self.G,
@@ -387,10 +439,11 @@ class BATSTrainer:
                 val_start_prop=0,
                 silent=True,
                 starts=self.start_states)
+        params = self.intermediate_bc_params if intermediate else self.bc_params
         self.policy = behavior_clone(dataset=data,
                                      env=self.env,
                                      max_ep_len=self.env._max_episode_steps,
-                                     **self.bc_params)
+                                     **params)
 
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
