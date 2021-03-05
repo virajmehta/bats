@@ -71,7 +71,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             starts = np.arange(graph.num_vertices())
         else:
             starts = np.argwhere(graph.get_vertices(
-                vprops=[graph.vp.start])[:, 1]).flatten()
+                vprops=[graph.vp.start_node])[:, 1]).flatten()
     # Get separate into train and validation set starts.
     np.random.shuffle(starts)
     if len(starts) > 1 and val_start_prop > 0 and n_val_collects > 0:
@@ -94,12 +94,14 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     n_added = 0
     n_imagined = 0
     n_edges = 0
+    returns = []
     if not silent:
         pbar = tqdm(total=n_collects)
     # Do Boltzmann rollouts.
     while n_added < n_collects:
         done = False
         t = 0
+        ret = 0
         currv = np.random.choice(starts)
         while not done and t < max_ep_len:
             if temperature > 0:
@@ -129,17 +131,24 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 data['actions'].append(np.array(graph.ep.action[edge]))
                 n_added += 1
             done = graph.vp.terminal[nxtv]
+            ret += graph.ep.reward[edge]
             currv = nxtv
             t += 1
             if n_added >= n_collects:
                 break
         if not silent:
-            pbar.set_postfix(OrderedDict(Edges=n_edges, Imaginary=(n_imagined/ n_edges)))
+            pbar.set_postfix(OrderedDict(
+                Edges=n_edges,
+                Imaginary=(n_imagined/ n_edges),
+                Return=ret,
+            ))
             pbar.update(t)
+        returns.append(ret)
     if not silent:
         pbar.close()
         print('Done collecting.')
         print('Proportion imagined edges taken: %f' % (n_imagined / n_edges))
+        print('Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
     data = {k: np.vstack(v) for k, v in data.items()}
     for k, v in data.items():
         if len(v.shape) == 1:
