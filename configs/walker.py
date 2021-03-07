@@ -28,7 +28,7 @@ WALKER_CONFIGS['walker-random']['env'] = 'walker2d-random-v2'
 WALKER_CONFIGS['walker-mixed'] = deepcopy(base_config)
 WALKER_CONFIGS['walker-mixed']['env'] =\
     'walker2d-medium-replay-v2'
-WALKER_CONFIGS['walker-mixes']['num_stitching_iters'] = 2
+WALKER_CONFIGS['walker-mixed']['num_stitching_iters'] = 2
 
 WALKER_CONFIGS['walker-medium'] = deepcopy(base_config)
 WALKER_CONFIGS['walker-medium']['env'] = 'walker2d-medium-v2'

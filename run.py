@@ -13,6 +13,7 @@ def parse_arguments():
     config_parser = argparse.ArgumentParser()
     config_parser.add_argument('--config')
     config_arg, remaining = config_parser.parse_known_args()
+    defaults = None
     if config_arg.config is not None:
         defaults = CONFIGS[config_arg.config]
     parser = argparse.ArgumentParser()
@@ -41,7 +42,8 @@ def parse_arguments():
     parser.add_argument('-ms', '--max_stitches', type=int, default=10, help='max stitches for a single state as the boltzmann rollouts proceed')
     parser.add_argument('-norm', '--normalize_obs', action='store_true')
     parser.add_argument('--pudb', action='store_true')
-    parser.set_defaults(**defaults)
+    if defaults is not None:
+        parser.set_defaults(**defaults)
     return parser.parse_args(remaining)
 
 
