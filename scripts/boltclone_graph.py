@@ -37,6 +37,7 @@ def run(args):
             val_start_prop=args.val_start_prop,
             any_state_is_start=args.use_any_start,
             only_add_real=args.real_edges_only,
+            get_unique_edges=args.unique_edges,
             starts=starts,
     )
     # Run AWR with the pre-trained qnets.
@@ -68,6 +69,7 @@ def parse_args():
     parser.add_argument('--temperature', type=float, default=0)
     parser.add_argument('--pi_architecture', default='256,256')
     parser.add_argument('--real_edges_only', action='store_true')
+    parser.add_argument('--unique_edges', action='store_true')
     parser.add_argument('--use_any_start', action='store_true')
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--pudb', action='store_true')

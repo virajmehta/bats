@@ -46,6 +46,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   val_start_prop=0,
                                   any_state_is_start=False,
                                   only_add_real=False,
+                                  get_unique_edges=False,
                                   starts=None,
                                   silent=False):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
@@ -60,6 +61,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         n_val_collects: Number of data points to collect for a validation set.
         val_start_prop: [0, 1) percent of of starts to use for the validation
             set.
+        only_add_real: Whether to only add real edges.
+        get_unique_edges: Whether to only return unique edges to train on.
         starts: User provided start states. Otherwise will look for vertex
             property "start".
         silent: Whether to be silent.
@@ -91,14 +94,14 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         starts = starts[val_size:]
     else:
         val_data = None
-    n_added = 0
     n_imagined = 0
     n_edges = 0
     returns = []
     if not silent:
         pbar = tqdm(total=n_collects)
     # Do Boltzmann rollouts.
-    while n_added < n_collects:
+    edges = set()
+    while n_edges < n_collects:
         done = False
         t = 0
         ret = 0
@@ -126,10 +129,11 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             is_imagined = graph.ep.imagined[edge]
             n_imagined += is_imagined
             n_edges += 1
-            if not only_add_real or not graph.ep.imagined[edge]:
-                data['observations'].append(np.array(graph.vp.obs[currv]))
-                data['actions'].append(np.array(graph.ep.action[edge]))
-                n_added += 1
+            if not get_unique_edges:
+                if not only_add_real or not graph.ep.imagined[edge]:
+                    data['observations'].append(np.array(graph.vp.obs[currv]))
+                    data['actions'].append(np.array(graph.ep.action[edge]))
+            edges.append((currv, nxtv))
             done = graph.vp.terminal[nxtv]
             ret += graph.ep.reward[edge]
             currv = nxtv
@@ -149,11 +153,23 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         print('Done collecting.')
         print('Proportion imagined edges taken: %f' % (n_imagined / n_edges))
         print('Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
-    data = {k: np.vstack(v) for k, v in data.items()}
-    for k, v in data.items():
-        if len(v.shape) == 1:
-            data[k] = v.reshape(-1, 1)
-    return data, val_data
+    stats = OrderedDict(
+        ImaginaryProp=n_imagined/n_edges,
+        ReturnsAvg=np.mean(returns),
+        ReturnsStd=np.std(returns),
+        UniqueEdges=len(edges),
+    )
+    if get_unique_edges:
+        vidxs = np.array([s[0] for s in edges])
+        data['observations'] = graph.vp.obs[vidxs]
+        data['actions'] = np.array([graph.ep.action[graph.edge(e)]
+                                    for e in edges])
+    else:
+        data = {k: np.vstack(v) for k, v in data.items()}
+        for k, v in data.items():
+            if len(v.shape) == 1:
+                data[k] = v.reshape(-1, 1)
+    return data, val_data, stats
 
 
 def make_advantage_dataset(graph, gamma=0.99, suboptimal_only=False):
