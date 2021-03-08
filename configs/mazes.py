@@ -17,10 +17,10 @@ base_config = OrderedDict(
 MAZE_CONFIGS = OrderedDict()
 
 MAZE_CONFIGS['maze-umaze'] = deepcopy(base_config)
-MAZE_CONFIGS['maze-umaze']['env'] = 'maze2d-umaze-v1'
+MAZE_CONFIGS['maze-umaze']['env_name'] = 'maze2d-umaze-v1'
 
 MAZE_CONFIGS['maze-medium'] = deepcopy(base_config)
-MAZE_CONFIGS['maze-medium']['env'] = 'maze2d-medium-v1'
+MAZE_CONFIGS['maze-medium']['env_name'] = 'maze2d-medium-v1'
 
 MAZE_CONFIGS['maze-large'] = deepcopy(base_config)
-MAZE_CONFIGS['maze-large']['env'] = 'maze2d-large-v1'
+MAZE_CONFIGS['maze-large']['env_name'] = 'maze2d-large-v1'

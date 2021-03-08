@@ -16,19 +16,19 @@ base_config = OrderedDict(
 WALKER_CONFIGS = OrderedDict()
 
 WALKER_CONFIGS['walker-expert'] = deepcopy(base_config)
-WALKER_CONFIGS['walker-expert']['env'] = 'walker2d-expert-v2'
+WALKER_CONFIGS['walker-expert']['env_name'] = 'walker2d-expert-v2'
 
 WALKER_CONFIGS['walker-medium-expert'] = deepcopy(base_config)
-WALKER_CONFIGS['walker-medium-expert']['env'] =\
+WALKER_CONFIGS['walker-medium-expert']['env_name'] =\
     'walker2d-medium-expert-v2'
 
 WALKER_CONFIGS['walker-random'] = deepcopy(base_config)
-WALKER_CONFIGS['walker-random']['env'] = 'walker2d-random-v2'
+WALKER_CONFIGS['walker-random']['env_name'] = 'walker2d-random-v2'
 
 WALKER_CONFIGS['walker-mixed'] = deepcopy(base_config)
-WALKER_CONFIGS['walker-mixed']['env'] =\
+WALKER_CONFIGS['walker-mixed']['env_name'] =\
     'walker2d-medium-replay-v2'
 WALKER_CONFIGS['walker-mixed']['num_stitching_iters'] = 2
 
 WALKER_CONFIGS['walker-medium'] = deepcopy(base_config)
-WALKER_CONFIGS['walker-medium']['env'] = 'walker2d-medium-v2'
+WALKER_CONFIGS['walker-medium']['env_name'] = 'walker2d-medium-v2'
