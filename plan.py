@@ -3,6 +3,8 @@ import torch
 import numpy as np
 import pickle
 from modelling.dynamics_construction import load_ensemble
+from modelling.utils.torch_utils import set_cuda_device
+from ipdb import set_trace as db
 
 
 def parse_arguments():
@@ -23,7 +25,7 @@ def prepare_model_inputs_torch(obs, actions):
     return torch.cat([obs, actions], dim=-1)
 
 
-def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, mean, std, **kwargs):
+def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, mean, std, device=None, **kwargs):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
     initializes the mean with the init action.
@@ -36,7 +38,6 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, mean, std, **kwar
     if unsuccessful, returns None, None
     for now we assume that the actions are bounded in [-1, 1]
     '''
-    row = torch.Tensor(row)
     action_upper_bound = kwargs.get('action_upper_bound', 1.)
     start_state = row[2:2 + obs_dim]
     end_state = row[2 + obs_dim:2 + 2 * obs_dim]
@@ -56,7 +57,7 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, mean, std, **kwar
         # constrained_var = np.minimum(np.minimum(np.square(lb_dist / 2), np.square(ub_dist / 2)), var)
 
         # samples = X.rvs(size=[popsize, action_dim]) * np.sqrt(var) + mean
-        samples = torch.fmod(torch.randn(size=(popsize, action_dim)), 2) * torch.sqrt(var) + mean
+        samples = torch.fmod(torch.randn(size=(popsize, action_dim), device=device), 2) * torch.sqrt(var) + mean
         samples = torch.clip(samples, action_lower_bound, action_upper_bound)
         start_states = start_state.repeat(popsize, 1)
         input_data = prepare_model_inputs_torch(start_states, samples)
@@ -73,7 +74,8 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, mean, std, **kwar
         if quantiles.min() < epsilon:
             # success!
             min_index = quantiles.argmin()
-            return np.array([row[0], row[1], *samples[min_index, :].tolist(), reward_outputs[:, min_index].mean()])
+            reward = np.quantile(reward_outputs[:, min_index], 0.3)
+            return np.array([row[0], row[1], *samples[min_index, :].tolist(), reward])
         elites = samples[torch.argsort(quantiles)[:num_elites], ...]
         new_mean = torch.mean(elites, axis=0)
         new_var = torch.var(elites, axis=0)
@@ -83,13 +85,20 @@ def CEM(row, obs_dim, action_dim, ensemble, epsilon, quantile, mean, std, **kwar
 
 
 def main(args):
+    device_num = ''
+    set_cuda_device(device_num)
+    device = torch.device('cpu' if device_num == '' else 'cuda:' + device_num)
     input_data = np.load(args.input_file)
     mean = np.load(args.mean_file) if args.mean_file else None
     std = np.load(args.std_file) if args.std_file else None
-    ensemble = load_ensemble(args.ensemble_path, args.obs_dim, args.action_dim)
+    ensemble = load_ensemble(args.ensemble_path, args.obs_dim, args.action_dim, cuda_device=device_num)
+    for model in ensemble:
+        model.to(device)
     outputs = []
+    input_data = torch.Tensor(input_data)
+    input_data = input_data.to(device)
     for row in input_data:
-        data = CEM(row, args.obs_dim, args.action_dim, ensemble, args.epsilon, args.quantile, mean, std)
+        data = CEM(row, args.obs_dim, args.action_dim, ensemble, args.epsilon, args.quantile, mean, std, device=device)
         if data is not None:
             outputs.append(data)
     outputs = np.array(outputs)

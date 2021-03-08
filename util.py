@@ -160,3 +160,22 @@ def prepare_model_inputs(obs, actions):
 
 def ceildiv(a, b):
     return -(-a // b)
+
+
+def make_mujoco_resetter(env, task):
+    append_zero = True
+    if 'maze' in task.lower():
+        midpt = 2
+        append_zero = False
+    elif 'hopper' in task.lower():
+        midpt = 6
+    elif 'halfcheetah' in task.lower() or 'walker' in task.lower():
+        midpt = 9
+    else:
+        NotImplementedError('No resetter implemented for %s.' % task)
+    def resetter(obs):
+        env.reset()
+        if append_zero:
+            obs = np.append(0, obs)
+        env.env.set_state(obs[:midpt], obs[midpt:])
+    return resetter

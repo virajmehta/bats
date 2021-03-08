@@ -6,8 +6,16 @@ import util
 from pathlib import Path
 from copy import deepcopy
 
+from configs import CONFIGS
+
 
 def parse_arguments():
+    config_parser = argparse.ArgumentParser()
+    config_parser.add_argument('--config')
+    config_arg, remaining = config_parser.parse_known_args()
+    defaults = None
+    if config_arg.config is not None:
+        defaults = CONFIGS[config_arg.config]
     parser = argparse.ArgumentParser()
     parser.add_argument('name', help="The name of the experiment and output directory.")
     parser.add_argument('--env', dest='env_name', default="halfcheetah-medium-v1", help="The name of the environment (will be checked at runtime for correctness).")  # NOQA
@@ -28,12 +36,15 @@ def parse_arguments():
     parser.add_argument('-odp', '--offline_dataset_path', type=Path, default=None, help='Path for dataset, will use d4rl dataset if none is provided.')
     parser.add_argument('-scs', '--stitching_chunk_size', type=int, default=100000, help='number of stitches to attempt in an iteration of stitching')
     parser.add_argument('-ni', '--num_stitching_iters', type=int, default=50, help='number of iterations of stitching to do')
-    parser.add_argument('-nvi', '--n_val_iterations', type=int, default=10, help='number of iterations of value iterations to do during each stitching iter')
-    parser.add_argument('-nvie', '--n_val_iterations_end', type=int, default=100, help='number of iterations of value iterations to do during each stitching iter')
-    parser.add_argument('-ms', '--max_stitches', type=int, default=20, help='max stitches for a single state as the boltzmann rollouts proceed')
+    parser.add_argument('-tvi', '--vi_tolerance', type=float, default=0.02)
+    parser.add_argument('-mvi', '--max_val_iterations', type=int, default=1000, help='max number of iterations of value iterations to do during each stitching iter')
+    parser.add_argument('-bei', '--bc_every_iter', action='store_true')
+    parser.add_argument('-ms', '--max_stitches', type=int, default=10, help='max stitches for a single state as the boltzmann rollouts proceed')
     parser.add_argument('-norm', '--normalize_obs', action='store_true')
-
-    return parser.parse_args()
+    parser.add_argument('--pudb', action='store_true')
+    if defaults is not None:
+        parser.set_defaults(**defaults)
+    return parser.parse_args(remaining)
 
 
 def main(args):
@@ -48,4 +59,6 @@ def main(args):
 
 if __name__ == '__main__':
     args = parse_arguments()
+    if args.pudb:
+        import pudb; pudb.set_trace()
     main(args)

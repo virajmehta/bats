@@ -204,7 +204,7 @@ class ModelTrainer(object):
         if self._save_path is not None:
             stat_path = os.path.join(self._save_path, 'stats.txt')
             if self._total_epochs == 1:
-                with open(stat_path, 'w') as f:
+                with open(stat_path, 'a') as f:
                     f.write(','.join(['Epoch'] + list(self._stats.keys()))
                             + '\n')
             with open(stat_path, 'a') as f:
