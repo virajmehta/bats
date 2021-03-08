@@ -120,20 +120,22 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 nxtv = np.random.choice(childs[:, 0], p=probs)
             else:
                 nxtv = graph.vp.best_neighbor[currv]
+            if nxtv < 1:
+                break
             edge = graph.edge(currv, nxtv)
             is_imagined = graph.ep.imagined[edge]
             n_imagined += is_imagined
             n_edges += 1
-            if not get_unique_edges:
-                if not only_add_real or not graph.ep.imagined[edge]:
+            if not only_add_real or not graph.ep.imagined[edge]:
+                if not get_unique_edges or (currv, nxtv) not in edges:
                     data['observations'].append(np.array(graph.vp.obs[currv]))
                     data['actions'].append(np.array(graph.ep.action[edge]))
-            edges.append((currv, nxtv))
+                edges.add((currv, nxtv))
             done = graph.vp.terminal[nxtv]
             ret += graph.ep.reward[edge]
             currv = nxtv
             t += 1
-            if n_added >= n_collects:
+            if n_edges >= n_collects:
                 break
         if not silent:
             pbar.set_postfix(OrderedDict(
@@ -147,6 +149,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         pbar.close()
         print('Done collecting.')
         print('Proportion imagined edges taken: %f' % (n_imagined / n_edges))
+        print('Unique Edges: %d' % len(edges))
         print('Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
     stats = OrderedDict(
         ImaginaryProp=n_imagined/n_edges,
@@ -154,16 +157,10 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         ReturnsStd=np.std(returns),
         UniqueEdges=len(edges),
     )
-    if get_unique_edges:
-        vidxs = np.array([s[0] for s in edges])
-        data['observations'] = graph.vp.obs[vidxs]
-        data['actions'] = np.array([graph.ep.action[graph.edge(e)]
-                                    for e in edges])
-    else:
-        data = {k: np.vstack(v) for k, v in data.items()}
-        for k, v in data.items():
-            if len(v.shape) == 1:
-                data[k] = v.reshape(-1, 1)
+    data = {k: np.vstack(v) for k, v in data.items()}
+    for k, v in data.items():
+        if len(v.shape) == 1:
+            data[k] = v.reshape(-1, 1)
     return data, val_data, stats
 
 
@@ -234,3 +231,16 @@ def make_advantage_dataset(graph, gamma=0.99, suboptimal_only=False):
         if len(v.shape) == 1:
             data[k] = v.reshape(-1, 1)
     return data
+
+
+def get_value_thresholded_starts(
+    graph,
+    threshold,
+    starts=None,
+):
+    if starts is None:
+        starts = np.argwhere(graph.get_vertices(
+            vprops=[graph.vp.start_node])[:, 1]).flatten()
+    values = graph.vp.value.get_array()[starts].flatten()
+    acceptable = np.argwhere(values > threshold).flatten()
+    return starts[acceptable]

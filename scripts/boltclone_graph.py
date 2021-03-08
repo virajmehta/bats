@@ -14,7 +14,8 @@ from tqdm import tqdm
 
 from env_wrapper import NormalizedBoxEnv
 from modelling.policy_construction import behavior_clone
-from modelling.utils.graph_util import make_boltzmann_policy_dataset
+from modelling.utils.graph_util import make_boltzmann_policy_dataset,\
+        get_value_thresholded_starts
 from examples.mazes.maze_util import get_starts_from_graph
 
 
@@ -28,7 +29,10 @@ def run(args):
         starts = get_starts_from_graph(graph, env)
     else:
         starts = None
-    data, val_data = make_boltzmann_policy_dataset(
+    if args.value_threshold > 0:
+        starts = get_value_thresholded_starts(graph, args.value_threshold,
+                                              starts)
+    data, val_data, _ = make_boltzmann_policy_dataset(
             graph=graph,
             n_collects=args.n_collects,
             temperature=args.temperature,
@@ -70,6 +74,7 @@ def parse_args():
     parser.add_argument('--pi_architecture', default='256,256')
     parser.add_argument('--real_edges_only', action='store_true')
     parser.add_argument('--unique_edges', action='store_true')
+    parser.add_argument('--value_threshold', type=float, default=0)
     parser.add_argument('--use_any_start', action='store_true')
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--pudb', action='store_true')
