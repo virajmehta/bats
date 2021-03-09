@@ -372,13 +372,14 @@ class BATSTrainer:
             return
         print("performing value iteration")
         pbar = trange(self.max_val_iterations)
+        reward_mat = adjacency(self.G, weight=self.G.ep.reward)
+        adjmat = adjacency(self.G)
         for i in pbar:
             # first we initialize the occupancies with the first nodes as 1
             if self.use_occupancy:
                 raise NotImplementedError('Deprecating for now, not sure if we '
                                           'are still using or not.')
             # Construct sparse adjacency, reward, sparse value matrices.
-            reward_mat = adjacency(self.G, weight=self.G.ep.reward)
             target_val = diags(
                 (self.gamma * self.G.vp.value.get_array()
                             * (1 - self.G.vp.terminal.get_array())),
@@ -386,7 +387,6 @@ class BATSTrainer:
             )
             # WARNING: graph-tool returns transpose of standard adjacency matrix
             #          hence the line target_val * adjmat (instead of reverse).
-            adjmat = adjacency(self.G)
             out_degrees = np.array(adjmat.sum(axis=0))[0, ...]
             is_dead_end = out_degrees == 0
             target_mat = target_val * adjmat

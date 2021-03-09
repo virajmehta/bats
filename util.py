@@ -193,9 +193,11 @@ def get_starts_from_graph(graph, env, env_name):
         return np.argwhere(is_starts).flatten()
     elif env_name.startswith('halfcheetah') or env_name.startswith('walker') or env_name.startswith('hopper'):
         dataset = env.get_dataset()
-        ends = dataset['timeouts'] | dataset['terminals']
+        ends = dataset['timeouts'].astype(bool) | dataset['terminals'].astype(bool)
         ends_dense = np.nonzero(ends)[0]
         start_states = np.concatenate([[0], ends_dense + 1])
+        if start_states[-1] >= graph.get_vertices().shape[0]:
+            start_states = start_states[:-1]
         return start_states
     else:
         raise NotImplementedError('env {env_name} not supported for start state detection')
