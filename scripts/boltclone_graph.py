@@ -56,6 +56,7 @@ def run(args):
         env=env,
         max_ep_len=env._max_episode_steps,
         train_loops_per_epoch=1,
+        num_eval_eps=args.num_eval_eps,
     )
 
 
@@ -64,7 +65,7 @@ def parse_args():
     parser.add_argument('--env')
     parser.add_argument('--graph_dir')
     parser.add_argument('--save_dir')
-    parser.add_argument('--epochs', type=int, default=25)
+    parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--od_wait', type=int, default=0)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
@@ -76,6 +77,7 @@ def parse_args():
     parser.add_argument('--unique_edges', action='store_true')
     parser.add_argument('--value_threshold', type=float, default=0)
     parser.add_argument('--use_any_start', action='store_true')
+    parser.add_argument('--num_eval_eps', type=int, default=100)
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()

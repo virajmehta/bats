@@ -11,8 +11,10 @@ import h5py
 import gym
 import numpy as np
 from tqdm import tqdm
+import torch
 
 from env_wrapper import NormalizedBoxEnv
+from modelling.dynamics_construction import get_pnn
 from modelling.policy_construction import behavior_clone
 from modelling.utils.graph_util import make_boltzmann_policy_dataset,\
         get_value_thresholded_starts
@@ -76,7 +78,7 @@ def add_imaginary_points(data, args):
                 if walker_terminal(curr):
                     break
                 new_obs.append(curr)
-                new_acts.append(acts)
+                new_acts.append(act)
             pbar.update(args.horizon)
     pbar.close()
     data['observations'] = np.vstack([data['observations'], np.array(new_obs)])
