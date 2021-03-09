@@ -135,6 +135,7 @@ def behavior_clone(
     val_size=0,
     val_dataset=None, # Dataset w same structure as dataset but for validation.
     batch_size=256,
+    batch_updates_per_epoch=None, # If None then epoch is going through dataset.
     learning_rate=1e-3,
     weight_decay=0,
     cuda_device='',
@@ -197,6 +198,7 @@ def behavior_clone(
             train_loops_per_epoch=train_loops_per_epoch,
     )
     trainer.fit(tr_data, epochs, val_data, od_wait,
+                batch_updates_per_epoch=batch_updates_per_epoch,
                 last_column_is_weights=has_weights)
     policy.load_model(os.path.join(save_dir, 'model.pt'))
     return policy

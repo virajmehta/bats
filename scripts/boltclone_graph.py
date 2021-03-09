@@ -58,6 +58,7 @@ def run(args):
         train_loops_per_epoch=1,
         num_eval_eps=args.num_eval_eps,
         add_entropy_bonus=args.add_entropy_bonus,
+        batch_updates_per_epoch=args.batch_updates_per_epoch,
     )
 
 
@@ -67,6 +68,7 @@ def parse_args():
     parser.add_argument('--graph_dir')
     parser.add_argument('--save_dir')
     parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--batch_updates_per_epoch', type=int, default=500)
     parser.add_argument('--od_wait', type=int, default=0)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
