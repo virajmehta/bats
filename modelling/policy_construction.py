@@ -132,7 +132,7 @@ def behavior_clone(
     save_dir,
     epochs,
     hidden_sizes='256,256',
-    deterministic=False, # Whether we have deterministic policy.
+    add_entropy_bonus=True,
     standardize_targets=False,
     od_wait=None,  # Epochs of no validation improvement before break.
     val_size=0,
@@ -180,7 +180,8 @@ def behavior_clone(
     # Initialize model.
     tr_x, tr_y = tensor_data[:2]
     policy = get_policy(tr_x.shape[1], tr_y.shape[1],
-                        hidden_sizes, standardize_targets)
+                        hidden_sizes, standardize_targets,
+                        add_entropy_bonus=add_entropy_bonus)
     standardizers = [(torch.mean(tr_x, dim=0), torch.std(tr_x, dim=0)),
                      (torch.mean(tr_y, dim=0), torch.std(tr_y, dim=0))]
     policy.set_standardization(standardizers)
@@ -289,6 +290,7 @@ def get_policy(
         hidden_sizes='256,256',
         deterministic=False,
         standardize_targets=False,
+        add_entropy_bonus=True,
 ):
     if deterministic:
         return DeterministicPolicy(
@@ -309,7 +311,7 @@ def get_policy(
             logvar_hidden_sizes=[],
             tanh_transform=True,
             train_alpha_entropy=True,
-            add_entropy_bonus=True,
+            add_entropy_bonus=add_entropy_bonus,
             standardize_targets=standardize_targets,
         )
 
