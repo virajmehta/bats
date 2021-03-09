@@ -6,11 +6,9 @@ from copy import deepcopy
 
 base_config = OrderedDict(
     ep=0.1,
-    en=0.2,
-    ncpu=128,
+    en=0.3,
+    ncpu=84,
     scs=50000,
-    nvi=250,
-    nvie=1000,
 )
 
 # For any additional configurations, add them here.
@@ -29,6 +27,7 @@ HOPPER_CONFIGS['hopper-random']['env_name'] = 'hopper-random-v2'
 HOPPER_CONFIGS['hopper-mixed'] = deepcopy(base_config)
 HOPPER_CONFIGS['hopper-mixed']['env_name'] =\
     'hopper-medium-replay-v2'
+HOPPER_CONFIGS['hopper-mixed']['load_model'] = 'experiments/hopper_medium_replay_bolt'
 
 HOPPER_CONFIGS['hopper-medium'] = deepcopy(base_config)
 HOPPER_CONFIGS['hopper-medium']['env_name'] = 'hopper-medium-v2'
