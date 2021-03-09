@@ -5,10 +5,10 @@ from collections import OrderedDict
 from copy import deepcopy
 
 base_config = OrderedDict(
-    ep=0.1,
-    en=0.3,
-    ncpu=84,
-    scs=50000,
+    epsilon_planning=0.07,
+    epsilon_neighbors=0.3,
+    num_cpus=84,
+    stitching_chunk_size=50000,
 )
 
 # For any additional configurations, add them here.
