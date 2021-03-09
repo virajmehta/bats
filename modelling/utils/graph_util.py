@@ -38,7 +38,7 @@ def make_best_action_dataset(graph):
 
 
 def make_boltzmann_policy_dataset(graph, n_collects,
-                                  temperature=0.001,
+                                  temperature=0.1,
                                   max_ep_len=1000,
                                   gamma=0.99,
                                   normalize_qs=True,
@@ -67,7 +67,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             property "start".
         silent: Whether to be silent.
     """
-    data = {k: [] for k in ['observations', 'actions']}
+    data = {k: [] for k in ['observations', 'actions', 'rewards',
+                            'next_observations', 'terminals', 'values']}
     # Get the start states.
     if starts is None:
         if any_state_is_start:
@@ -107,6 +108,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         ret = 0
         currv = np.random.choice(starts)
         while not done and t < max_ep_len:
+            # bstv = graph.vp.best_child[currv]
+            bstv = graph.vp.best_neighbor[currv]
             if temperature > 0:
                 childs = graph.get_out_neighbors(currv,
                         vprops=[graph.vp.value, graph.vp.terminal])
@@ -119,6 +122,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 probs /= np.sum(probs)
                 nxtv = np.random.choice(childs[:, 0], p=probs)
             else:
+<<<<<<< HEAD
                 nxtv = graph.vp.best_neighbor[currv]
             if nxtv < 1:
                 break
@@ -133,6 +137,20 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 edges.add((currv, nxtv))
             done = graph.vp.terminal[nxtv]
             ret += graph.ep.reward[edge]
+=======
+                nxtv = bstv
+            data['observations'].append(np.array(graph.vp.obs[currv]))
+            # data['actions'].append(
+            #         np.array(graph.ep.action[graph.edge(currv, bstv)]))
+            data['actions'].append(
+                    np.array(graph.ep.action[graph.edge(currv, nxtv)]))
+            data['rewards'].append(graph.ep.reward[graph.edge(currv, nxtv)])
+            data['next_observations'].append(np.array(graph.vp.obs[nxtv]))
+            # done = graph.vp.terminal[nxtv]
+            done = False
+            data['terminals'].append(done)
+            data['values'].append(graph.vp.value[currv])
+>>>>>>> acmethods
             currv = nxtv
             t += 1
             if n_edges >= n_collects:
