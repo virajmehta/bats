@@ -32,6 +32,7 @@ def make_output_dir(name, overwrite, args):
     output_path.mkdir()
     args_path = dir_path / 'args.json'
     args = vars(args)
+    print(args)
     for k, v in args.items():
         if type(v) is PosixPath:
             args[k] = str(v)
