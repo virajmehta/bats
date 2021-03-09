@@ -13,7 +13,7 @@ from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import load_policy, behavior_clone
 from modelling.utils.graph_util import make_boltzmann_policy_dataset
 from sklearn.neighbors import radius_neighbors_graph
-from examples.mazes.maze_util import get_starts_from_graph
+from util import get_starts_from_graph
 from ipdb import set_trace as db  # NOQA
 
 
@@ -180,10 +180,7 @@ class BATSTrainer:
         # if this order is changed loading behavior might break
         self.add_dataset_edges()
         # get a list of the start states for the graph
-        if 'maze' in self.env_name:
-            self.start_states = get_starts_from_graph(self.G, self.env)
-        else:
-            self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+        self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
         print(f"Found {len(self.start_states)} start nodes")
         np.save(self.start_state_path, self.start_states)
         self.find_possible_stitches()
@@ -299,15 +296,11 @@ class BATSTrainer:
         print(f"Adding {self.dataset_size} initial edges to our graph")
         iterator = self.get_iterator(self.dataset_size)
         last_obs = None
-        start_nodes = np.zeros((len(self.vertices),))
         for i in iterator:
             obs = self.dataset['observations'][i, :]
             next_obs = self.dataset['next_observations'][i, :]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
-            if (last_obs != obs).any():
-                vnum = self.vertices[obs.tobytes()]
-                start_nodes[vnum] = 1
             if (self.G.vertex_index[v_from], self.G.vertex_index[v_to]) in self.stitches_tried:  # NOQA
                 continue
             action = self.dataset['actions'][i, :]
@@ -322,7 +315,8 @@ class BATSTrainer:
             self.G.ep.imagined[e] = False
             self.G.vp.terminal[v_to] = terminal
             last_obs = next_obs
-        self.G.vp.start_node.get_array()[:] = start_nodes
+        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
+        self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 
     def find_possible_stitches(self):
         '''
