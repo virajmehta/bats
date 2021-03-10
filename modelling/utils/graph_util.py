@@ -46,7 +46,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   val_start_prop=0,
                                   any_state_is_start=False,
                                   only_add_real=False,
-                                  get_unique_edges=False,
+                                  get_unique_edges=True,
                                   starts=None,
                                   silent=False):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
