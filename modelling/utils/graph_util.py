@@ -67,8 +67,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             property "start".
         silent: Whether to be silent.
     """
-    data = {k: [] for k in ['observations', 'actions', 'rewards',
-                            'next_observations', 'terminals', 'values']}
+    data = {k: [] for k in ['observations', 'actions']}
     # Get the start states.
     if starts is None:
         if any_state_is_start:
@@ -122,7 +121,6 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 probs /= np.sum(probs)
                 nxtv = np.random.choice(childs[:, 0], p=probs)
             else:
-<<<<<<< HEAD
                 nxtv = graph.vp.best_neighbor[currv]
             if nxtv < 1:
                 break
@@ -137,20 +135,6 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 edges.add((currv, nxtv))
             done = graph.vp.terminal[nxtv]
             ret += graph.ep.reward[edge]
-=======
-                nxtv = bstv
-            data['observations'].append(np.array(graph.vp.obs[currv]))
-            # data['actions'].append(
-            #         np.array(graph.ep.action[graph.edge(currv, bstv)]))
-            data['actions'].append(
-                    np.array(graph.ep.action[graph.edge(currv, nxtv)]))
-            data['rewards'].append(graph.ep.reward[graph.edge(currv, nxtv)])
-            data['next_observations'].append(np.array(graph.vp.obs[nxtv]))
-            # done = graph.vp.terminal[nxtv]
-            done = False
-            data['terminals'].append(done)
-            data['values'].append(graph.vp.value[currv])
->>>>>>> acmethods
             currv = nxtv
             t += 1
             if n_edges >= n_collects:

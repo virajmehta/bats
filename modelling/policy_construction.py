@@ -135,7 +135,8 @@ def behavior_clone(
     val_size=0,
     val_dataset=None, # Dataset w same structure as dataset but for validation.
     batch_size=256,
-    batch_updates_per_epoch=None, # If None then epoch is going through dataset.
+    batch_updates_per_epoch=50, # If None then epoch is going through dataset.
+    shuffle_dataset=True,
     learning_rate=1e-3,
     weight_decay=0,
     cuda_device='',
@@ -145,7 +146,7 @@ def behavior_clone(
     max_ep_len: int = 1000,
     num_eval_eps: int = 10,
     train_loops_per_epoch: int = 1,
-    target_entropy=None,
+    target_entropy=-3,
 ):
     use_gpu = cuda_device != ''
     # Get data into trainable form.
@@ -164,8 +165,8 @@ def behavior_clone(
         tr_data = DataLoader(
             TensorDataset(*tensor_data),
             batch_size=batch_size,
-            shuffle=not use_gpu,
-            pin_memory=use_gpu,
+            shuffle=shuffle_dataset or not use_gpu,
+            pin_memory=not shuffle_dataset and use_gpu,
         )
         shuff_idxs = np.arange(len(val_dataset['observations']))
         np.random.shuffle(shuff_idxs)

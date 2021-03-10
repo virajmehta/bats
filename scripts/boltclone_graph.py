@@ -59,6 +59,7 @@ def run(args):
         num_eval_eps=args.num_eval_eps,
         add_entropy_bonus=args.add_entropy_bonus,
         batch_updates_per_epoch=args.batch_updates_per_epoch,
+        target_entropy=args.target_entropy,
     )
 
 
@@ -68,7 +69,7 @@ def parse_args():
     parser.add_argument('--graph_dir')
     parser.add_argument('--save_dir')
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--batch_updates_per_epoch', type=int, default=500)
+    parser.add_argument('--batch_updates_per_epoch', type=int, default=50)
     parser.add_argument('--od_wait', type=int, default=0)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
@@ -82,6 +83,7 @@ def parse_args():
     parser.add_argument('--use_any_start', action='store_true')
     parser.add_argument('--num_eval_eps', type=int, default=100)
     parser.add_argument('--add_entropy_bonus', action='store_true')
+    parser.add_argument('--target_entropy', type=float, default=None)
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
