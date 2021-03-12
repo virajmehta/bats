@@ -100,7 +100,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     if not silent:
         pbar = tqdm(total=n_collects)
     # Do Boltzmann rollouts.
-    edges = set()
+    edge_set = set()
     while n_edges < n_collects:
         done = False
         t = 0
@@ -129,10 +129,10 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             n_imagined += is_imagined
             n_edges += 1
             if not only_add_real or not graph.ep.imagined[edge]:
-                if not get_unique_edges or (currv, nxtv) not in edges:
+                if not get_unique_edges or (currv, nxtv) not in edge_set:
                     data['observations'].append(np.array(graph.vp.obs[currv]))
                     data['actions'].append(np.array(graph.ep.action[edge]))
-                edges.add((currv, nxtv))
+                edge_set.add((currv, nxtv))
             done = graph.vp.terminal[nxtv]
             ret += graph.ep.reward[edge]
             currv = nxtv
@@ -151,13 +151,13 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         pbar.close()
         print('Done collecting.')
         print('Proportion imagined edges taken: %f' % (n_imagined / n_edges))
-        print('Unique Edges: %d' % len(edges))
+        print('Unique Edges: %d' % len(edge_set))
         print('Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
     stats = OrderedDict(
         ImaginaryProp=n_imagined/n_edges,
         ReturnsAvg=np.mean(returns),
         ReturnsStd=np.std(returns),
-        UniqueEdges=len(edges),
+        UniqueEdges=len(edge_set),
     )
     data = {k: np.vstack(v) for k, v in data.items()}
     for k, v in data.items():
