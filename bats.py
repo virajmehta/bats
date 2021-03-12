@@ -430,10 +430,10 @@ class BATSTrainer:
 
     def train_bc(self, intermediate=False):
         print("cloning a policy")
-        data, val_data = make_boltzmann_policy_dataset(
+        data, _, _ = make_boltzmann_policy_dataset(
                 graph=self.G,
                 n_collects=self.G.num_vertices(),
-                temperature=self.temperature,
+                temperature=0.,
                 max_ep_len=self.env._max_episode_steps,
                 n_val_collects=0,
                 val_start_prop=0,

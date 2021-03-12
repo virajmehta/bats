@@ -38,13 +38,15 @@ def make_best_action_dataset(graph):
 
 
 def make_boltzmann_policy_dataset(graph, n_collects,
-                                  temperature=0.001,
+                                  temperature=0.1,
                                   max_ep_len=1000,
                                   gamma=0.99,
                                   normalize_qs=True,
                                   n_val_collects=0,
                                   val_start_prop=0,
                                   any_state_is_start=False,
+                                  only_add_real=False,
+                                  get_unique_edges=True,
                                   starts=None,
                                   silent=False):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
@@ -59,6 +61,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         n_val_collects: Number of data points to collect for a validation set.
         val_start_prop: [0, 1) percent of of starts to use for the validation
             set.
+        only_add_real: Whether to only add real edges.
+        get_unique_edges: Whether to only return unique edges to train on.
         starts: User provided start states. Otherwise will look for vertex
             property "start".
         silent: Whether to be silent.
@@ -90,59 +94,76 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         starts = starts[val_size:]
     else:
         val_data = None
-    n_added = 0
+    n_imagined = 0
+    n_edges = 0
+    returns = []
     if not silent:
         pbar = tqdm(total=n_collects)
     # Do Boltzmann rollouts.
-    while n_added < n_collects:
+    edges = set()
+    while n_edges < n_collects:
         done = False
         t = 0
+        ret = 0
         currv = np.random.choice(starts)
         while not done and t < max_ep_len:
+            # bstv = graph.vp.best_child[currv]
+            bstv = graph.vp.best_neighbor[currv]
             if temperature > 0:
                 childs = graph.get_out_neighbors(currv,
-                        vprops=[graph.vp.value])
-                        # vprops=[graph.vp.value, graph.vp.terminal])
+                        vprops=[graph.vp.value, graph.vp.terminal])
                 if len(childs) == 0:
                     break
                 edges = graph.get_out_edges(currv, eprops=[graph.ep.reward])
-                qs = edges[:, -1] + gamma * childs[:, 1]
-                # qs = edges[:, -1] + gamma * childs[:, 1] * (1 - childs[:, 2])
+                qs = edges[:, -1] + gamma * childs[:, 1] * (1 - childs[:, 2])
                 qs -= np.max(qs)
-                '''
-                if normalize_qs:
-                    minq, maxq = np.min(qs), np.max(qs)
-                    if minq ==  maxq:
-                        qs = np.ones(qs.shape)
-                    else:
-                        qs = (qs - minq) / (maxq - minq)
-                '''
                 probs = np.exp(qs / temperature)
                 probs /= np.sum(probs)
                 nxtv = np.random.choice(childs[:, 0], p=probs)
             else:
                 nxtv = graph.vp.best_neighbor[currv]
-                # nxtv = graph.vp.best_child[currv]
-            data['observations'].append(np.array(graph.vp.obs[currv]))
-            data['actions'].append(
-                    np.array(graph.ep.action[graph.edge(currv, nxtv)]))
-            # done = graph.vp.terminal[nxtv]
-            done = False
+            if nxtv < 1:
+                break
+            edge = graph.edge(currv, nxtv)
+            is_imagined = graph.ep.imagined[edge]
+            n_imagined += is_imagined
+            n_edges += 1
+            if not only_add_real or not graph.ep.imagined[edge]:
+                if not get_unique_edges or (currv, nxtv) not in edges:
+                    data['observations'].append(np.array(graph.vp.obs[currv]))
+                    data['actions'].append(np.array(graph.ep.action[edge]))
+                edges.add((currv, nxtv))
+            done = graph.vp.terminal[nxtv]
+            ret += graph.ep.reward[edge]
             currv = nxtv
-            n_added += 1
             t += 1
-            if n_added >= n_collects:
+            if n_edges >= n_collects:
                 break
         if not silent:
+            pbar.set_postfix(OrderedDict(
+                Edges=n_edges,
+                Imaginary=(n_imagined/ n_edges),
+                Return=ret,
+            ))
             pbar.update(t)
+        returns.append(ret)
     if not silent:
         pbar.close()
         print('Done collecting.')
+        print('Proportion imagined edges taken: %f' % (n_imagined / n_edges))
+        print('Unique Edges: %d' % len(edges))
+        print('Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
+    stats = OrderedDict(
+        ImaginaryProp=n_imagined/n_edges,
+        ReturnsAvg=np.mean(returns),
+        ReturnsStd=np.std(returns),
+        UniqueEdges=len(edges),
+    )
     data = {k: np.vstack(v) for k, v in data.items()}
     for k, v in data.items():
         if len(v.shape) == 1:
             data[k] = v.reshape(-1, 1)
-    return data, val_data
+    return data, val_data, stats
 
 
 def get_best_policy_returns(
@@ -212,3 +233,16 @@ def make_advantage_dataset(graph, gamma=0.99, suboptimal_only=False):
         if len(v.shape) == 1:
             data[k] = v.reshape(-1, 1)
     return data
+
+
+def get_value_thresholded_starts(
+    graph,
+    threshold,
+    starts=None,
+):
+    if starts is None:
+        starts = np.argwhere(graph.get_vertices(
+            vprops=[graph.vp.start_node])[:, 1]).flatten()
+    values = graph.vp.value.get_array()[starts].flatten()
+    acceptable = np.argwhere(values > threshold).flatten()
+    return starts[acceptable]

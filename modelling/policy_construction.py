@@ -9,8 +9,8 @@ from torch.nn.functional import tanh
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 
-from modelling.models import ModelTrainer, DeterministicPolicy,\
-        StochasticPolicy, AWACTrainer, Critic
+from modelling.models import DeterministicPolicy, StochasticPolicy, Critic
+from modelling.trainers import ActorCriticTrainer, AWACTrainer, ModelTrainer
 from util import s2i
 
 
@@ -33,11 +33,13 @@ def learn_awac_policy(
     max_ep_len: int = 1000,
     num_eval_eps: int = 10,
     train_loops_per_epoch: int = 1,
+    target_entropy=None,
 ):
     obs_dim = dataset['observations'].shape[1]
     act_dim = dataset['actions'].shape[1]
     # Initialize networks and make trainer.
-    policy = get_policy(obs_dim, act_dim, policy_hidden_sizes, False)
+    policy = get_policy(obs_dim, act_dim, policy_hidden_sizes, False,
+                        target_entropy=target_entropy)
     if qnets is None:
         qnets, qtargets = [[get_critic(obs_dim, act_dim, qnet_hidden_sizes)
                             for _ in range(n_qnets)] for _ in range(2)]
@@ -61,7 +63,6 @@ def learn_awac_policy(
         env=env,
         max_ep_len=max_ep_len,
         num_eval_eps=num_eval_eps,
-        train_loops_per_epoch=train_loops_per_epoch,
     )
     # Organize data and train.
     rand_idx = np.arange(dataset['observations'].shape[0])
@@ -76,16 +77,12 @@ def learn_awac_policy(
     if 'values' in dataset:
         tensor_data.append(torch.Tensor(dataset['values'][rand_idx]))
     use_gpu = cuda_device != ''
-    trainer.train(
-        dataset=DataLoader(
-            TensorDataset(*tensor_data),
-            batch_size=batch_size,
-            pin_memory=use_gpu,
-            shuffle=not use_gpu,
-        ),
-        epochs=epochs
-    )
+    dataloader = get_qlearning_dataloader(dataset, cuda_device, batch_size,
+                                          shuffle=True)
+    trainer.train(dataset=dataloader, epochs=epochs,
+                  train_loops_per_epoch=train_loops_per_epoch)
     return policy, qnets
+
 
 def advantage_weighted_regression(
     dataset,  # Dataset is a dictionary with obs, acts, and optionally adv.
@@ -132,12 +129,14 @@ def behavior_clone(
     save_dir,
     epochs,
     hidden_sizes='256,256',
-    deterministic=False, # Whether we have deterministic policy.
+    add_entropy_bonus=True,
     standardize_targets=False,
     od_wait=None,  # Epochs of no validation improvement before break.
     val_size=0,
     val_dataset=None, # Dataset w same structure as dataset but for validation.
     batch_size=256,
+    batch_updates_per_epoch=50, # If None then epoch is going through dataset.
+    shuffle_dataset=True,
     learning_rate=1e-3,
     weight_decay=0,
     cuda_device='',
@@ -147,6 +146,7 @@ def behavior_clone(
     max_ep_len: int = 1000,
     num_eval_eps: int = 10,
     train_loops_per_epoch: int = 1,
+    target_entropy=-3,
 ):
     use_gpu = cuda_device != ''
     # Get data into trainable form.
@@ -165,8 +165,8 @@ def behavior_clone(
         tr_data = DataLoader(
             TensorDataset(*tensor_data),
             batch_size=batch_size,
-            shuffle=not use_gpu,
-            pin_memory=use_gpu,
+            shuffle=shuffle_dataset or not use_gpu,
+            pin_memory=not shuffle_dataset and use_gpu,
         )
         shuff_idxs = np.arange(len(val_dataset['observations']))
         np.random.shuffle(shuff_idxs)
@@ -180,7 +180,9 @@ def behavior_clone(
     # Initialize model.
     tr_x, tr_y = tensor_data[:2]
     policy = get_policy(tr_x.shape[1], tr_y.shape[1],
-                        hidden_sizes, standardize_targets)
+                        hidden_sizes, standardize_targets,
+                        add_entropy_bonus=add_entropy_bonus,
+                        target_entropy=target_entropy)
     standardizers = [(torch.mean(tr_x, dim=0), torch.std(tr_x, dim=0)),
                      (torch.mean(tr_y, dim=0), torch.std(tr_y, dim=0))]
     policy.set_standardization(standardizers)
@@ -197,6 +199,7 @@ def behavior_clone(
             train_loops_per_epoch=train_loops_per_epoch,
     )
     trainer.fit(tr_data, epochs, val_data, od_wait,
+                batch_updates_per_epoch=batch_updates_per_epoch,
                 last_column_is_weights=has_weights)
     policy.load_model(os.path.join(save_dir, 'model.pt'))
     return policy
@@ -244,6 +247,106 @@ def supervise_critic(
     return net
 
 
+def sarsa_learn_critic(
+    # A dictionary containing the qlearning standards.
+    dataset,
+    policy,
+    save_dir,
+    epochs,
+    num_qs=1,
+    hidden_sizes='256,256',
+    gamma=0.99,
+    batch_size=256,
+    learning_rate=1e-3,
+    weight_decay=0,
+    cuda_device='',
+    save_freq=-1,
+    silent=False,
+):
+    use_gpu = cuda_device != ''
+    obs_dim = dataset['observations'].shape[1]
+    act_dim = dataset['actions'].shape[1]
+    dataloader = get_qlearning_dataloader(dataset, cuda_device, batch_size,
+                                          shuffle=True)
+    qnets = [get_critic(obs_dim, act_dim, hidden_sizes) for _ in range(num_qs)]
+    qts = [get_critic(obs_dim, act_dim, hidden_sizes) for _ in range(num_qs)]
+    trainer = ActorCriticTrainer(
+        policy=policy,
+        qnets=qnets,
+        qtargets=qts,
+        gamma=gamma,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        cuda_device=cuda_device,
+        save_freq=save_freq,
+        save_path=save_dir,
+    )
+    trainer.train(dataloader, epochs, train_policy=False)
+    return qnets
+
+
+def train_policy_to_maximize_critic(
+    # A dictionary containing observations and actions.
+    dataset,
+    env,
+    qnets,
+    save_dir,
+    epochs,
+    policy=None,
+    num_qs=1,
+    hidden_sizes='256,256',
+    batch_size=256,
+    learning_rate=1e-3,
+    weight_decay=0,
+    cuda_device='',
+    save_freq=-1,
+    silent=False,
+):
+    use_gpu = cuda_device != ''
+    obs_dim = dataset['observations'].shape[1]
+    act_dim = dataset['actions'].shape[1]
+    dataloader = DataLoader(
+        TensorDataset(torch.Tensor(dataset['observations'])),
+        batch_size=batch_size,
+        shuffle=True,
+    )
+    if policy is None:
+        get_policy(obs_dim, act_dim, hidden_sizes)
+    trainer = ActorCriticTrainer(
+        policy=policy,
+        qnets=qnets,
+        qtargets=qnets,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        cuda_device=cuda_device,
+        save_freq=save_freq,
+        save_path=save_dir,
+        env=env,
+    )
+    trainer.train(dataloader, epochs, train_critic=False)
+    return policy
+
+
+def get_qlearning_dataloader(dataset, cuda_device, batch_size, shuffle=False):
+    rand_idx = np.arange(dataset['observations'].shape[0])
+    np.random.shuffle(rand_idx)
+    tensor_data = [
+        torch.Tensor(dataset['observations'][rand_idx]),
+        torch.Tensor(dataset['actions'][rand_idx]),
+        torch.Tensor(dataset['rewards'][rand_idx]),
+        torch.Tensor(dataset['next_observations'][rand_idx]),
+        torch.Tensor(dataset['terminals'][rand_idx]),
+    ]
+    if 'values' in dataset:
+        tensor_data.append(torch.Tensor(dataset['values'][rand_idx]))
+    use_gpu = cuda_device != ''
+    return DataLoader(
+        TensorDataset(*tensor_data),
+        batch_size=batch_size,
+        pin_memory=use_gpu and not shuffle,
+        shuffle=shuffle or not use_gpu,
+    )
+
 def split_supervised_data(tensor_data, val_size, batch_size, use_gpu):
     td_size = len(tensor_data)
     if val_size > 0:
@@ -289,6 +392,8 @@ def get_policy(
         hidden_sizes='256,256',
         deterministic=False,
         standardize_targets=False,
+        add_entropy_bonus=True,
+        target_entropy=None,
 ):
     if deterministic:
         return DeterministicPolicy(
@@ -309,7 +414,8 @@ def get_policy(
             logvar_hidden_sizes=[],
             tanh_transform=True,
             train_alpha_entropy=True,
-            add_entropy_bonus=True,
+            add_entropy_bonus=add_entropy_bonus,
+            target_entropy=target_entropy,
             standardize_targets=standardize_targets,
         )
 

@@ -49,7 +49,7 @@ def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
     return torch_to(eps * std + mu)
 
 
-def unroll(env, policy, max_ep_len=float('inf')):
+def unroll(env, policy, max_ep_len=float('inf'), replay_buffer=None):
     t = 0
     done = False
     s = env.reset()
@@ -59,7 +59,12 @@ def unroll(env, policy, max_ep_len=float('inf')):
             a = policy.get_action(torch.Tensor(s),
                                   deterministic=True).cpu().numpy()
         n, r, done, _ = env.step(a)
-        tup = (s, a, r, n, done)
+        if replay_buffer is not None:
+            replay_buffer['observations'].append(s)
+            replay_buffer['actions'].append(a)
+            replay_buffer['rewards'].append(r)
+            replay_buffer['next_observations'].append(n)
+            replay_buffer['terminals'].append(done)
         ret += r
         s = n
     return ret
@@ -72,6 +77,20 @@ def swish(x):
 def arctanh(x):
     return 0.5 * (torch.log(1 + x) - torch.log(1 - x))
 
+
+class IteratedDataLoader(object):
+
+    def __init__(self, dataloader):
+        self._dataloader = dataloader
+        self._iterator = iter(dataloader)
+
+    def next(self):
+        try:
+            batch = next(self._iterator)
+        except StopIteration:
+            self._iterator = iter(self._dataloader)
+            batch = next(self._iterator)
+        return batch
 
 class Standardizer(nn.Module):
 

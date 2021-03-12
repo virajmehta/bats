@@ -14,14 +14,22 @@ from tqdm import tqdm
 from env_wrapper import NormalizedBoxEnv
 from modelling.policy_construction import supervise_critic,\
         learn_awac_policy
+from modelling.utils.graph_util import make_boltzmann_policy_dataset
 
 
 def run(args):
     # Assemble data.
     # Pre-train a QNet.
+    graph = load_graph(os.path.join(args.graph_dir, 'converged_graph.gt'))
+    env = NormalizedBoxEnv(gym.make('Pendulum-v0'))
+    data, _ = make_boltzmann_policy_dataset(
+        graph=graph,
+        n_collects=args.n_collects,
+        temperature=args.temperature,
+        max_ep_len=env._max_episode_steps,
+        any_state_is_start=args.use_data_starts,
+    )
     if args.pretrain_qnets:
-        data = assemble_dataset_from_graph(os.path.join(args.graph_dir,
-                                             'converged_graph.gt'))
         qnets = [supervise_critic(
                     {k: data[k] for k in ['observations', 'actions', 'values']},
                     save_dir=os.path.join(args.save_dir, 'qnet%d' % n),
@@ -34,8 +42,6 @@ def run(args):
     else:
         qnets = None
     # Run AWAC with the pre-trained qnets.
-    gname = 'base_graph.gt' if args.base_graph else 'stitched_graph.gt'
-    data = assemble_dataset_from_graph(os.path.join(args.graph_dir, gname))
     awac_data = {k: data[k] for k in ['observations', 'actions', 'rewards',
                                       'next_observations', 'terminals']}
     if args.sarsa:
@@ -49,35 +55,10 @@ def run(args):
         cuda_device=args.cuda_device,
         n_qnets=args.n_qnets,
         qnets=qnets,
-        env=NormalizedBoxEnv(gym.make('Pendulum-v0')),
+        env=env,
         max_ep_len=1000,
-        train_loops_per_epoch=50,
+        train_loops_per_epoch=1000,
     )
-
-
-def assemble_dataset_from_graph(graph_path, gamma=0.99):
-    graph = load_graph(graph_path)
-    data = {k: [] for k in ['observations', 'actions', 'rewards',
-                            'next_observations', 'terminals', 'values']}
-    states, actions, rews, nexts, terminals, values = [[] for _ in range(6)]
-    for v in graph.iter_vertices():
-        if not graph.vp.original[v]:
-            continue
-        for iidx, oidx, r, og in graph.get_out_edges(v,
-                eprops=[graph.ep.reward, graph.ep.original]):
-            if not og:
-                continue
-            data['observations'].append(graph.vp.obs[v])
-            data['actions'].append(graph.ep.action[graph.edge(iidx, oidx)])
-            data['rewards'].append(r)
-            data['next_observations'].append(graph.vp.obs[oidx])
-            data['terminals'].append(graph.vp.terminal[v])
-            data['values'].append(r + gamma * graph.vp.value[oidx])
-    data = {k: np.array(v) for k, v in data.items()}
-    for k, v in data.items():
-        if len(v.shape) == 1:
-            data[k] = v.reshape(-1, 1)
-    return data
 
 
 def parse_args():
@@ -89,9 +70,12 @@ def parse_args():
     parser.add_argument('--awac_epochs', type=int, default=50)
     parser.add_argument('--qnet_od_wait', type=int, default=100)
     parser.add_argument('--qnet_val_size', type=float, default=0.1)
+    parser.add_argument('--n_collects', type=int, default=int(1e6))
+    parser.add_argument('--temperature', type=float, default=0.1)
     parser.add_argument('--sarsa', action='store_true')
     parser.add_argument('--pretrain_qnets', action='store_true')
     parser.add_argument('--base_graph', action='store_true')
+    parser.add_argument('--use_data_starts', action='store_true')
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()

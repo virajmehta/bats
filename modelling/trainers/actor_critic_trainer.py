@@ -1,5 +1,5 @@
 """
-AWAC Trainer for policy.
+Trainer that does standard actor critic methods.
 """
 from collections import OrderedDict
 import os
@@ -11,11 +11,12 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
-from modelling.utils.torch_utils import set_cuda_device, torch_to, unroll
+from modelling.utils.torch_utils import set_cuda_device, torch_to, unroll,\
+        IteratedDataLoader
 from util import dict_append
 
 
-class AWACTrainer(object):
+class ActorCriticTrainer(object):
 
     def __init__(
             self,
@@ -32,12 +33,9 @@ class AWACTrainer(object):
             silent: bool = False,
             save_path_exists_ok: bool = True,
             track_stats: Sequence[str] = None,
-            adv_weighting: float = 1, # How much to weight advantage by.
-            weight_max: float = 20, # Maximum weighting a datapoint can have.
             env = None, # Gym environment for doing evaluations.
             max_ep_len: int = 1000,
             num_eval_eps: int = 10,
-            train_loops_per_epoch=1, # Number of times to loop through dataset.
     ):
         # Put networks on correct device.
         set_cuda_device(cuda_device)
@@ -72,26 +70,13 @@ class AWACTrainer(object):
                 weight_decay=wdict['%s_%s' % (netname, k)],
             ) for k, v in psets.items()})
         # Set up save directory and logging.
-        self._save_path = save_path
-        if save_path is not None:
-            os.makedirs(save_path, exist_ok=save_path_exists_ok)
-            os.makedirs(os.path.join(save_path, 'policy'),
-                        exist_ok=save_path_exists_ok)
-            for idx in range(len(qnets)):
-                os.makedirs(os.path.join(save_path, 'qnet%d' % idx),
-                            exist_ok=save_path_exists_ok)
-            self._writer = SummaryWriter(
-                log_dir=os.path.join(save_path, 'tensorboard'))
-        else:
-            self._writer = None
-        self._train_loops_per_epoch = train_loops_per_epoch
+        self.save_path_exists_ok = save_path_exists_ok
+        self.set_save_path(save_path)
         self._save_freq = save_freq
         self._silent = silent
         self._pbar = None
         self._soft_tau = soft_tau
         self._gamma = gamma
-        self._adv_weighting = adv_weighting
-        self._weight_max = weight_max
         self._total_epochs = 0
         self._stats = OrderedDict()
         self._tr_stats = OrderedDict()
@@ -108,6 +93,10 @@ class AWACTrainer(object):
             dataset: DataLoader,
             epochs: int,
             reset_models: bool = False,
+            pi_data: DataLoader = None,
+            batch_updates_per_epoch: int = 1000,
+            train_critic: bool = True,
+            train_policy: bool = True,
     ) -> None:
         """Fit the model on a dataset. Returns train and validation losses.
         Args:
@@ -115,6 +104,9 @@ class AWACTrainer(object):
             dataset: Dataset to train on.
             reset_models: Whether to reset the models.
         """
+        critic_rb = IteratedDataLoader(dataset)
+        pi_rb = (IteratedDataLoader(dataset) if pi_data is None
+                 else IteratedDataLoader(pi_data))
         if reset_models:
             self.policy.reset()
             for qnet in self.qnets:
@@ -125,9 +117,11 @@ class AWACTrainer(object):
             self._pbar = tqdm(total=epochs)
         for _ in range(epochs):
             self._set_train(True)
-            for _ in range(self._train_loops_per_epoch):
-                for batch in dataset:
-                    self.batch_train(batch)
+            for _ in range(batch_updates_per_epoch):
+                if train_critic:
+                    self.crtic_batch_train(critic_rb.next())
+                if train_policy:
+                    self.policy_batch_train(pi_rb.next())
             self._set_train(False)
             self._evaluate_policy()
             self.end_epoch()
@@ -141,10 +135,11 @@ class AWACTrainer(object):
             self._pbar.close()
         self._pbar = None
 
-    def batch_train(
+
+    def crtic_batch_train(
             self,
             batch: Sequence[torch.Tensor],
-    ) -> float:
+    ) -> dict:
         """Do a train step on batch. If validation batch, just log stats."""
         st, at, rews, nxts, terms = [torch_to(b) for b in batch[:5]]
         if len(batch) > 5:
@@ -152,14 +147,6 @@ class AWACTrainer(object):
         else:
             vt = None
         losses, bstats = OrderedDict(), OrderedDict()
-        # Compute the weightings to use on the batch.
-        weighting = self.get_advantage_weighting(st, at, values=vt)
-        # Get the policy loss.
-        policy_out = self.policy.forward(batch[:2])
-        policy_out['weighting'] = weighting
-        policy_losses, policy_stats = self.policy.loss(policy_out)
-        losses.update({'policy_%s' % k: v for k, v in policy_losses.items()})
-        bstats.update({'policy/%s' % k: v for k, v in policy_stats.items()})
         # Form targets if no value is provided.
         if vt is None:
             pi_acts = self.policy.get_action(nxts)
@@ -190,22 +177,50 @@ class AWACTrainer(object):
             dict_append(self._tr_stats, k, v)
         return {k: loss.item() for k, loss in losses.items()}
 
-    def get_advantage_weighting(self, st, at, values=None):
-        # Compute Q values.
-        with torch.no_grad():
-            qvals = torch.min(torch.stack(
-                [qnet(st, at) for qnet in self.qnets]), dim=0)[0]
-        # Compute policy values.
-        if values is None:
-            pi_actions = self.policy.get_action(st)
-            with torch.no_grad():
-                values = torch.min(torch.stack(
-                    [qnet(st, pi_actions) for qnet in self.qnets]), dim=0)[0]
-        # Compute the advantage weighting.
-        advantage = qvals - values
-        weighting = torch.clamp((advantage / self._adv_weighting).exp(),
-                                max=self._weight_max)
-        return weighting
+    def policy_batch_train(
+            self,
+            batch: Sequence[torch.Tensor],
+    ) -> dict:
+        # Estimate policy value on batch.
+        st = torch_to(batch[0])
+        actions, log_pis = self.policy.sample_actions_and_logprobs(st)
+        values = torch.min(torch.stack(
+            [qn(st, actions) for qn in self.qnets]), dim=0)[0]
+        # Policy model loss.
+        model_loss = (-1 * values).mean()
+        self.optimizers['policy_Model'].zero_grad()
+        model_loss.backward()
+        self.optimizers['policy_Model'].step()
+        ret_dict = {'policy_Model': model_loss.item()}
+        # Take alpha update steps.
+        if self.policy._train_alpha_entropy:
+            alpha_loss = self.policy.get_alpha_loss(log_pis)
+            self.optimizers['policy_Alpha'].zero_grad()
+            alpha_loss.backward()
+            self.optimizers['policy_Alpha'].step()
+            dict_append(self._tr_stats, 'policy/AlphaLoss', alpha_loss.item())
+            ret_dict['policy_Alpha'] = alpha_loss.item()
+        # Update statistics.
+        dict_append(self._tr_stats, 'policy/Loss', model_loss.item())
+        dict_append(self._tr_stats, 'policy/Alpha',
+                self.policy.log_alpha.exp().detach().cpu().item())
+        dict_append(self._tr_stats, 'policy/LogPis',
+                log_pis.detach().cpu().mean().item())
+        return ret_dict
+
+    def set_save_path(self, save_path):
+        self._save_path = save_path
+        if save_path is not None:
+            os.makedirs(save_path, exist_ok=self.save_path_exists_ok)
+            os.makedirs(os.path.join(save_path, 'policy'),
+                        exist_ok=self.save_path_exists_ok)
+            for idx in range(len(self.qnets)):
+                os.makedirs(os.path.join(save_path, 'qnet%d' % idx),
+                            exist_ok=self.save_path_exists_ok)
+            self._writer = SummaryWriter(
+                log_dir=os.path.join(save_path, 'tensorboard'))
+        else:
+            self._writer = None
 
     def get_stats(self) -> Dict[str, Any]:
         """Get the statistics collected."""
