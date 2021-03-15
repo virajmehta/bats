@@ -8,7 +8,8 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from modelling.models import ModelTrainer, PNN  # , RegressionNN
+from modelling.models import PNN  # , RegressionNN
+from modelling.trainers import ModelTrainer
 from modelling.utils.torch_utils import swish
 from util import s2i
 

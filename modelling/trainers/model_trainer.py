@@ -16,7 +16,8 @@ from tqdm import tqdm
 
 from modelling.models import BaseModel
 from modelling.models.policies import Policy
-from modelling.utils.torch_utils import set_cuda_device, torch_to, unroll
+from modelling.utils.torch_utils import set_cuda_device, torch_to, unroll,\
+        IteratedDataLoader
 from util import dict_append
 
 
@@ -111,6 +112,7 @@ class ModelTrainer(object):
             early_stop_wait_time: Optional[int] = None,
             dont_reset_model: bool = False,
             last_column_is_weights: bool = False,
+            batch_updates_per_epoch: Optional[int] = None,
     ) -> None:
         """Fit the model on a dataset. Returns train and validation losses.
         Args:
@@ -122,19 +124,29 @@ class ModelTrainer(object):
                 number of epochs to wait since seeing best validation score
                 before stopping early.
             dont_reset_model: Whether to reset the model or not.
+            batch_updates_per_epoch: If not None, each epoch corresponds
+                to a number of batch updates rather than updating all data.
         """
         if not dont_reset_model:
             self.model.reset()
         if not self._silent:
             self._pbar = tqdm(total=epochs)
+        replay_buffer = IteratedDataLoader(dataset)
         for _ in range(epochs):
             self.model.train(True)
-            for _ in range(self._train_loops_per_epoch):
-                for batch in dataset:
+            if batch_updates_per_epoch is not None:
+                for _ in range(batch_updates_per_epoch):
                     self.batch_train(
-                            batch,
+                            replay_buffer.next(),
                             last_column_is_weights=last_column_is_weights,
                     )
+            else:
+                for _ in range(self._train_loops_per_epoch):
+                    for batch in dataset:
+                        self.batch_train(
+                                batch,
+                                last_column_is_weights=last_column_is_weights,
+                        )
             self.model.train(False)
             if validation is not None:
                 for batch in validation:
@@ -204,7 +216,7 @@ class ModelTrainer(object):
         if self._save_path is not None:
             stat_path = os.path.join(self._save_path, 'stats.txt')
             if self._total_epochs == 1:
-                with open(stat_path, 'a') as f:
+                with open(stat_path, 'w') as f:
                     f.write(','.join(['Epoch'] + list(self._stats.keys()))
                             + '\n')
             with open(stat_path, 'a') as f:
