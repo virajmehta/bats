@@ -32,6 +32,7 @@ def make_output_dir(name, overwrite, args):
     output_path.mkdir()
     args_path = dir_path / 'args.json'
     args = vars(args)
+    print(args)
     for k, v in args.items():
         if type(v) is PosixPath:
             args[k] = str(v)
@@ -179,3 +180,26 @@ def make_mujoco_resetter(env, task):
             obs = np.append(0, obs)
         env.env.set_state(obs[:midpt], obs[midpt:])
     return resetter
+
+
+def get_starts_from_graph(graph, env, env_name):
+    # When env is made it is wrapped in TimeLimiter, hence the .env
+    env = env.env
+    if env_name.startswith('maze'):
+        obs = graph.vp.obs.get_2d_array(np.arange(env.observation_space.low.size))
+        obs = obs.T
+        diffs = np.array([obs - np.array([st[0], st[1], 0, 0])
+                        for st in env.empty_and_goal_locations])
+        is_starts = np.any(np.all(np.abs(diffs) < 0.1, axis=-1), 0)
+        return np.argwhere(is_starts).flatten()
+    elif env_name.startswith('halfcheetah') or env_name.startswith('walker') or env_name.startswith('hopper'):
+        dataset = env.get_dataset()
+        ends = dataset['timeouts'].astype(bool) | dataset['terminals'].astype(bool)
+        ends_dense = np.nonzero(ends)[0]
+        start_states = np.concatenate([[0], ends_dense + 1])
+        if start_states[-1] >= graph.get_vertices().shape[0]:
+            start_states = start_states[:-1]
+        return start_states
+    else:
+        raise NotImplementedError('env {env_name} not supported for start state detection')
+
