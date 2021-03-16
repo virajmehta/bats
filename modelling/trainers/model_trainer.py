@@ -185,9 +185,12 @@ class ModelTrainer(object):
         for k, v in bstats.items():
             dict_append(stat_dict, k, v)
         if not validation:
+            loss_num = 0
+            total_losses = len(losses)
             for loss_name, loss in losses.items():
                 self.optimizers[loss_name].zero_grad()
-                loss.backward()
+                loss.backward(retain_graph=loss_num < total_losses
+                                           and self.model._retain_graph)
                 self.optimizers[loss_name].step()
         return {k: loss.item() for k, loss in losses.items()}
 

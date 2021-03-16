@@ -21,6 +21,7 @@ class BaseModel(torch.nn.Module, metaclass=abc.ABCMeta):
         self.standardizer = Standardizer([(torch.zeros(dd), torch.ones(dd))
                                            for dd in data_dimensions])
         self._model_is_fresh = False
+        self._retain_graph = False
 
     def set_standardization(
             self,
