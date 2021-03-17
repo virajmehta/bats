@@ -288,7 +288,6 @@ class BATSTrainer:
                     str(self.obs_dim),
                     str(self.action_dim),
                     str(self.latent_dim),
-                    str(self.bis
                     str(self.epsilon_planning),
                     str(self.planning_quantile),
                     str(self.use_bisimulation)]
