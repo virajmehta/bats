@@ -57,6 +57,7 @@ def train_bisim(
     # Initialize model.
     params = deepcopy(DEFAULT_VARIANT)
     params.update(bisim_params)
+    params['num_dyn_nets'] = n_members
     model = get_bisim(obs_dim, act_dim, latent_dim, **params)
     # Create optimizers.
     optimizers = {'Encoder': torch.optim.Adam(model.encoder.parameters(),

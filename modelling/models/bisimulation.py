@@ -131,16 +131,20 @@ class BisimulationModel(BaseModel):
             forward_out: Dict[str, Any],
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, Any]]:
         stats = OrderedDict()
+        stacked_means = torch.stack(
+                [nm.detach() for nm in forward_out['nxt_mean']])
+        stacked_logvars = torch.stack(
+                [nv.detach() for nv in forward_out['nxt_logvar']])
         # Get a permuation.
         permutation = torch.randperm(len(forward_out['oi']))
         # Reward difference.
-        rewards = torch.mean(forward_out['nxt_mean'][:, :, 0].detach(), dim=0)
+        rewards = torch.mean(stacked_means[:, :, 0].detach(), dim=0)
         rew_diff = torch.abs(rewards - rewards[permutation])
         stats['RewardDifference'] = torch.mean(rew_diff).item()
         # W2 distance.
-        means = torch.mean(forward_out['nxt_mean'][:, :, 1:].detach(), dim=0)
+        means = torch.mean(stacked_means[:, :, 1:].detach(), dim=0)
         stds = torch.mean(
-                torch.exp(0.5 * forward_out['nxt_logvar'][:, :, 1:].detach()),
+                torch.exp(0.5 * stacked_logvars[:, :, 1:].detach()),
                 dim=0,
         )
         mean_diffs = torch.sum((means - means[permutation]) ** 2, dim=1)
@@ -172,7 +176,7 @@ class BisimulationModel(BaseModel):
         conditions = torch_to(conditions)
         with torch.no_grad():
             mean, logvar = self._apply_dynamics(conditions)
-        return mean, logvar
+        return torch.stack(mean), torch.stack(logvar)
 
     def sample(
             self,
@@ -186,7 +190,7 @@ class BisimulationModel(BaseModel):
     def _apply_dynamics(
             self,
             conditions: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[Sequence[torch.Tensor], Sequence[torch.Tensor]]:
         """Apply the Gaussian net and possible bound the logvar."""
         mean_outs, logvar_outs = [], []
         for i in range(self.num_dyn_nets):
@@ -194,7 +198,7 @@ class BisimulationModel(BaseModel):
             pnn_mean, pnn_logvar = pnn._apply_gnet(conditions)
             mean_outs.append(pnn_mean)
             logvar_outs.append(pnn_logvar)
-        return torch.stack(mean_outs), torch.stack(logvar_outs)
+        return mean_outs, logvar_outs
 
     def get_parameter_sets(self) -> Dict[str, torch.Tensor]:
         """Get mapping from string description of parameters to parameters."""
