@@ -46,6 +46,8 @@ def train_bisim(
         bisim_params={},
         cuda_device='',
         silent=False,
+        save_freq=-1,
+        batch_updates_per_epoch=None,
 ):
     # Set devices and get the data.
     obs_dim = dataset['observations'].shape[1]
@@ -58,7 +60,10 @@ def train_bisim(
     params = deepcopy(DEFAULT_VARIANT)
     params.update(bisim_params)
     params['num_dyn_nets'] = n_members
-    model = get_bisim(obs_dim, act_dim, latent_dim, **params)
+    params['obs_dim'] = obs_dim
+    params['act_dim'] = act_dim
+    params['latent_dim'] = latent_dim
+    model = get_bisim(**params)
     # Create optimizers.
     optimizers = {'Encoder': torch.optim.Adam(model.encoder.parameters(),
                                               lr=learning_rate,
@@ -76,13 +81,15 @@ def train_bisim(
         save_path=save_dir,
         silent=silent,
         optimizers=optimizers,
-        validation_tune_metric='EncoderLoss', # TODO: Make this better.
-        track_stats=['EncoderLoss', 'PNN1_Loss'],
+        track_stats=['EncoderLoss', 'PNN0_MSE'],
+        save_best_model=False,
+        save_freq=save_freq,
     )
     with open(os.path.join(save_dir, 'params.pkl'), 'wb') as f:
         pkl.dump(params, f)
     # Do training.
-    trainer.fit(tr_data, epochs, val_data, od_wait)
+    trainer.fit(tr_data, epochs, val_data, od_wait,
+                batch_updates_per_epoch=batch_updates_per_epoch)
     model.load_model(os.path.join(save_dir, 'model.pt'))
     return model
 
@@ -118,29 +125,16 @@ def get_bisim(
     )
 
 
-def get_pnn_optimizer(pnn, learning_rate=1e-3):
-    # Decays taken from MOPO repo.
-    decays = [0.000025, 0.00005, 0.000075, 0.000075]
-    head_decay = 0.0001
-    custom_params = []
-    for layer_idx in range(pnn._gaussian_net.encode_net.n_layers):
-        param_dict = {'params': getattr(pnn._gaussian_net.encode_net,
-                                        'linear_%d' % layer_idx).parameters()}
-        if layer_idx < len(decays):
-            param_dict['weight_decay'] = decays[layer_idx]
-        custom_params.append(param_dict)
-    for layer_idx in range(pnn._gaussian_net.mean_net.n_layers):
-        param_dict = {'params': getattr(pnn._gaussian_net.mean_net,
-                                        'linear_%d' % layer_idx).parameters(),
-                      'weight_decay': head_decay}
-        custom_params.append(param_dict)
-    for layer_idx in range(pnn._gaussian_net.logvar_net.n_layers):
-        param_dict = {'params': getattr(pnn._gaussian_net.logvar_net,
-                                        'linear_%d' % layer_idx).parameters(),
-                      'weight_decay': head_decay}
-        custom_params.append(param_dict)
-    custom_params.append({'params': [pnn._min_logvar, pnn._max_logvar]})
-    return torch.optim.Adam(custom_params, lr=learning_rate)
+def load_bisim_model(save_dir, map_location=None, model_file='model.pt'):
+    with open(os.path.join(save_dir, 'params.pkl'), 'rb') as f:
+        params = pkl.load(f)
+    model = get_bisim(**params)
+    model_path = os.path.join(save_dir, model_file)
+    if cuda_device is None:
+        model.load_model(model_path)
+    else:
+        model.load_model(model_path, map_location=map_location)
+    return model
 
 
 def get_tr_val_data(
@@ -148,6 +142,7 @@ def get_tr_val_data(
         batch_size=256,
         val_size=1000,
         use_gpu=False,
+        shuffle=True,
 ):
     # Spit data.
     datas = []
@@ -163,8 +158,8 @@ def get_tr_val_data(
     tr_data = DataLoader(
         TensorDataset(*train_data),
         batch_size=batch_size,
-        shuffle=not use_gpu,
-        pin_memory=use_gpu,
+        shuffle=shuffle or not use_gpu,
+        pin_memory=not shuffle and use_gpu,
     )
     val_data = DataLoader(
         TensorDataset(*val_data),

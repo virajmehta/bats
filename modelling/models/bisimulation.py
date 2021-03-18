@@ -112,8 +112,10 @@ class BisimulationModel(BaseModel):
             to_pnn = OrderedDict(
                 mean=forward_out['nxt_mean'][i],
                 logvar=forward_out['nxt_logvar'][i],
-                labels=torch.cat([forward_out['ri'], forward_out['nzi']],
-                                 dim=1)
+                labels=torch.cat([
+                    forward_out['ri'],
+                    forward_out['nzi'] - forward_out['zi'].detach()],
+                    dim=1)
             )
             dynloss, dynstats = pnn.loss(to_pnn)
             for v in dynloss.values():
@@ -131,29 +133,25 @@ class BisimulationModel(BaseModel):
             forward_out: Dict[str, Any],
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, Any]]:
         stats = OrderedDict()
-        stacked_means = torch.stack(
-                [nm.detach() for nm in forward_out['nxt_mean']])
-        stacked_logvars = torch.stack(
-                [nv.detach() for nv in forward_out['nxt_logvar']])
+        # TODO: Hardcode using first net for now. Is there something better?
+        nxt_means = forward_out['nxt_mean'][0].detach()
+        nxt_logvars = forward_out['nxt_logvar'][0].detach()
         # Get a permuation.
         permutation = torch.randperm(len(forward_out['oi']))
         # Reward difference.
-        rewards = torch.mean(stacked_means[:, :, 0].detach(), dim=0)
+        rewards = nxt_means[:, 0]
         rew_diff = torch.abs(rewards - rewards[permutation])
         stats['RewardDifference'] = torch.mean(rew_diff).item()
         # W2 distance.
-        means = torch.mean(stacked_means[:, :, 1:].detach(), dim=0)
-        stds = torch.mean(
-                torch.exp(0.5 * stacked_logvars[:, :, 1:].detach()),
-                dim=0,
-        )
+        means = nxt_means[:, 1:]
+        stds = torch.exp(0.5 * nxt_logvars[:, 1:])
         mean_diffs = torch.sum((means - means[permutation]) ** 2, dim=1)
         std_diffs = torch.sum((stds - stds[permutation]) ** 2, dim=1)
         w2 = mean_diffs + std_diffs
         stats['Wasserstein'] = torch.mean(w2).item()
         # Get latent distance loss.
         zi = forward_out['zi']
-        latent_dist = torch.norm(zi - zi[permutation], p=1)
+        latent_dist = torch.norm(zi - zi[permutation], p=1, dim=1)
         target_dist = rew_diff + self.discount * w2
         loss = torch.mean((latent_dist - target_dist) ** 2)
         stats['EncoderLoss'] = loss.item()
