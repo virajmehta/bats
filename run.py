@@ -42,6 +42,8 @@ def parse_arguments():
     parser.add_argument('-ms', '--max_stitches', type=int, default=10, help='max stitches for a single state as the boltzmann rollouts proceed')
     parser.add_argument('-norm', '--normalize_obs', action='store_true')
     parser.add_argument('--pudb', action='store_true')
+    parser.add_argument('--use_bisimulation', action='store_true')
+    parser.add_argument('--bisim_latent_dim', type=int, default=8, help="How many dimensions for the latent space of the bisimulation metric")
     if defaults is not None:
         parser.set_defaults(**defaults)
     return parser.parse_args(remaining)

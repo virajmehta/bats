@@ -16,10 +16,12 @@ def parse_arguments():
     parser.add_argument('output_path', type=Path)
     parser.add_argument('action_dim', type=int)
     parser.add_argument('obs_dim', type=int)
+    parser.add_argument('latent_dim', type=int)
     parser.add_argument('rollout_chunk_size', type=int)
     parser.add_argument('temperature', type=float)
     parser.add_argument('gamma', type=float)
     parser.add_argument('max_stitches', type=int)
+    parser.add_argument('use_bisimulation', type=bool)
     return parser.parse_args()
 
 
@@ -33,6 +35,7 @@ def clip_possible_stitches(max_node_stitches, *args):
     possible_stitches = possible_stitches[indices, ...]
     advantages = advantages[indices]
     return [possible_stitches], [advantages], max_node_stitches
+
 
 def get_possible_stitches(
         G,
@@ -118,10 +121,11 @@ def main(args):
     stitches = []
     advantages = []
     action_props = ungroup_vector_property(G.ep.action, range(args.action_dim))
-    state_props = ungroup_vector_property(G.vp.obs, range(args.obs_dim))
+    state_props = ungroup_vector_property(G.vp.z, range(args.latent_dim)) if args.use_bisimulation else \
+        ungroup_vector_property(G.vp.obs, range(args.obs_dim))
     # max_ep_len = 1000
     max_ep_len = 1000
-    max_eps = 2 * args.rollout_chunk_size / max_ep_len
+    max_eps = 4 * args.rollout_chunk_size / max_ep_len
     # max_eps = 1000
     neps = 0
     total_stitches = 0

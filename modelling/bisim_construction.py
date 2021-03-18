@@ -6,12 +6,10 @@ from collections import OrderedDict
 from copy import deepcopy
 import pickle as pkl
 
-import numpy as np
 from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from modelling.dynamics_construction import get_pnn_optimizer
 from modelling.models import BisimulationModel
 from modelling.trainers import ModelTrainer
 from modelling.utils.torch_utils import swish
@@ -168,3 +166,16 @@ def get_tr_val_data(
         pin_memory=use_gpu,
     )
     return tr_data, val_data
+
+
+def load_bisim(
+        load_dir,
+        obs_dim,
+        act_dim,
+        latent_dim
+        ):
+    with open(load_dir / 'params.pkl', 'rb') as f:
+        params = pkl.load(f)
+    model = get_bisim(obs_dim, act_dim, latent_dim, **params)
+    model.load_model(load_dir / 'model.pt')
+    return model
