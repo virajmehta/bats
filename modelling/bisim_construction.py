@@ -10,6 +10,7 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
+from modelling.dynamics_construction import get_pnn_optimizer
 from modelling.models import BisimulationModel
 from modelling.trainers import ModelTrainer
 from modelling.utils.torch_utils import swish

@@ -143,7 +143,7 @@ class BisimulationModel(BaseModel):
         rew_diff = torch.abs(rewards - rewards[permutation])
         stats['RewardDifference'] = torch.mean(rew_diff).item()
         # W2 distance.
-        means = nxt_means[:, 1:]
+        means = nxt_means[:, 1:] + forward_out['zi'].detach()
         stds = torch.exp(0.5 * nxt_logvars[:, 1:])
         mean_diffs = torch.sum((means - means[permutation]) ** 2, dim=1)
         std_diffs = torch.sum((stds - stds[permutation]) ** 2, dim=1)
