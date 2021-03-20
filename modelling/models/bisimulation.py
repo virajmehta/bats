@@ -147,7 +147,7 @@ class BisimulationModel(BaseModel):
         stds = torch.exp(0.5 * nxt_logvars[:, 1:])
         mean_diffs = torch.sum((means - means[permutation]) ** 2, dim=1)
         std_diffs = torch.sum((stds - stds[permutation]) ** 2, dim=1)
-        w2 = mean_diffs + std_diffs
+        w2 = torch.sqrt(mean_diffs + std_diffs)
         stats['Wasserstein'] = torch.mean(w2).item()
         # Get latent distance loss.
         zi = forward_out['zi']
