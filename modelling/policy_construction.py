@@ -124,6 +124,92 @@ def advantage_weighted_regression(
     )
 
 
+def behavior_clone(
+    dataset,  # Dataset is a dictionary containing 'observations' and 'actions'
+    save_dir,
+    epochs,
+    hidden_sizes='256,256',
+    add_entropy_bonus=True,
+    standardize_targets=False,
+    od_wait=None,  # Epochs of no validation improvement before break.
+    val_size=0,
+    val_dataset=None, # Dataset w same structure as dataset but for validation.
+    batch_size=256,
+    batch_updates_per_epoch=50, # If None then epoch is going through dataset.
+    shuffle_dataset=True,
+    learning_rate=1e-3,
+    weight_decay=0,
+    cuda_device='',
+    save_freq=-1,
+    silent=False,
+    env = None, # Gym environment for doing evaluations.
+    max_ep_len: int = 1000,
+    num_eval_eps: int = 10,
+    train_loops_per_epoch: int = 1,
+    target_entropy=-3,
+    load_best_model_at_end: bool = False,
+    policy = None # If there is a pre-existing model use this.
+):
+    use_gpu = cuda_device != ''
+    # Get data into trainable form.
+    headers = ['observations', 'actions']
+    has_weights = 'weights' in dataset
+    if has_weights:
+        headers.append('weights')
+    shuff_idxs = np.arange(len(dataset['observations']))
+    np.random.shuffle(shuff_idxs)
+    tensor_data = [torch.Tensor(dataset[h][shuff_idxs]) for h in headers]
+    # Train-validation split.
+    if val_dataset is None:
+        tr_data, val_data = split_supervised_data(
+                tensor_data, val_size, batch_size, use_gpu)
+    else:
+        tr_data = DataLoader(
+            TensorDataset(*tensor_data),
+            batch_size=batch_size,
+            shuffle=shuffle_dataset or not use_gpu,
+            pin_memory=not shuffle_dataset and use_gpu,
+        )
+        shuff_idxs = np.arange(len(val_dataset['observations']))
+        np.random.shuffle(shuff_idxs)
+        val_data = DataLoader(
+            TensorDataset(*[torch.Tensor(val_dataset[h][shuff_idxs])
+                            for h in headers]),
+            batch_size=batch_size,
+            shuffle=not use_gpu,
+            pin_memory=use_gpu,
+        )
+    # Initialize model.
+    tr_x, tr_y = tensor_data[:2]
+    if policy is None:
+        policy = get_policy(tr_x.shape[1], tr_y.shape[1],
+                            hidden_sizes, standardize_targets,
+                            add_entropy_bonus=add_entropy_bonus,
+                            target_entropy=target_entropy)
+        standardizers = [(torch.mean(tr_x, dim=0), torch.std(tr_x, dim=0)),
+                         (torch.mean(tr_y, dim=0), torch.std(tr_y, dim=0))]
+        policy.set_standardization(standardizers)
+    trainer = ModelTrainer(
+            model=policy,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            cuda_device=cuda_device,
+            save_path=save_dir,
+            save_freq=save_freq,
+            env=env,
+            max_ep_len=max_ep_len,
+            num_eval_eps=num_eval_eps,
+            train_loops_per_epoch=train_loops_per_epoch,
+            validation_tune_metric='MSE',
+    )
+    trainer.fit(tr_data, epochs, val_data, od_wait,
+                batch_updates_per_epoch=batch_updates_per_epoch,
+                last_column_is_weights=has_weights)
+    if load_best_model_at_end:
+        policy.load_model(os.path.join(save_dir, 'model.pt'))
+    return policy, trainer
+
+
 def fine_tune_bc(
     trainer,
     dataset,  # Dataset is a dictionary containing 'observations' and 'actions'
@@ -170,89 +256,6 @@ def fine_tune_bc(
                 last_column_is_weights=has_weights)
     return trainer
 
-
-def behavior_clone(
-    dataset,  # Dataset is a dictionary containing 'observations' and 'actions'
-    save_dir,
-    epochs,
-    hidden_sizes='256,256',
-    add_entropy_bonus=True,
-    standardize_targets=False,
-    od_wait=None,  # Epochs of no validation improvement before break.
-    val_size=0,
-    val_dataset=None, # Dataset w same structure as dataset but for validation.
-    batch_size=256,
-    batch_updates_per_epoch=50, # If None then epoch is going through dataset.
-    shuffle_dataset=True,
-    learning_rate=1e-3,
-    weight_decay=0,
-    cuda_device='',
-    save_freq=-1,
-    silent=False,
-    env = None, # Gym environment for doing evaluations.
-    max_ep_len: int = 1000,
-    num_eval_eps: int = 10,
-    train_loops_per_epoch: int = 1,
-    target_entropy=-3,
-    load_best_model_at_end: bool = False,
-):
-    use_gpu = cuda_device != ''
-    # Get data into trainable form.
-    headers = ['observations', 'actions']
-    has_weights = 'weights' in dataset
-    if has_weights:
-        headers.append('weights')
-    shuff_idxs = np.arange(len(dataset['observations']))
-    np.random.shuffle(shuff_idxs)
-    tensor_data = [torch.Tensor(dataset[h][shuff_idxs]) for h in headers]
-    # Train-validation split.
-    if val_dataset is None:
-        tr_data, val_data = split_supervised_data(
-                tensor_data, val_size, batch_size, use_gpu)
-    else:
-        tr_data = DataLoader(
-            TensorDataset(*tensor_data),
-            batch_size=batch_size,
-            shuffle=shuffle_dataset or not use_gpu,
-            pin_memory=not shuffle_dataset and use_gpu,
-        )
-        shuff_idxs = np.arange(len(val_dataset['observations']))
-        np.random.shuffle(shuff_idxs)
-        val_data = DataLoader(
-            TensorDataset(*[torch.Tensor(val_dataset[h][shuff_idxs])
-                            for h in headers]),
-            batch_size=batch_size,
-            shuffle=not use_gpu,
-            pin_memory=use_gpu,
-        )
-    # Initialize model.
-    tr_x, tr_y = tensor_data[:2]
-    policy = get_policy(tr_x.shape[1], tr_y.shape[1],
-                        hidden_sizes, standardize_targets,
-                        add_entropy_bonus=add_entropy_bonus,
-                        target_entropy=target_entropy)
-    standardizers = [(torch.mean(tr_x, dim=0), torch.std(tr_x, dim=0)),
-                     (torch.mean(tr_y, dim=0), torch.std(tr_y, dim=0))]
-    policy.set_standardization(standardizers)
-    trainer = ModelTrainer(
-            model=policy,
-            learning_rate=learning_rate,
-            weight_decay=weight_decay,
-            cuda_device=cuda_device,
-            save_path=save_dir,
-            save_freq=save_freq,
-            env=env,
-            max_ep_len=max_ep_len,
-            num_eval_eps=num_eval_eps,
-            train_loops_per_epoch=train_loops_per_epoch,
-            validation_tune_metric='MSE',
-    )
-    trainer.fit(tr_data, epochs, val_data, od_wait,
-                batch_updates_per_epoch=batch_updates_per_epoch,
-                last_column_is_weights=has_weights)
-    if load_best_model_at_end:
-        policy.load_model(os.path.join(save_dir, 'model.pt'))
-    return policy, trainer
 
 
 def supervise_critic(

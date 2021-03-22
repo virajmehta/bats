@@ -47,6 +47,7 @@ def train_bisim(
         silent=False,
         save_freq=-1,
         batch_updates_per_epoch=None,
+        model=None, # If there is a pre-existing model use this.
 ):
     # Set devices and get the data.
     obs_dim = dataset['observations'].shape[1]
@@ -62,7 +63,8 @@ def train_bisim(
     params['obs_dim'] = obs_dim
     params['act_dim'] = act_dim
     params['latent_dim'] = latent_dim
-    model = get_bisim(**params)
+    if model is None:
+        model = get_bisim(**params)
     # Create optimizers.
     optimizers = {'Encoder': torch.optim.Adam(model.encoder.parameters(),
                                               lr=learning_rate,
