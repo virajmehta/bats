@@ -93,7 +93,6 @@ def train_bisim(
 
 
 def fine_tune_bisim(
-        model,
         trainer,
         epochs,
         dataset,
@@ -111,9 +110,8 @@ def fine_tune_bisim(
                                         val_size=val_size,
                                         use_gpu=cuda_device != '')
     trainer.fit(tr_data, epochs, val_data, od_wait,
-                batch_updates_per_epoch=batch_updates_per_epoch,
-                dont_reset_model=True)
-    return model, trainer
+                batch_updates_per_epoch=batch_updates_per_epoch)
+    return trainer
 
 def get_bisim(
         obs_dim,

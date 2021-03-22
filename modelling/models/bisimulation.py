@@ -202,5 +202,5 @@ class BisimulationModel(BaseModel):
         """Get mapping from string description of parameters to parameters."""
         psets = OrderedDict(Encoder=list(self.encoder.parameters()))
         for i in range(self.num_dyn_nets):
-            psets['PNN%d' % i] = list(getattr(self, 'pnn_%d').parameters())
+            psets['PNN%d' % i] = list(getattr(self, 'pnn_%d' % i).parameters())
         return psets

@@ -85,7 +85,9 @@ class ModelTrainer(object):
         self._max_ep_len = max_ep_len
         self._num_eval_eps = num_eval_eps
         self._overwrite = overwrite
-        self.reset()
+        self._learning_rate = learning_rate
+        self._weight_decay = weight_decay
+        self.reset(make_optimizers=optimizers is None)
         if optimizers is not None:
             self.optimizers = optimizers
 
@@ -238,7 +240,7 @@ class ModelTrainer(object):
                                     'itr_%d.pt' % self._total_epochs)
             self.model.save_model(itr_save)
 
-    def reset(self) -> None:
+    def reset(self, make_optimizers=True) -> None:
         self._total_epochs = 0
         self._stats = OrderedDict()
         self._tr_stats = OrderedDict()
@@ -246,7 +248,8 @@ class ModelTrainer(object):
         self._best_tr_loss = float('inf')
         self._best_val_loss = float('inf')
         self._best_val_loss_epoch = 0
-        self.optimizers = self._create_optimizers()
+        if make_optimizers:
+            self.optimizers = self._create_optimizers()
         self.model.reset()
 
 
@@ -270,12 +273,14 @@ class ModelTrainer(object):
 
     def _create_optimizers(self):
         psets = self.model.get_parameter_sets()
-        if type(learning_rate) is not dict:
-            learning_rate = {k: learning_rate for k in psets.keys()}
-        if type(weight_decay) is not dict:
-            weight_decay = {k: weight_decay for k in psets.keys()}
+        if type(self._learning_rate) is not dict:
+            self._learning_rate =\
+                    {k: self._learning_rate for k in psets.keys()}
+        if type(self._weight_decay) is not dict:
+            self._weight_decay =\
+                    {k: self._weight_decay for k in psets.keys()}
         return {k: torch.optim.Adam(
                 v,
-                lr=learning_rate[k],
-                weight_decay=weight_decay[k],
+                lr=self._learning_rate[k],
+                weight_decay=self._weight_decay[k],
         ) for k, v in psets.items()}
