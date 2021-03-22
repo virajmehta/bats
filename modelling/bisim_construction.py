@@ -89,9 +89,31 @@ def train_bisim(
     # Do training.
     trainer.fit(tr_data, epochs, val_data, od_wait,
                 batch_updates_per_epoch=batch_updates_per_epoch)
-    model.load_model(os.path.join(save_dir, 'model.pt'))
-    return model
+    return model, trainer
 
+
+def fine_tune_bisim(
+        model,
+        trainer,
+        epochs,
+        dataset,
+        od_wait=None,  # Epochs of no validation improvement before break.
+        val_size=1000,
+        batch_size=256,
+        cuda_device='',
+        batch_updates_per_epoch=None,
+):
+    # Set devices and get the data.
+    obs_dim = dataset['observations'].shape[1]
+    act_dim = dataset['actions'].shape[1]
+    tr_data, val_data = get_tr_val_data(dataset,
+                                        batch_size=batch_size,
+                                        val_size=val_size,
+                                        use_gpu=cuda_device != '')
+    trainer.fit(tr_data, epochs, val_data, od_wait,
+                batch_updates_per_epoch=batch_updates_per_epoch,
+                dont_reset_model=True)
+    return model, trainer
 
 def get_bisim(
         obs_dim,

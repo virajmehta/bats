@@ -34,6 +34,7 @@ class ModelTrainer(object):
             save_freq: int = -1,
             silent: bool = False,
             save_path_exists_ok: bool = True,
+            overwrite: bool = True, # Whether to overwrite stats file.
             save_best_model: bool = True,
             validation_tune_metric: str = 'Loss',
             optimizers=None,
@@ -66,19 +67,6 @@ class ModelTrainer(object):
         set_cuda_device(cuda_device)
         self.model = torch_to(model)
         self.model.train(False)
-        if optimizers is None:
-            psets = self.model.get_parameter_sets()
-            if type(learning_rate) is not dict:
-                learning_rate = {k: learning_rate for k in psets.keys()}
-            if type(weight_decay) is not dict:
-                weight_decay = {k: weight_decay for k in psets.keys()}
-            self.optimizers = {k: torch.optim.Adam(
-                    v,
-                    lr=learning_rate[k],
-                    weight_decay=weight_decay[k],
-            ) for k, v in psets.items()}
-        else:
-            self.optimizers = optimizers
         self._save_path = save_path
         if save_path is not None:
             os.makedirs(save_path, exist_ok=save_path_exists_ok)
@@ -91,18 +79,16 @@ class ModelTrainer(object):
         self._silent = silent
         self._pbar = None
         self._save_best_model = save_best_model
-        self._total_epochs = 0
-        self._stats = OrderedDict()
-        self._tr_stats = OrderedDict()
-        self._val_stats = OrderedDict()
-        self._best_tr_loss = float('inf')
-        self._best_val_loss = float('inf')
-        self._best_val_loss_epoch = 0
         self._validation_tune_metric = validation_tune_metric
         self._track_stats = track_stats
         self._env = env
         self._max_ep_len = max_ep_len
         self._num_eval_eps = num_eval_eps
+        self._overwrite = overwrite
+        self.reset()
+        if optimizers is not None:
+            self.optimizers = optimizers
+
 
     def fit(
             self,
@@ -110,7 +96,6 @@ class ModelTrainer(object):
             epochs: int,
             validation: Optional[DataLoader] = None,
             early_stop_wait_time: Optional[int] = None,
-            dont_reset_model: bool = False,
             last_column_is_weights: bool = False,
             batch_updates_per_epoch: Optional[int] = None,
     ) -> None:
@@ -127,8 +112,6 @@ class ModelTrainer(object):
             batch_updates_per_epoch: If not None, each epoch corresponds
                 to a number of batch updates rather than updating all data.
         """
-        if not dont_reset_model:
-            self.model.reset()
         if not self._silent:
             self._pbar = tqdm(total=epochs)
         replay_buffer = IteratedDataLoader(dataset)
@@ -219,7 +202,8 @@ class ModelTrainer(object):
         if self._save_path is not None:
             stat_path = os.path.join(self._save_path, 'stats.txt')
             if self._total_epochs == 1:
-                with open(stat_path, 'w') as f:
+                mode = 'w' if self._overwrite else 'a'
+                with open(stat_path, mode) as f:
                     f.write(','.join(['Epoch'] + list(self._stats.keys()))
                             + '\n')
             with open(stat_path, 'a') as f:
@@ -254,6 +238,18 @@ class ModelTrainer(object):
                                     'itr_%d.pt' % self._total_epochs)
             self.model.save_model(itr_save)
 
+    def reset(self) -> None:
+        self._total_epochs = 0
+        self._stats = OrderedDict()
+        self._tr_stats = OrderedDict()
+        self._val_stats = OrderedDict()
+        self._best_tr_loss = float('inf')
+        self._best_val_loss = float('inf')
+        self._best_val_loss_epoch = 0
+        self.optimizers = self._create_optimizers()
+        self.model.reset()
+
+
     def _evaluate_policy(self) -> None:
         if issubclass(type(self.model), Policy) and self._env is not None:
             unrolls = [unroll(self._env, self.model, self._max_ep_len)
@@ -271,3 +267,15 @@ class ModelTrainer(object):
             dict_append(self._stats, '/'.join([k, 'std', 'val']), np.std(v))
         self._tr_stats = OrderedDict()
         self._val_stats = OrderedDict()
+
+    def _create_optimizers(self):
+        psets = self.model.get_parameter_sets()
+        if type(learning_rate) is not dict:
+            learning_rate = {k: learning_rate for k in psets.keys()}
+        if type(weight_decay) is not dict:
+            weight_decay = {k: weight_decay for k in psets.keys()}
+        return {k: torch.optim.Adam(
+                v,
+                lr=learning_rate[k],
+                weight_decay=weight_decay[k],
+        ) for k, v in psets.items()}
