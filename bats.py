@@ -392,7 +392,8 @@ class BATSTrainer:
         print("finding possible neighbors")
         # this is the only step with quadratic time complexity, watch out for how long it takes
         start = time.time()
-        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, n_jobs=-1).astype(bool)
+        p = 1 if self.use_bisimulation else 2
+        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p, n_jobs=-1).astype(bool)
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
         save_npz(self.output_dir / self.neighbor_name, self.neighbors)
