@@ -1,7 +1,7 @@
 """
 Util for graph interaction with models.
 """
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import numpy as np
 from tqdm import tqdm
 
@@ -47,6 +47,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   any_state_is_start=False,
                                   only_add_real=False,
                                   get_unique_edges=True,
+                                  include_reward_next_obs=False,
                                   starts=None,
                                   silent=False):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
@@ -67,7 +68,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             property "start".
         silent: Whether to be silent.
     """
-    data = {k: [] for k in ['observations', 'actions']}
+    data = defaultdict(list)
     # Get the start states.
     if starts is None:
         if any_state_is_start:
@@ -111,7 +112,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             bstv = graph.vp.best_neighbor[currv]
             if temperature > 0:
                 childs = graph.get_out_neighbors(currv,
-                        vprops=[graph.vp.value, graph.vp.terminal])
+                                                 vprops=[graph.vp.value, graph.vp.terminal])
                 if len(childs) == 0:
                     break
                 edges = graph.get_out_edges(currv, eprops=[graph.ep.reward])
@@ -132,6 +133,10 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 if not get_unique_edges or (currv, nxtv) not in edge_set:
                     data['observations'].append(np.array(graph.vp.obs[currv]))
                     data['actions'].append(np.array(graph.ep.action[edge]))
+                    if include_reward_next_obs:
+                        data['next_observations'].append(np.array(graph.vp.obs[nxtv]))
+                        data['rewards'].append(graph.ep.reward[edge])
+
                 edge_set.add((currv, nxtv))
             done = graph.vp.terminal[nxtv]
             ret += graph.ep.reward[edge]
@@ -142,7 +147,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         if not silent:
             pbar.set_postfix(OrderedDict(
                 Edges=n_edges,
-                Imaginary=(n_imagined/ n_edges),
+                Imaginary=(n_imagined / n_edges),
                 Return=ret,
             ))
             pbar.update(t)

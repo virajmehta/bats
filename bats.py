@@ -11,7 +11,7 @@ from tqdm import trange, tqdm
 from scipy.sparse import save_npz, load_npz
 from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import load_policy, behavior_clone
-from modelling.bisim_construction import train_bisim, load_bisim
+from modelling.bisim_construction import train_bisim, load_bisim, make_trainer, fine_tune_bisim
 from modelling.utils.graph_util import make_boltzmann_policy_dataset
 from sklearn.neighbors import radius_neighbors_graph
 from util import get_starts_from_graph
@@ -36,6 +36,8 @@ class BATSTrainer:
         self.dataset_size = self.dataset['observations'].shape[0]
 
         # set up the parameters for the dynamics model training
+        self.model = None
+        self.trainer = None
         self.dynamics_ensemble_path = None
 
         self.dynamics_train_params = {}
@@ -51,7 +53,7 @@ class BATSTrainer:
         self.latent_dim = self.bisim_train_params['latent_dim'] = kwargs['bisim_latent_dim']
         self.bisim_train_params['epochs'] = kwargs.get('bisim_epochs', 250)
         self.bisim_train_params['dataset'] = self.dataset
-        self.bisim_train_params['n_members'] = kwargs.get('bisim_n_members', 5)
+        self.bisim_n_members = self.bisim_train_params['n_members'] = kwargs.get('bisim_n_members', 5)
         self.bisim_train_params['save_dir'] = self.output_dir
 
         # set up the parameters for behavior cloning
@@ -248,16 +250,40 @@ class BATSTrainer:
         if self.dynamics_ensemble_path or self.graph_stitching_done:
             if self.use_bisimulation:
                 self.compute_embeddings()
+                self.model = load_bisim(self.dynamics_ensemble_path, self.obs_dim, self.act_dim, self.latent_dim)
+                self.trainer = make_trainer(self.model,
+                                            self.bisim_n_members,
+                                            self.output_dir,
             print('skipping dynamics ensemble training')
             return
         print("training ensemble of dynamics models")
         if self.use_bisimulation:
-            train_bisim(**self.bisim_train_params)
+            self.model, self.trainer = train_bisim(**self.bisim_train_params)
             self.dynamics_ensemble_path = str(self.output_dir)
             self.compute_embeddings()
         else:
             train_ensemble(self.dataset, **self.dynamics_train_params)
             self.dynamics_ensemble_path = str(self.output_dir)
+
+    def fine_tune_dynamics(self):
+        if not self.use_bisimulation:
+            raise NotImplementedError()
+        data, _, _ = make_boltzmann_policy_dataset(
+                graph=self.G,
+                n_collects=self.G.num_vertices(),
+                temperature=0.,
+                max_ep_len=self.env._max_episode_steps,
+                n_val_collects=0,
+                val_start_prop=0,
+                include_reward_next_obs=True,
+                silent=True,
+                starts=self.start_states)
+        fine_tune_bisim(self.trainer,
+                        self.fine_tune_epochs,
+                        data)
+
+
+
 
     def test_neighbor_edges(self, possible_stitches):
         '''
