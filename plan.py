@@ -101,7 +101,7 @@ def main(args):
     mean = np.load(args.mean_file) if args.mean_file else None
     std = np.load(args.std_file) if args.std_file else None
     if args.use_bisimulation:
-        bisim_model = load_bisim(args.ensemble_path, args.obs_dim, args.action_dim, args.latent_dim)
+        bisim_model = load_bisim(args.ensemble_path)
         bisim_model.to(device)
         ensemble = None
     else:

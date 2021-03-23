@@ -189,14 +189,9 @@ def get_tr_val_data(
     return tr_data, val_data
 
 
-def load_bisim(
-        load_dir,
-        obs_dim,
-        act_dim,
-        latent_dim
-        ):
+def load_bisim(load_dir):
     with open(load_dir / 'params.pkl', 'rb') as f:
         params = pkl.load(f)
-    model = get_bisim(obs_dim, act_dim, latent_dim, **params)
-    model.load_model(load_dir / 'model.pt')
+    model = get_bisim(**params)
+    model.load_model(load_dir / 'model.pt', map_location=torch.device('cpu'))
     return model

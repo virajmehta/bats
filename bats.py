@@ -49,6 +49,7 @@ class BATSTrainer:
 
         # set up the parameters for the bisimulation metric space
         self.use_bisimulation = kwargs['use_bisimulation']
+        self.fine_tune_epochs = kwargs.get('fine_tune_epochs', 10)
         self.bisim_train_params = {}
         self.latent_dim = self.bisim_train_params['latent_dim'] = kwargs['bisim_latent_dim']
         self.bisim_train_params['epochs'] = kwargs.get('bisim_epochs', 250)
@@ -176,7 +177,7 @@ class BATSTrainer:
             our_neighbor_path = self.output_dir / self.neighbor_name
             save_npz(our_neighbor_path, self.neighbors)
         if kwargs['load_model'] is not None:
-            self.dynamics_ensemble_path = str(kwargs['load_model'])
+            self.dynamics_ensemble_path = kwargs['load_model']
 
     def save_stats(self):
         np.savez(self.stats_path, **self.stats)
@@ -204,7 +205,6 @@ class BATSTrainer:
         print(f"Found {len(self.start_states)} start nodes")
         np.save(self.start_state_path, self.start_states)
         self.train_dynamics()
-        self.find_possible_stitches()
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
@@ -229,6 +229,8 @@ class BATSTrainer:
                 bc_start_time = time.time()
                 self.train_bc(intermediate=True)
                 print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
+            if self.use_bisimulation:
+                self.fine_tune_dynamics()
         self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration()
         self.G.save(str(self.output_dir / 'vi.gt'))
@@ -237,24 +239,21 @@ class BATSTrainer:
         self.train_bc()
 
     def compute_embeddings(self):
-        model = load_bisim(self.dynamics_ensemble_path,
-                           self.obs_dim,
-                           self.act_dim,
-                           self.bisim_train_params['latent_dim'])
-        print("Loaded bisimulation model, computing embeddings")
-        embeddings = np.array(model.get_encoding(self.unique_obs))
+        print("computing embeddings")
+        embeddings = np.array(self.model.get_encoding(self.unique_obs))
         self.neighbor_obs = embeddings
         self.G.vp.z.set_2d_array(embeddings.copy().T)
 
     def train_dynamics(self):
         if self.dynamics_ensemble_path or self.graph_stitching_done:
             if self.use_bisimulation:
-                self.compute_embeddings()
-                self.model = load_bisim(self.dynamics_ensemble_path, self.obs_dim, self.act_dim, self.latent_dim)
+                self.model = load_bisim(self.dynamics_ensemble_path)
                 self.trainer = make_trainer(self.model,
                                             self.bisim_n_members,
-                                            self.output_dir,
+                                            self.output_dir)
+                self.compute_embeddings()
             print('skipping dynamics ensemble training')
+            self.find_nearest_neighbors()
             return
         print("training ensemble of dynamics models")
         if self.use_bisimulation:
@@ -264,10 +263,12 @@ class BATSTrainer:
         else:
             train_ensemble(self.dataset, **self.dynamics_train_params)
             self.dynamics_ensemble_path = str(self.output_dir)
+        self.find_nearest_neighbors()
 
     def fine_tune_dynamics(self):
         if not self.use_bisimulation:
             raise NotImplementedError()
+        print("fine-tuning bisimulation model")
         data, _, _ = make_boltzmann_policy_dataset(
                 graph=self.G,
                 n_collects=self.G.num_vertices(),
@@ -281,8 +282,9 @@ class BATSTrainer:
         fine_tune_bisim(self.trainer,
                         self.fine_tune_epochs,
                         data)
-
-
+        self.compute_embeddings()
+        self.neighbors = None
+        self.find_nearest_neighbors()
 
 
     def test_neighbor_edges(self, possible_stitches):
@@ -379,7 +381,7 @@ class BATSTrainer:
         start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
         self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 
-    def find_possible_stitches(self):
+    def find_nearest_neighbors(self):
         '''
         saves a sparse matrix containing the nearest neighbors graph over neighbor_obs (which could be latent space
         or state space)
