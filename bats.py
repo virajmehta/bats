@@ -282,6 +282,8 @@ class BATSTrainer:
         fine_tune_bisim(self.trainer,
                         self.fine_tune_epochs,
                         data)
+        # once we've fine-tuned we need to use that model
+        self.dynamics_ensemble_path = self.output_dir
         self.compute_embeddings()
         self.neighbors = None
         self.find_nearest_neighbors()

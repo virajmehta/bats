@@ -1,6 +1,7 @@
 import argparse
 import torch
 import numpy as np
+from pathlib import Path
 from modelling.dynamics_construction import load_ensemble
 from modelling.bisim_construction import load_bisim
 from modelling.utils.torch_utils import set_cuda_device
@@ -101,7 +102,7 @@ def main(args):
     mean = np.load(args.mean_file) if args.mean_file else None
     std = np.load(args.std_file) if args.std_file else None
     if args.use_bisimulation:
-        bisim_model = load_bisim(args.ensemble_path)
+        bisim_model = load_bisim(Path(args.ensemble_path))
         bisim_model.to(device)
         ensemble = None
     else:
