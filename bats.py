@@ -9,6 +9,7 @@ from subprocess import Popen
 from copy import deepcopy
 from tqdm import trange, tqdm
 from scipy.sparse import save_npz, load_npz
+from shutil import copy
 from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import load_policy, behavior_clone
 from modelling.bisim_construction import train_bisim, load_bisim, make_trainer, fine_tune_bisim
@@ -49,7 +50,7 @@ class BATSTrainer:
 
         # set up the parameters for the bisimulation metric space
         self.use_bisimulation = kwargs['use_bisimulation']
-        self.fine_tune_epochs = kwargs.get('fine_tune_epochs', 10)
+        self.fine_tune_epochs = kwargs.get('fine_tune_epochs', 20)
         self.bisim_train_params = {}
         self.latent_dim = self.bisim_train_params['latent_dim'] = kwargs['bisim_latent_dim']
         self.bisim_train_params['epochs'] = kwargs.get('bisim_epochs', 250)
@@ -248,6 +249,7 @@ class BATSTrainer:
         if self.dynamics_ensemble_path or self.graph_stitching_done:
             if self.use_bisimulation:
                 self.model = load_bisim(self.dynamics_ensemble_path)
+                copy(self.dynamics_ensemble_path / 'params.pkl', self.output_dir)
                 self.trainer = make_trainer(self.model,
                                             self.bisim_n_members,
                                             self.output_dir)
