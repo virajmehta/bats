@@ -81,7 +81,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, qu
         displacements = state_outputs + start_states - end_state
         if std is not None:
             displacements /= std
-        distances = torch.linalg.norm(displacements, dim=-1, p=p)
+        distances = torch.linalg.norm(displacements, dim=-1, ord=p)
         quantiles = torch.quantile(distances, quantile, dim=0)
         if quantiles.min() < epsilon:
             # success!
