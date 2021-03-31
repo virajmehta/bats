@@ -40,11 +40,8 @@ def train_bisim(
         od_wait=None,  # Epochs of no validation improvement before break.
         val_size=1000,
         batch_size=256,
-        learning_rate=1e-3,
-        weight_decay=0,
         bisim_params={},
         cuda_device='',
-        silent=False,
         save_freq=-1,
         batch_updates_per_epoch=None,
         validation_batches_per_epoch=None,
@@ -67,6 +64,26 @@ def train_bisim(
     params['latent_dim'] = latent_dim
     if model is None:
         model = get_bisim(**params)
+    # Create trainer and save off params.
+    trainer = make_trainer(model,
+                           n_members,
+                           save_dir)
+    with open(os.path.join(save_dir, 'params.pkl'), 'wb') as f:
+        pkl.dump(params, f)
+    # Do training.
+    trainer.fit(tr_data, epochs, val_data, od_wait,
+                batch_updates_per_epoch=batch_updates_per_epoch)
+    return model, trainer
+
+
+def make_trainer(model,
+                 n_members,
+                 save_dir,
+                 learning_rate=1e-3,
+                 weight_decay=0,
+                 cuda_device='',
+                 silent=False,
+                 save_freq=-1):
     # Create optimizers.
     optimizers = {'Encoder': torch.optim.Adam(model.encoder.parameters(),
                                               lr=learning_rate,
@@ -75,7 +92,6 @@ def train_bisim(
         pnn = getattr(model, 'pnn_%d' % i)
         optimizers['PNN%d' % i] = get_pnn_optimizer(pnn,
                                                     learning_rate=learning_rate)
-    # Create trainer and save off params.
     trainer = ModelTrainer(
         model=model,
         learning_rate=learning_rate,
@@ -109,8 +125,6 @@ def fine_tune_bisim(
         batch_updates_per_epoch=None,
 ):
     # Set devices and get the data.
-    obs_dim = dataset['observations'].shape[1]
-    act_dim = dataset['actions'].shape[1]
     tr_data, val_data = get_tr_val_data(dataset,
                                         batch_size=batch_size,
                                         val_size=val_size,
@@ -118,6 +132,7 @@ def fine_tune_bisim(
     trainer.fit(tr_data, epochs, val_data, od_wait,
                 batch_updates_per_epoch=batch_updates_per_epoch)
     return trainer
+
 
 def get_bisim(
         obs_dim,
@@ -148,18 +163,6 @@ def get_bisim(
         bound_loss_coef=bound_loss_coef,
         pnn_hidden_activation=pnn_activation,
     )
-
-
-def load_bisim_model(save_dir, map_location=None, model_file='model.pt'):
-    with open(os.path.join(save_dir, 'params.pkl'), 'rb') as f:
-        params = pkl.load(f)
-    model = get_bisim(**params)
-    model_path = os.path.join(save_dir, model_file)
-    if cuda_device is None:
-        model.load_model(model_path)
-    else:
-        model.load_model(model_path, map_location=map_location)
-    return model
 
 
 def get_tr_val_data(
@@ -195,14 +198,9 @@ def get_tr_val_data(
     return tr_data, val_data
 
 
-def load_bisim(
-        load_dir,
-        obs_dim,
-        act_dim,
-        latent_dim
-        ):
+def load_bisim(load_dir):
     with open(load_dir / 'params.pkl', 'rb') as f:
         params = pkl.load(f)
-    model = get_bisim(obs_dim, act_dim, latent_dim, **params)
-    model.load_model(load_dir / 'model.pt')
+    model = get_bisim(**params)
+    model.load_model(load_dir / 'model.pt', map_location=torch.device('cpu'))
     return model

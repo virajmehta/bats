@@ -8,7 +8,7 @@ import torch
 
 from modelling.models import BaseModel, PNN
 from modelling.models.networks import MLP
-from modelling.utils.torch_utils import torch_to, reparameterize
+from modelling.utils.torch_utils import torchify_to, reparameterize
 
 
 class BisimulationModel(BaseModel):
@@ -162,7 +162,7 @@ class BisimulationModel(BaseModel):
         self,
         observations: torch.Tensor,
     ) -> torch.Tensor:
-        observations = torch_to(observations)
+        observations = torchify_to(observations)
         with torch.no_grad():
             return self.encoder(observations)
 
@@ -171,7 +171,7 @@ class BisimulationModel(BaseModel):
             conditions: torch.Tensor, # [latentobs, actions]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Get the mean and logvar at specified condition points."""
-        conditions = torch_to(conditions)
+        conditions = torchify_to(conditions)
         with torch.no_grad():
             mean, logvar = self._apply_dynamics(conditions)
         return torch.stack(mean), torch.stack(logvar)

@@ -1,6 +1,7 @@
 import argparse
 import torch
 import numpy as np
+from pathlib import Path
 from modelling.dynamics_construction import load_ensemble
 from modelling.bisim_construction import load_bisim
 from modelling.utils.torch_utils import set_cuda_device
@@ -68,9 +69,11 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, qu
         start_states = start_state.repeat(popsize, 1)
         input_data = prepare_model_inputs_torch(start_states, samples)
         if bisim_model:
-            model_outputs = bisim_model.get_mean_logvar(input_data)
+            model_outputs = bisim_model.get_mean_logvar(input_data)[0]
+            p = 1
         else:
             model_outputs = torch.stack([member.get_mean_logvar(input_data)[0] for member in ensemble])
+            p = 2
         # this is because the dynamics models are written to predict the reward in the first component of the output
         # and the next state in all the following components
         state_outputs = model_outputs[:, :, 1:]
@@ -78,7 +81,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, qu
         displacements = state_outputs + start_states - end_state
         if std is not None:
             displacements /= std
-        distances = torch.linalg.norm(displacements, dim=-1)
+        distances = torch.linalg.norm(displacements, dim=-1, ord=p)
         quantiles = torch.quantile(distances, quantile, dim=0)
         if quantiles.min() < epsilon:
             # success!
@@ -101,7 +104,7 @@ def main(args):
     mean = np.load(args.mean_file) if args.mean_file else None
     std = np.load(args.std_file) if args.std_file else None
     if args.use_bisimulation:
-        bisim_model = load_bisim(args.ensemble_path, args.obs_dim, args.action_dim, args.latent_dim)
+        bisim_model = load_bisim(Path(args.ensemble_path))
         bisim_model.to(device)
         ensemble = None
     else:
