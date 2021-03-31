@@ -121,6 +121,7 @@ class BATSTrainer:
         self.rollout_chunk_size = kwargs['stitching_chunk_size']
         self.max_stitches = kwargs['max_stitches']
         self.stitches_tried = set()
+        self.edges_added = []
         # this saves an empty file so the child processes can see it
         self.remove_neighbors([])
 
@@ -291,9 +292,15 @@ class BATSTrainer:
         # once we've fine-tuned we need to use that model
         self.dynamics_ensemble_path = self.output_dir
         self.compute_embeddings()
+        if self.penalize_stitches:
+            self.recompute_edge_values()
         self.neighbors = None
         self.find_nearest_neighbors()
 
+    def recompute_edge_values(self):
+        edges_added = np.array(self.edges_added)
+        start_obs = self.unique_obs[edges_added[:, 0], :]
+        end_obs = self.unique_obs[edges_added[:, 1], :]
 
     def test_neighbor_edges(self, possible_stitches):
         '''
@@ -357,6 +364,7 @@ class BATSTrainer:
                 # we don't want to add edges originating from terminal states
                 continue
             e = self.G.add_edge(start, end)
+            self.edges_added.append((start, end))
             self.G.ep.action[e] = action
             if self.penalize_stitches:
                 self.G.ep.reward[e] = reward - bisim_distance * self.gamma
