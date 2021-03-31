@@ -100,6 +100,7 @@ class ModelTrainer(object):
             early_stop_wait_time: Optional[int] = None,
             last_column_is_weights: bool = False,
             batch_updates_per_epoch: Optional[int] = None,
+            validation_batches_per_epoch: Optional[int] = None,
     ) -> None:
         """Fit the model on a dataset. Returns train and validation losses.
         Args:
@@ -117,16 +118,18 @@ class ModelTrainer(object):
         if not self._silent:
             self._pbar = tqdm(total=epochs)
         replay_buffer = IteratedDataLoader(dataset)
+        if validation is not None and validation_batches_per_epoch is not None:
+            val_buffer = IteratedDataLoader(validation)
         for _ in range(epochs):
             self.model.train(True)
-            if batch_updates_per_epoch is not None:
-                for _ in range(batch_updates_per_epoch):
-                    self.batch_train(
-                            replay_buffer.next(),
-                            last_column_is_weights=last_column_is_weights,
-                    )
-            else:
-                for _ in range(self._train_loops_per_epoch):
+            for _ in range(self._train_loops_per_epoch):
+                if batch_updates_per_epoch is not None:
+                    for _ in range(batch_updates_per_epoch):
+                        self.batch_train(
+                                replay_buffer.next(),
+                                last_column_is_weights=last_column_is_weights,
+                        )
+                else:
                     for batch in dataset:
                         self.batch_train(
                                 batch,
@@ -134,10 +137,20 @@ class ModelTrainer(object):
                         )
             self.model.train(False)
             if validation is not None:
-                for batch in validation:
-                    self.batch_train(batch,
-                                 validation=True,
-                                 last_column_is_weights=last_column_is_weights)
+                if validation_batches_per_epoch is not None:
+                    for _ in range(validation_batches_per_epoch):
+                        self.batch_train(
+                                val_buffer.next(),
+                                validation=True,
+                                last_column_is_weights=last_column_is_weights,
+                        )
+                else:
+                    for batch in validation:
+                        self.batch_train(
+                                batch,
+                                validation=True,
+                                last_column_is_weights=last_column_is_weights,
+                        )
             self._evaluate_policy()
             self.end_epoch()
             if early_stop_wait_time is not None and validation is not None:

@@ -111,6 +111,8 @@ class PNN(BaseModel):
         stats = OrderedDict(
             ModelLoss=loss.item(),
             MSE=mse.item(),
+            DynamicsMSE=torch.mean((mean[:, 1:] - labels[:, 1:]) ** 2).item(),
+            RewardMSE=torch.mean((mean[:, 0] - labels[:, 0]) ** 2).item(),
         )
         if self._var_pinning:
             bound_loss = self._bound_loss_coef * self._bound_loss_function(
