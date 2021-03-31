@@ -50,6 +50,8 @@ class BATSTrainer:
 
         # set up the parameters for the bisimulation metric space
         self.use_bisimulation = kwargs['use_bisimulation']
+        self.penalize_stitches = kwargs['penalize_stitches']
+        assert self.use_bisimulation or (not self.penalize_stitches)
         self.fine_tune_epochs = kwargs.get('fine_tune_epochs', 20)
         self.bisim_train_params = {}
         self.latent_dim = self.bisim_train_params['latent_dim'] = kwargs['bisim_latent_dim']
@@ -87,6 +89,7 @@ class BATSTrainer:
         # the values associated with each node
         self.G.vp.value = self.G.new_vertex_property("float")
         self.G.vp.value.get_array()[:] = 0
+        self.G.vp.upper_value = self.G.new_vertex_property("float")
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
         self.G.vp.obs = self.G.new_vertex_property('vector<float>')
         self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
@@ -102,6 +105,7 @@ class BATSTrainer:
         self.G.ep.action = self.G.new_edge_property("vector<float>")
         # we also associate the rewards with each edge
         self.G.ep.reward = self.G.new_edge_property("float")
+        self.G.ep.upper_reward = self.G.new_edge_property("float")
         # whether an edge is real or imagined
         self.G.ep.imagined = self.G.new_edge_property('bool')
 
@@ -109,7 +113,7 @@ class BATSTrainer:
         self.state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
 
         # parameters for planning
-        self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
+        self.epsilon_planning = kwargs['epsilon_planning']
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
         self.plan_cpus = 2  # self.num_cpus //  10
@@ -345,15 +349,21 @@ class BATSTrainer:
         starts = edges_to_add[:, 0].astype(int)
         ends = edges_to_add[:, 1].astype(int)
         actions = edges_to_add[:, 2:self.action_dim + 2]
+        bisim_distances = edges_to_add[:, -2]
         rewards = edges_to_add[:, -1]
         added = 0
-        for start, end, action, reward in zip(starts, ends, actions, rewards):
+        for start, end, action, bisim_distance, reward in zip(starts, ends, actions, bisim_distances, rewards):
             if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
                 # we don't want to add edges originating from terminal states
                 continue
             e = self.G.add_edge(start, end)
             self.G.ep.action[e] = action
-            self.G.ep.reward[e] = reward
+            if self.penalize_stitches:
+                self.G.ep.reward[e] = reward - bisim_distance * self.gamma
+                self.G.ep.upper_reward = reward + bisim_distance * self.gamma
+            else:
+                self.G.ep.reward[e] = reward
+
             self.G.ep.imagined[e] = True
             added += 1
         return added
@@ -380,6 +390,7 @@ class BATSTrainer:
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
+            self.G.ep.upper_reward = reward
             self.G.ep.imagined[e] = False
             self.G.vp.terminal[v_to] = terminal
         start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)

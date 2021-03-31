@@ -83,11 +83,12 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, qu
             displacements /= std
         distances = torch.linalg.norm(displacements, dim=-1, ord=p)
         quantiles = torch.quantile(distances, quantile, dim=0)
-        if quantiles.min() < epsilon:
+        min_quantile = quantiles.min()
+        if min_quantile < epsilon:
             # success!
             min_index = quantiles.argmin()
             reward = np.quantile(reward_outputs[:, min_index], 0.3)
-            return np.array([row[0], row[1], *samples[min_index, :].tolist(), reward])
+            return np.array([row[0], row[1], *samples[min_index, :].tolist(), min_quantile, reward])
         elites = samples[torch.argsort(quantiles)[:num_elites], ...]
         new_mean = torch.mean(elites, axis=0)
         new_var = torch.var(elites, axis=0)
