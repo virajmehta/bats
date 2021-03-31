@@ -2,6 +2,7 @@ from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
 import time
 import numpy as np
+import torch
 from scipy.sparse import diags
 from collections import defaultdict
 import pickle
@@ -121,6 +122,7 @@ class BATSTrainer:
         self.rollout_chunk_size = kwargs['stitching_chunk_size']
         self.max_stitches = kwargs['max_stitches']
         self.stitches_tried = set()
+        self.edges_added = []
         # this saves an empty file so the child processes can see it
         self.remove_neighbors([])
 
@@ -291,9 +293,37 @@ class BATSTrainer:
         # once we've fine-tuned we need to use that model
         self.dynamics_ensemble_path = self.output_dir
         self.compute_embeddings()
+        if self.penalize_stitches:
+            self.recompute_edge_values()
         self.neighbors = None
         self.find_nearest_neighbors()
 
+    def recompute_edge_values(self):
+        edges_added = np.array(self.edges_added)
+        start_obs = self.neighbor_obs[edges_added[:, 0], :]
+        end_obs = self.neighbor_obs[edges_added[:, 1], :]
+        actions = []
+        for start, end in self.edges_added:
+            edge = self.G.edge(start, end)
+            action = self.G.ep.action[edge]
+            actions.append(action)
+        actions = np.array(actions)
+        conditions = np.concatenate([start_obs, actions], axis=1)
+        model_outputs = self.get_mean_logvar(conditions)[0]
+        state_outputs = model_outputs[:, :, 1:]
+        reward_outputs = model_outputs[:, :, 0]
+        displacements = state_outputs + start_obs - end_obs
+        distances = torch.linalg.norm(displacements, dim=-1, ord=1)
+        quantiles = torch.quantile(distances, self.planning_quantile, dim=0)
+        reward = np.quantile(reward_outputs, 0.3, axis=0)
+        low_reward = reward - quantiles * self.gamma
+        high_reward = reward + quantiles * self.gamma
+        low_reward = np.array(low_reward)
+        high_reward = np.array(high_reward)
+        for i, (start, end) in enumerate(self.edges_added):
+            edge = self.G.edge(start, end)
+            self.G.ep.reward[edge] = low_reward[i]
+            self.G.ep.upper_reward[edge] = high_reward
 
     def test_neighbor_edges(self, possible_stitches):
         '''
@@ -357,6 +387,7 @@ class BATSTrainer:
                 # we don't want to add edges originating from terminal states
                 continue
             e = self.G.add_edge(start, end)
+            self.edges_added.append((start, end))
             self.G.ep.action[e] = action
             if self.penalize_stitches:
                 self.G.ep.reward[e] = reward - bisim_distance * self.gamma
