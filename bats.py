@@ -390,7 +390,7 @@ class BATSTrainer:
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
-            self.G.ep.upper_reward = reward
+            self.G.ep.upper_reward[e] = reward
             self.G.ep.imagined[e] = False
             self.G.vp.terminal[v_to] = terminal
         start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
