@@ -360,7 +360,7 @@ class BATSTrainer:
             self.G.ep.action[e] = action
             if self.penalize_stitches:
                 self.G.ep.reward[e] = reward - bisim_distance * self.gamma
-                self.G.ep.upper_reward = reward + bisim_distance * self.gamma
+                self.G.ep.upper_reward[e] = reward + bisim_distance * self.gamma
             else:
                 self.G.ep.reward[e] = reward
 
