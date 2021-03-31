@@ -451,6 +451,9 @@ class BATSTrainer:
         print("performing value iteration")
         pbar = trange(self.max_val_iterations)
         reward_mat = adjacency(self.G, weight=self.G.ep.reward)
+        upper_reward_mat = None
+        if self.penalize_stitches:
+            upper_reward_mat = adjacency(self.G, weight=self.G.ep.upper_reward)
         adjmat = adjacency(self.G)
         for i in pbar:
             # first we initialize the occupancies with the first nodes as 1
@@ -477,11 +480,26 @@ class BATSTrainer:
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
             old_values = self.G.vp.value.get_array()
             bellman_error = np.max(np.square(values - old_values))
+            if self.penalize_stitches:
+                upper_target_val = diags(
+                        (self.gamma * self.G.vp.upper_value.get_array()
+                                    * (1 - self.G.vp.terminal.get_array())),
+                        format='csr',
+                )
+                upper_target_mat = upper_target_val * adjmat
+                upper_qs = upper_reward_mat + upper_target_mat
+                upper_values = np.asarray(
+                        upper_qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
+                old_upper_values = self.G.vp.upper_value.get_array()
+                upper_bellman_error = np.max(np.square(upper_values - old_upper_values))
+                bellman_error = max(bellman_error, upper_bellman_error)
             pbar.set_description(f"Bellman error: {bellman_error:.3f}")
             values[is_dead_end] = 0
+            upper_values[is_dead_end] = 0
             bst_childs[is_dead_end] = -1
             self.G.vp.best_neighbor.a = bst_childs
             self.G.vp.value.a = values
+            self.G.vp.upper_value.a = upper_values
             if bellman_error < self.vi_tolerance:
                 break
         pbar.close()
@@ -498,6 +516,14 @@ class BATSTrainer:
         if len(self.stats['Mean Start Value']) > 1:
             change = start_value - self.stats['Mean Start Value'][-2]
             print(f'Change in Mean Start Value: {change:.2f}')
+        if self.penalize_stitches:
+            self.add_stat("Upper Mean Start Value", start_value)
+            mean_value = np.mean(values)
+            self.add_stat("Upper Mean Value", mean_value)
+            min_value = np.min(values)
+            self.add_stat("Upper Min Value", min_value)
+            max_value = np.max(values)
+            self.add_stat("Upper Max Value", max_value)
         self.save_stats()
 
     def train_bc(self, intermediate=False):
