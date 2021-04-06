@@ -186,6 +186,8 @@ class BATSTrainer:
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = kwargs['load_model']
 
+        self.hp_tune = kwargs['hp_tune']
+
     def save_stats(self):
         np.savez(self.stats_path, **self.stats)
 
@@ -238,6 +240,7 @@ class BATSTrainer:
                 print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
             if self.use_bisimulation:
                 self.fine_tune_dynamics()
+            self.save_stats()
         self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration()
         self.G.save(str(self.output_dir / 'vi.gt'))
@@ -374,6 +377,7 @@ class BATSTrainer:
                 continue
             edges_added += self.add_edges(edges_to_add)
         print(f"adding {edges_added} edges")
+        self.add_stat('edges_added', edges_added)
 
     def add_edges(self, edges_to_add):
         starts = edges_to_add[:, 0].astype(int)
@@ -557,7 +561,6 @@ class BATSTrainer:
             self.add_stat("Upper Min Value", min_value)
             max_value = np.max(values)
             self.add_stat("Upper Max Value", max_value)
-        self.save_stats()
 
     def train_bc(self, intermediate=False):
         print("cloning a policy")
@@ -575,6 +578,15 @@ class BATSTrainer:
                                      env=self.env,
                                      max_ep_len=self.env._max_episode_steps,
                                      **params)
+        if self.hp_tune:
+            bc_path = self.output_dir / 'stats.txt'
+            with bc_path.open('r') as f:
+                last_line = f.readlines()[-1]
+            avg_return = float(last_line.split(',')[1])
+            from ray import tune
+            stats = {k: v[-1] for k, v in self.stats.items()}
+            stats['avg_return'] = avg_return
+            tune.report(**stats)
 
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
