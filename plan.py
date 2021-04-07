@@ -18,9 +18,9 @@ def parse_arguments():
     parser.add_argument('latent_dim', type=int)
     parser.add_argument('epsilon', type=float)
     parser.add_argument('quantile', type=float)
-    parser.add_argument('use_bisimulation', type=bool)
     parser.add_argument('mean_file', nargs='?', default=None)
     parser.add_argument('std_file', nargs='?', default=None)
+    parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     return parser.parse_args()
 
 

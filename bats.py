@@ -321,10 +321,11 @@ class BATSTrainer:
                     str(self.action_dim),
                     str(self.latent_dim),
                     str(self.epsilon_planning),
-                    str(self.planning_quantile),
-                    str(self.use_bisimulation)]
+                    str(self.planning_quantile)]
             if self.std_file:
                 args += [self.mean_file, self.std_file]
+            if self.use_bisimulation:
+                args.append('-ub')
             process = Popen(args)
             processes.append(process)
         return processes
@@ -397,7 +398,8 @@ class BATSTrainer:
         # this is the only step with quadratic time complexity, watch out for how long it takes
         start = time.time()
         p = 1 if self.use_bisimulation else 2
-        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p, n_jobs=-1).astype(bool)
+        # self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p, n_jobs=-1).astype(bool)
+        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p).astype(bool)
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
         save_npz(self.output_dir / self.neighbor_name, self.neighbors)
@@ -529,8 +531,9 @@ class BATSTrainer:
                     str(chunksize),
                     str(self.temperature),
                     str(self.gamma),
-                    str(self.max_stitches),
-                    str(self.use_bisimulation)]
+                    str(self.max_stitches)]
+            if self.use_bisimulation:
+                args.append('-ub')
             process = Popen(args)
             processes.append(process)
         all_advantages = []
