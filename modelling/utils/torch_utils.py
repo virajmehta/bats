@@ -26,6 +26,11 @@ def torch_to(torch_obj: Any) -> Any:
     """Put the torch object onto a device."""
     return torch_obj.float().to(torch_device)
 
+def torchify_to(obj: Any) -> torch.Tensor:
+    if type(obj) is not torch.Tensor:
+        obj = torch.Tensor(obj)
+    return torch_to(obj)
+
 
 def create_simple_net(
         in_dim: int,

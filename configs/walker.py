@@ -5,11 +5,12 @@ from collections import OrderedDict
 from copy import deepcopy
 
 base_config = OrderedDict(
-    ep=0.2,
-    en=1.3,
-    ncpu=84,
-    scs=50000,
+    epsilon_planning=0.2,
+    epsilon_neighbors=1.3,
+    num_cpus=84,
+    stitching_chunk_size=50000,
     normalize_obs=True,
+    ni=10,
 )
 
 # For any additional configurations, add them here.

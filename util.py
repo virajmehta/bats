@@ -151,7 +151,10 @@ def dict_append(d, k, v):
 def s2i(string):
     """Make a comma separated string of ints into a list of ints."""
     if ',' not in string:
-        return []
+        if len(string) > 0:
+            return [int(string)]
+        else:
+            return []
     return [int(s) for s in string.split(',')]
 
 

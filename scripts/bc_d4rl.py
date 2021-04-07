@@ -38,6 +38,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--dataset_path', type=str, default=None)
+    parser.add_argument('--batch_updates_per_epoch', type=int, default=100)
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
