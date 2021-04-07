@@ -358,10 +358,11 @@ class BATSTrainer:
                     str(self.action_dim),
                     str(self.latent_dim),
                     str(self.epsilon_planning),
-                    str(self.planning_quantile),
-                    str(self.use_bisimulation)]
+                    str(self.planning_quantile)]
             if self.std_file:
                 args += [self.mean_file, self.std_file]
+            if self.use_bisimulation:
+                args.append('-ub')
             process = Popen(args)
             processes.append(process)
         return processes
@@ -383,10 +384,10 @@ class BATSTrainer:
         starts = edges_to_add[:, 0].astype(int)
         ends = edges_to_add[:, 1].astype(int)
         actions = edges_to_add[:, 2:self.action_dim + 2]
-        bisim_distances = edges_to_add[:, -2]
+        distances = edges_to_add[:, -2]
         rewards = edges_to_add[:, -1]
         added = 0
-        for start, end, action, bisim_distance, reward in zip(starts, ends, actions, bisim_distances, rewards):
+        for start, end, action, distance, reward in zip(starts, ends, actions, distances, rewards):
             if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
                 # we don't want to add edges originating from terminal states
                 continue
@@ -394,8 +395,8 @@ class BATSTrainer:
             self.edges_added.append((start, end))
             self.G.ep.action[e] = action
             if self.penalize_stitches:
-                self.G.ep.reward[e] = reward - bisim_distance * self.gamma
-                self.G.ep.upper_reward[e] = reward + bisim_distance * self.gamma
+                self.G.ep.reward[e] = reward - distance * self.gamma
+                self.G.ep.upper_reward[e] = reward + distance * self.gamma
             else:
                 self.G.ep.reward[e] = reward
 
@@ -443,7 +444,7 @@ class BATSTrainer:
         # this is the only step with quadratic time complexity, watch out for how long it takes
         start = time.time()
         p = 1 if self.use_bisimulation else 2
-        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p, n_jobs=-1).astype(bool)
+        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p).astype(bool)
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
         save_npz(self.output_dir / self.neighbor_name, self.neighbors)
@@ -611,8 +612,9 @@ class BATSTrainer:
                     str(chunksize),
                     str(self.temperature),
                     str(self.gamma),
-                    str(self.max_stitches),
-                    str(self.use_bisimulation)]
+                    str(self.max_stitches)]
+            if self.use_bisimulation:
+                args.append('-ub')
             process = Popen(args)
             processes.append(process)
         all_advantages = []
