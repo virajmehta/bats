@@ -21,7 +21,7 @@ def parse_arguments():
     parser.add_argument('temperature', type=float)
     parser.add_argument('gamma', type=float)
     parser.add_argument('max_stitches', type=int)
-    parser.add_argument('use_bisimulation', type=bool)
+    parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     return parser.parse_args()
 
 
@@ -121,8 +121,10 @@ def main(args):
     stitches = []
     advantages = []
     action_props = ungroup_vector_property(G.ep.action, range(args.action_dim))
-    state_props = ungroup_vector_property(G.vp.z, range(args.latent_dim)) if args.use_bisimulation else \
-        ungroup_vector_property(G.vp.obs, range(args.obs_dim))
+    if args.use_bisimulation:
+        state_props = ungroup_vector_property(G.vp.z, range(args.latent_dim))
+    else:
+        state_props = ungroup_vector_property(G.vp.obs, range(args.obs_dim))
     # max_ep_len = 1000
     max_ep_len = 1000
     max_eps = 4 * args.rollout_chunk_size / max_ep_len

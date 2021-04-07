@@ -44,7 +44,9 @@ def train_bisim(
         cuda_device='',
         save_freq=-1,
         batch_updates_per_epoch=None,
-        model=None,  # If there is a pre-existing model use this.
+        validation_batches_per_epoch=None,
+        model=None, # If there is a pre-existing model use this.
+        train_loops_per_epoch=1,
 ):
     # Set devices and get the data.
     obs_dim = dataset['observations'].shape[1]
@@ -101,8 +103,15 @@ def make_trainer(model,
         track_stats=['EncoderLoss', 'PNN0_MSE'],
         save_best_model=False,
         save_freq=save_freq,
+        train_loops_per_epoch=train_loops_per_epoch,
     )
-    return trainer
+    with open(os.path.join(save_dir, 'params.pkl'), 'wb') as f:
+        pkl.dump(params, f)
+    # Do training.
+    trainer.fit(tr_data, epochs, val_data, od_wait,
+                batch_updates_per_epoch=batch_updates_per_epoch,
+                validation_batches_per_epoch=validation_batches_per_epoch)
+    return model, trainer
 
 
 def fine_tune_bisim(
