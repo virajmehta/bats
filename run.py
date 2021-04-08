@@ -58,7 +58,7 @@ def main(args):
                                         data_path=args.offline_dataset_path)
     args = vars(args)
     bats = BATSTrainer(dataset, env, output_dir, **args)
-    bats.train()
+    return bats.train()
 
 
 if __name__ == '__main__':

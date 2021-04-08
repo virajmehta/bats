@@ -236,8 +236,8 @@ class BATSTrainer:
             self.G.save(str(self.output_dir / 'mdp.gt'))
             if self.bc_every_iter:
                 bc_start_time = time.time()
-                self.train_bc(intermediate=True)
-                print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
+                avg_return = self.train_bc(intermediate=True)
+                print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s, {avg_return=}")
             if self.use_bisimulation:
                 self.fine_tune_dynamics()
             self.save_stats()
@@ -246,7 +246,7 @@ class BATSTrainer:
         self.G.save(str(self.output_dir / 'vi.gt'))
         self.graph_stitching_done = True
         self.value_iteration_done = True
-        self.train_bc()
+        return self.train_bc()
 
     def compute_embeddings(self):
         print("computing embeddings")
@@ -579,15 +579,11 @@ class BATSTrainer:
                                      env=self.env,
                                      max_ep_len=self.env._max_episode_steps,
                                      **params)
-        if self.hp_tune:
-            bc_path = self.output_dir / 'stats.txt'
-            with bc_path.open('r') as f:
-                last_line = f.readlines()[-1]
-            avg_return = float(last_line.split(',')[1])
-            from ray import tune
-            stats = {k: v[-1] for k, v in self.stats.items()}
-            stats['avg_return'] = avg_return
-            tune.report(**stats)
+        bc_path = self.output_dir / 'stats.txt'
+        with bc_path.open('r') as f:
+            last_line = f.readlines()[-1]
+        avg_return = float(last_line.split(',')[1])
+        return avg_return
 
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
