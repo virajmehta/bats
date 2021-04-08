@@ -38,7 +38,7 @@ def make_best_action_dataset(graph):
 
 
 def make_boltzmann_policy_dataset(graph, n_collects,
-                                  temperature=0.1,
+                                  temperature=0.0,
                                   max_ep_len=1000,
                                   gamma=0.99,
                                   normalize_qs=True,
@@ -98,6 +98,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     n_imagined = 0
     n_edges = 0
     returns = []
+    upper_returns = []
     if not silent:
         pbar = tqdm(total=n_collects)
     # Do Boltzmann rollouts.
@@ -106,6 +107,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         done = False
         t = 0
         ret = 0
+        upper_ret = 0
         currv = np.random.choice(starts)
         while not done and t < max_ep_len:
             # bstv = graph.vp.best_child[currv]
@@ -140,6 +142,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 edge_set.add((currv, nxtv))
             done = graph.vp.terminal[nxtv]
             ret += graph.ep.reward[edge]
+            upper_ret += graph.ep.upper_reward[edge]
             currv = nxtv
             t += 1
             if n_edges >= n_collects:
@@ -149,9 +152,11 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 Edges=n_edges,
                 Imaginary=(n_imagined / n_edges),
                 Return=ret,
+                UpperReturn=upper_ret,
             ))
             pbar.update(t)
         returns.append(ret)
+        upper_returns.append(upper_ret)
     if not silent:
         pbar.close()
         print('Done collecting.')
@@ -162,6 +167,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         ImaginaryProp=n_imagined/n_edges,
         ReturnsAvg=np.mean(returns),
         ReturnsStd=np.std(returns),
+        UpperReturnsAvg=np.mean(upper_returns),
+        UpperReturnsStd=np.std(upper_returns),
         UniqueEdges=len(edge_set),
     )
     data = {k: np.vstack(v) for k, v in data.items()}

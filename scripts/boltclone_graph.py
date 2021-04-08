@@ -73,8 +73,8 @@ def parse_args():
     parser.add_argument('--od_wait', type=int, default=0)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
-    parser.add_argument('--n_val_collects', type=int, default=0)
-    parser.add_argument('--val_start_prop', type=float, default=0)
+    parser.add_argument('--n_val_collects', type=int, default=10000)
+    parser.add_argument('--val_start_prop', type=float, default=0.05)
     parser.add_argument('--temperature', type=float, default=0)
     parser.add_argument('--pi_architecture', default='256,256')
     parser.add_argument('--real_edges_only', action='store_true')
