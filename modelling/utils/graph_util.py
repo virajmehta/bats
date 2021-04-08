@@ -163,6 +163,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         print('Proportion imagined edges taken: %f' % (n_imagined / n_edges))
         print('Unique Edges: %d' % len(edge_set))
         print('Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
+        print('Upper Returns: %f +- %f' %
+                (np.mean(upper_returns), np.std(upper_returns)))
     stats = OrderedDict(
         ImaginaryProp=n_imagined/n_edges,
         ReturnsAvg=np.mean(returns),

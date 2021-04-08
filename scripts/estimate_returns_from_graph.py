@@ -10,7 +10,7 @@ import numpy as np
 
 from graph_tool import load_graph
 from modelling.utils.graph_util import get_best_policy_returns
-from examples.mazes.maze_util import get_starts_from_graph
+from util import get_starts_from_graph
 
 
 def run(args):

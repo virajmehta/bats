@@ -12,8 +12,7 @@ from tqdm import tqdm
 
 from graph_tool import load_graph
 from modelling.utils.graph_util import get_best_policy_returns
-from examples.mazes.maze_util import get_starts_from_graph
-from util import make_mujoco_resetter
+from util import make_mujoco_resetter, get_starts_from_graph
 
 
 def run(args):

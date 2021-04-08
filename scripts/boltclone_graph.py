@@ -16,7 +16,7 @@ from env_wrapper import NormalizedBoxEnv
 from modelling.policy_construction import behavior_clone
 from modelling.utils.graph_util import make_boltzmann_policy_dataset,\
         get_value_thresholded_starts
-from examples.mazes.maze_util import get_starts_from_graph
+from util import get_starts_from_graph
 
 
 def run(args):
