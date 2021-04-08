@@ -2,6 +2,7 @@ from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
 import time
 import numpy as np
+import torch
 from scipy.sparse import diags
 from collections import defaultdict
 import pickle
@@ -50,6 +51,8 @@ class BATSTrainer:
 
         # set up the parameters for the bisimulation metric space
         self.use_bisimulation = kwargs['use_bisimulation']
+        self.penalize_stitches = kwargs['penalize_stitches']
+        assert self.use_bisimulation or (not self.penalize_stitches)
         self.fine_tune_epochs = kwargs.get('fine_tune_epochs', 20)
         self.bisim_train_params = {}
         self.latent_dim = self.bisim_train_params['latent_dim'] = kwargs['bisim_latent_dim']
@@ -66,7 +69,7 @@ class BATSTrainer:
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
         self.intermediate_bc_params = deepcopy(self.bc_params)
-        self.intermediate_bc_params['epochs'] = 20
+        self.intermediate_bc_params['epochs'] = 30
         self.temperature = kwargs.get('temperature', 0.25)
         self.bc_every_iter = kwargs['bc_every_iter']
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
@@ -87,6 +90,7 @@ class BATSTrainer:
         # the values associated with each node
         self.G.vp.value = self.G.new_vertex_property("float")
         self.G.vp.value.get_array()[:] = 0
+        self.G.vp.upper_value = self.G.new_vertex_property("float")
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
         self.G.vp.obs = self.G.new_vertex_property('vector<float>')
         self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
@@ -102,6 +106,7 @@ class BATSTrainer:
         self.G.ep.action = self.G.new_edge_property("vector<float>")
         # we also associate the rewards with each edge
         self.G.ep.reward = self.G.new_edge_property("float")
+        self.G.ep.upper_reward = self.G.new_edge_property("float")
         # whether an edge is real or imagined
         self.G.ep.imagined = self.G.new_edge_property('bool')
 
@@ -109,7 +114,7 @@ class BATSTrainer:
         self.state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
 
         # parameters for planning
-        self.epsilon_planning = kwargs.get('epsilon_planning', 0.05)  # also no idea what this should be
+        self.epsilon_planning = kwargs['epsilon_planning']
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
         self.plan_cpus = 2  # self.num_cpus //  10
@@ -117,6 +122,7 @@ class BATSTrainer:
         self.rollout_chunk_size = kwargs['stitching_chunk_size']
         self.max_stitches = kwargs['max_stitches']
         self.stitches_tried = set()
+        self.edges_added = []
         # this saves an empty file so the child processes can see it
         self.remove_neighbors([])
 
@@ -287,9 +293,37 @@ class BATSTrainer:
         # once we've fine-tuned we need to use that model
         self.dynamics_ensemble_path = self.output_dir
         self.compute_embeddings()
+        if self.penalize_stitches:
+            self.recompute_edge_values()
         self.neighbors = None
         self.find_nearest_neighbors()
 
+    def recompute_edge_values(self):
+        if len(self.edges_added) == 0:
+            return
+        edges_added = np.array(self.edges_added)
+        start_obs = self.neighbor_obs[edges_added[:, 0], :]
+        end_obs = self.neighbor_obs[edges_added[:, 1], :]
+        actions = []
+        for start, end in self.edges_added:
+            edge = self.G.edge(start, end)
+            action = self.G.ep.action[edge]
+            actions.append(action)
+        actions = np.array(actions)
+        conditions = np.concatenate([start_obs, actions], axis=1)
+        model_outputs = self.model.get_mean_logvar(conditions)[0]
+        state_outputs = model_outputs[:, :, 1:]
+        reward_outputs = model_outputs[:, :, 0]
+        displacements = state_outputs + start_obs - end_obs
+        distances = torch.linalg.norm(displacements, dim=-1, ord=1)
+        quantiles = np.quantile(distances, self.planning_quantile, axis=0)
+        reward = np.quantile(reward_outputs, 0.3, axis=0)
+        low_reward = reward - quantiles * self.gamma
+        high_reward = reward + quantiles * self.gamma
+        for i, (start, end) in enumerate(self.edges_added):
+            edge = self.G.edge(start, end)
+            self.G.ep.reward[edge] = low_reward[i]
+            self.G.ep.upper_reward[edge] = high_reward[i]
 
     def test_neighbor_edges(self, possible_stitches):
         '''
@@ -346,15 +380,22 @@ class BATSTrainer:
         starts = edges_to_add[:, 0].astype(int)
         ends = edges_to_add[:, 1].astype(int)
         actions = edges_to_add[:, 2:self.action_dim + 2]
+        distances = edges_to_add[:, -2]
         rewards = edges_to_add[:, -1]
         added = 0
-        for start, end, action, reward in zip(starts, ends, actions, rewards):
+        for start, end, action, distance, reward in zip(starts, ends, actions, distances, rewards):
             if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
                 # we don't want to add edges originating from terminal states
                 continue
             e = self.G.add_edge(start, end)
+            self.edges_added.append((start, end))
             self.G.ep.action[e] = action
-            self.G.ep.reward[e] = reward
+            if self.penalize_stitches:
+                self.G.ep.reward[e] = reward - distance * self.gamma
+                self.G.ep.upper_reward[e] = reward + distance * self.gamma
+            else:
+                self.G.ep.reward[e] = reward
+
             self.G.ep.imagined[e] = True
             added += 1
         return added
@@ -381,6 +422,7 @@ class BATSTrainer:
             e = self.G.add_edge(v_from, v_to)
             self.G.ep.action[e] = action.tolist()  # not sure if the tolist is needed
             self.G.ep.reward[e] = reward
+            self.G.ep.upper_reward[e] = reward
             self.G.ep.imagined[e] = False
             self.G.vp.terminal[v_to] = terminal
         start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
@@ -398,7 +440,6 @@ class BATSTrainer:
         # this is the only step with quadratic time complexity, watch out for how long it takes
         start = time.time()
         p = 1 if self.use_bisimulation else 2
-        # self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p, n_jobs=-1).astype(bool)
         self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p).astype(bool)
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
@@ -442,6 +483,9 @@ class BATSTrainer:
         print("performing value iteration")
         pbar = trange(self.max_val_iterations)
         reward_mat = adjacency(self.G, weight=self.G.ep.reward)
+        upper_reward_mat = None
+        if self.penalize_stitches:
+            upper_reward_mat = adjacency(self.G, weight=self.G.ep.upper_reward)
         adjmat = adjacency(self.G)
         for i in pbar:
             # first we initialize the occupancies with the first nodes as 1
@@ -467,12 +511,29 @@ class BATSTrainer:
                     # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
             old_values = self.G.vp.value.get_array()
-            bellman_error = np.max(np.square(values - old_values))
-            pbar.set_description(f"Bellman error: {bellman_error:.3f}")
+            lower_bellman_error = bellman_error = np.max(np.square(values - old_values))
+            if self.penalize_stitches:
+                upper_target_val = diags(
+                        (self.gamma * self.G.vp.upper_value.get_array()
+                                    * (1 - self.G.vp.terminal.get_array())),
+                        format='csr',
+                )
+                upper_target_mat = upper_target_val * adjmat
+                upper_qs = upper_reward_mat + upper_target_mat
+                upper_values = np.asarray(
+                        upper_qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
+                old_upper_values = self.G.vp.upper_value.get_array()
+                upper_bellman_error = np.max(np.square(upper_values - old_upper_values))
+                pbar.set_description(f"{lower_bellman_error=:.3f}, {upper_bellman_error=:.3f}")
+                bellman_error = max(bellman_error, upper_bellman_error)
+            else:
+                pbar.set_description(f"{bellman_error=:.3f}")
             values[is_dead_end] = 0
+            upper_values[is_dead_end] = 0
             bst_childs[is_dead_end] = -1
             self.G.vp.best_neighbor.a = bst_childs
             self.G.vp.value.a = values
+            self.G.vp.upper_value.a = upper_values
             if bellman_error < self.vi_tolerance:
                 break
         pbar.close()
@@ -489,6 +550,14 @@ class BATSTrainer:
         if len(self.stats['Mean Start Value']) > 1:
             change = start_value - self.stats['Mean Start Value'][-2]
             print(f'Change in Mean Start Value: {change:.2f}')
+        if self.penalize_stitches:
+            self.add_stat("Upper Mean Start Value", start_value)
+            mean_value = np.mean(values)
+            self.add_stat("Upper Mean Value", mean_value)
+            min_value = np.min(values)
+            self.add_stat("Upper Min Value", min_value)
+            max_value = np.max(values)
+            self.add_stat("Upper Max Value", max_value)
         self.save_stats()
 
     def train_bc(self, intermediate=False):
