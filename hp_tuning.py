@@ -1,10 +1,10 @@
+from run import main, parse_arguments
 import ray
 from ray import tune
 from ray.tune.suggest.ax import AxSearch
 from ray.tune.schedulers import ASHAScheduler
 from functools import partial
 from copy import deepcopy
-from run import main, parse_arguments
 
 
 def training_function(config, args):
@@ -20,11 +20,10 @@ def training_function(config, args):
 
 def hp_main(args):
     train_with_args = partial(training_function, args=args)
-    ray.init(address="auto")
+    # ray.init(address="auto")
     asha_scheduler = ASHAScheduler(
         time_attr='training_iteration',
-        metric='avg_return',
-        mode='max',
+        # metric='avg_return',
         max_t=args.num_stitching_iters)
     ax_search = AxSearch(metric="avg_return")
     search_space = {
@@ -34,6 +33,8 @@ def hp_main(args):
             }
     analysis = tune.run(
             train_with_args,
+            metric='avg_return',
+            mode='max',
             config=search_space,
             search_alg=ax_search,
             scheduler=asha_scheduler,
