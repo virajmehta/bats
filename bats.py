@@ -77,6 +77,7 @@ class BATSTrainer:
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
         self.neighbors = None
+        self.neighbor_limit = 500000000  # 500 million
         # self.possible_stitch_priorities = None
 
         # set up graph
@@ -186,7 +187,6 @@ class BATSTrainer:
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = kwargs['load_model']
 
-
     def save_stats(self):
         np.savez(self.stats_path, **self.stats)
 
@@ -212,7 +212,9 @@ class BATSTrainer:
         self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
         print(f"Found {len(self.start_states)} start nodes")
         np.save(self.start_state_path, self.start_states)
-        self.train_dynamics()
+        nnz = self.train_dynamics()
+        if nnz > self.neighbor_limit:
+            return -np.inf
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
@@ -238,7 +240,9 @@ class BATSTrainer:
                 avg_return = self.train_bc(intermediate=True)
                 print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s, {avg_return=}")
             if self.use_bisimulation:
-                self.fine_tune_dynamics()
+                nnz = self.fine_tune_dynamics()
+                if nnz > self.neighbor_limit:
+                    return -np.inf
             self.save_stats()
         self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration()
@@ -264,8 +268,8 @@ class BATSTrainer:
                                             self.output_dir)
                 self.compute_embeddings()
             print('skipping dynamics ensemble training')
-            self.find_nearest_neighbors()
-            return
+            nnz = self.find_nearest_neighbors()
+            return nnz
         print("training ensemble of dynamics models")
         if self.use_bisimulation:
             self.model, self.trainer = train_bisim(**self.bisim_train_params)
@@ -274,7 +278,8 @@ class BATSTrainer:
         else:
             train_ensemble(self.dataset, **self.dynamics_train_params)
             self.dynamics_ensemble_path = str(self.output_dir)
-        self.find_nearest_neighbors()
+        nnz = self.find_nearest_neighbors()
+        return nnz
 
     def fine_tune_dynamics(self):
         if not self.use_bisimulation:
@@ -299,7 +304,8 @@ class BATSTrainer:
         if self.penalize_stitches:
             self.recompute_edge_values()
         self.neighbors = None
-        self.find_nearest_neighbors()
+        nnz = self.find_nearest_neighbors()
+        return nnz
 
     def recompute_edge_values(self):
         if len(self.edges_added) == 0:
@@ -448,6 +454,7 @@ class BATSTrainer:
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
         save_npz(self.output_dir / self.neighbor_name, self.neighbors)
+        return self.neighbors.nnz // 2
 
     def compute_stitch_priorities(self):
         print(f"Computing updated priorities for stitches")
