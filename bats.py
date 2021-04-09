@@ -186,7 +186,6 @@ class BATSTrainer:
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = kwargs['load_model']
 
-        self.hp_tune = kwargs['hp_tune']
 
     def save_stats(self):
         np.savez(self.stats_path, **self.stats)
@@ -247,6 +246,7 @@ class BATSTrainer:
         self.graph_stitching_done = True
         self.value_iteration_done = True
         self.train_bc()
+        return self.stats['avg_return']
 
     def compute_embeddings(self):
         print("computing embeddings")
@@ -579,15 +579,11 @@ class BATSTrainer:
                                      env=self.env,
                                      max_ep_len=self.env._max_episode_steps,
                                      **params)
-        if self.hp_tune:
-            bc_path = self.output_dir / 'stats.txt'
-            with bc_path.open('r') as f:
-                last_line = f.readlines()[-1]
-            avg_return = float(last_line.split(',')[1])
-            from ray import tune
-            stats = {k: v[-1] for k, v in self.stats.items()}
-            stats['avg_return'] = avg_return
-            tune.report(**stats)
+        bc_path = self.output_dir / 'stats.txt'
+        with bc_path.open('r') as f:
+            last_line = f.readlines()[-1]
+        avg_return = float(last_line.split(',')[1])
+        self.add_stat('avg_return', avg_return)
 
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
