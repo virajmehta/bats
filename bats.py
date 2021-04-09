@@ -295,7 +295,8 @@ class BATSTrainer:
                 val_start_prop=0,
                 include_reward_next_obs=True,
                 silent=True,
-                starts=self.start_states)
+                starts=self.start_states,
+                only_add_real=True)
         fine_tune_bisim(self.trainer,
                         self.fine_tune_epochs,
                         data)
