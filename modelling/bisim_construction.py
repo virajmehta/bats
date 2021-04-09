@@ -83,6 +83,7 @@ def make_trainer(model,
                  weight_decay=0,
                  cuda_device='',
                  silent=False,
+                 train_loops_per_epoch=1,
                  save_freq=-1):
     # Create optimizers.
     optimizers = {'Encoder': torch.optim.Adam(model.encoder.parameters(),
@@ -105,13 +106,8 @@ def make_trainer(model,
         save_freq=save_freq,
         train_loops_per_epoch=train_loops_per_epoch,
     )
-    with open(os.path.join(save_dir, 'params.pkl'), 'wb') as f:
-        pkl.dump(params, f)
     # Do training.
-    trainer.fit(tr_data, epochs, val_data, od_wait,
-                batch_updates_per_epoch=batch_updates_per_epoch,
-                validation_batches_per_epoch=validation_batches_per_epoch)
-    return model, trainer
+    return trainer
 
 
 def fine_tune_bisim(
