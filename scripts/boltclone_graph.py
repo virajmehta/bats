@@ -29,9 +29,6 @@ def run(args):
         starts = get_starts_from_graph(graph, env)
     else:
         starts = None
-    if args.value_threshold > 0:
-        starts = get_value_thresholded_starts(graph, args.value_threshold,
-                                              starts)
     data, val_data, _ = make_boltzmann_policy_dataset(
             graph=graph,
             n_collects=args.n_collects,
@@ -43,6 +40,8 @@ def run(args):
             only_add_real=args.real_edges_only,
             get_unique_edges=args.unique_edges,
             starts=starts,
+            threshold_start_val=args.value_threshold,
+            top_percent_starts=args.top_percent_starts,
     )
     # Run AWR with the pre-trained qnets.
     behavior_clone(
@@ -70,18 +69,19 @@ def parse_args():
     parser.add_argument('--save_dir')
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--batch_updates_per_epoch', type=int, default=50)
-    parser.add_argument('--od_wait', type=int, default=0)
+    parser.add_argument('--od_wait', type=int, default=10)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
     parser.add_argument('--n_val_collects', type=int, default=10000)
-    parser.add_argument('--val_start_prop', type=float, default=0.05)
+    parser.add_argument('--val_start_prop', type=float, default=0.1)
     parser.add_argument('--temperature', type=float, default=0)
     parser.add_argument('--pi_architecture', default='256,256')
     parser.add_argument('--real_edges_only', action='store_true')
     parser.add_argument('--unique_edges', action='store_true')
-    parser.add_argument('--value_threshold', type=float, default=0)
+    parser.add_argument('--value_threshold', type=float)
+    parser.add_argument('--top_percent_starts', type=float)
     parser.add_argument('--use_any_start', action='store_true')
-    parser.add_argument('--num_eval_eps', type=int, default=100)
+    parser.add_argument('--num_eval_eps', type=int, default=10)
     parser.add_argument('--add_entropy_bonus', action='store_true')
     parser.add_argument('--target_entropy', type=float, default=None)
     parser.add_argument('--cuda_device', type=str, default='')

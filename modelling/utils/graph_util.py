@@ -49,6 +49,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   get_unique_edges=True,
                                   include_reward_next_obs=False,
                                   starts=None,
+                                  threshold_start_val=None,
+                                  top_percent_starts=None,
                                   silent=False):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
     Args:
@@ -66,6 +68,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         get_unique_edges: Whether to only return unique edges to train on.
         starts: User provided start states. Otherwise will look for vertex
             property "start".
+        threshold_start_val: Value to threshold start states to pick.
+        top_percent_starts: Percent of start states to take.
         silent: Whether to be silent.
     """
     data = defaultdict(list)
@@ -76,6 +80,12 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         else:
             starts = np.argwhere(graph.get_vertices(
                 vprops=[graph.vp.start_node])[:, 1]).flatten()
+    if top_percent_starts is not None:
+        starts = get_top_performing_starts(graph, top_percent_starts,
+                                           starts=starts)
+    if threshold_start_val is not None:
+        starts = get_value_thresholded_starts(graph, threshold_start_val,
+                                              starts=starts)
     # Get separate into train and validation set starts.
     np.random.shuffle(starts)
     if len(starts) > 1 and val_start_prop > 0 and n_val_collects > 0:
@@ -259,4 +269,17 @@ def get_value_thresholded_starts(
             vprops=[graph.vp.start_node])[:, 1]).flatten()
     values = graph.vp.value.get_array()[starts].flatten()
     acceptable = np.argwhere(values > threshold).flatten()
+    return starts[acceptable]
+
+def get_top_performing_starts(
+    graph,
+    top_percent,
+    starts=None,
+):
+    if starts is None:
+        starts = np.argwhere(graph.get_vertices(
+            vprops=[graph.vp.start_node])[:, 1]).flatten()
+    values = graph.vp.value.get_array()[starts].flatten()
+    srtidxs = np.argsort(values)
+    acceptable = srtidxs[-int(len(srtidxs) * top_percent):]
     return starts[acceptable]

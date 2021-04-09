@@ -65,8 +65,8 @@ class BATSTrainer:
         self.policy = None
         self.bc_params = {}
         self.bc_params['save_dir'] = str(output_dir)
-        self.bc_params['epochs'] = kwargs.get('bc_epochs', 1000)
-        self.bc_params['od_wait'] = kwargs.get('od_wait', 50)
+        self.bc_params['epochs'] = kwargs.get('bc_epochs', 50)
+        self.bc_params['od_wait'] = kwargs.get('od_wait', 15)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
         self.bc_params['batch_updates_per_epoch'] =\
@@ -79,6 +79,7 @@ class BATSTrainer:
         self.intermediate_bc_params['epochs'] = 30
         self.temperature = kwargs.get('temperature', 0.25)
         self.val_prop = kwargs.get('val_prop', 0.05)
+        self.top_percentage_starts = kwargs.get('top_percentage_starts', 0.8)
         self.bc_every_iter = kwargs['bc_every_iter']
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
@@ -577,7 +578,8 @@ class BATSTrainer:
                 n_val_collects=self.val_prop * self.G.num_vertices(),
                 val_start_prop=self.val_prop,
                 silent=True,
-                starts=self.start_states)
+                starts=self.start_states,
+                top_percentage_starts=self.top_percentage_starts)
         for k, v in stats.items():
             self.add_stat(k, v)
         params = deepcopy(self.intermediate_bc_params if intermediate
