@@ -235,8 +235,8 @@ class BATSTrainer:
             self.G.save(str(self.output_dir / 'mdp.gt'))
             if self.bc_every_iter:
                 bc_start_time = time.time()
-                self.train_bc(intermediate=True)
-                print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
+                avg_return = self.train_bc(intermediate=True)
+                print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s, {avg_return=}")
             if self.use_bisimulation:
                 self.fine_tune_dynamics()
             self.save_stats()
