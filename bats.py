@@ -600,7 +600,7 @@ class BATSTrainer:
                 **params
         )
         bc_stats = bc_trainer.get_stats()
-        self.add_stat('Behavior Clone Return', bc_stats['ReturnsAvg'][-1]
+        self.add_stat('Behavior Clone Return', bc_stats['Returns/avg'][-1])
 
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
