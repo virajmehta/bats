@@ -592,11 +592,15 @@ class BATSTrainer:
                           else self.bc_params)
         if dir_name is not None:
             params['save_dir'] = os.path.join(params['save_dir'], dir_name)
-        self.policy = behavior_clone(dataset=data,
-                                     val_dataset=val_data,
-                                     env=self.env,
-                                     max_ep_len=self.env._max_episode_steps,
-                                     **params)
+        self.policy, bc_trainer = behavior_clone(
+                dataset=data,
+                val_dataset=val_data,
+                env=self.env,
+                max_ep_len=self.env._max_episode_steps,
+                **params
+        )
+        bc_stats = bc_trainer.get_stats()
+        self.add_stat('Behavior Clone Return', bc_stats['ReturnsAvg'][-1]
 
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
