@@ -77,7 +77,6 @@ class BATSTrainer:
         self.intermediate_bc_params = deepcopy(self.bc_params)
         self.intermediate_bc_params['epochs'] = 30
         self.temperature = kwargs.get('temperature', 0.25)
-        self.val_prop = kwargs.get('val_prop', 0.05)
         self.bolt_gather_params = {}
         self.bolt_gather_params['top_percent_starts'] =\
                 kwargs.get('top_percent_starts', 0.8)
@@ -227,7 +226,6 @@ class BATSTrainer:
         self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
         print(f"Found {len(self.start_states)} start nodes")
         np.save(self.start_state_path, self.start_states)
-        print('Graph saved. Training dynamics...')
         self.train_dynamics()
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
