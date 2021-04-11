@@ -1,3 +1,4 @@
+import os
 from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
 import time
@@ -73,13 +74,19 @@ class BATSTrainer:
             kwargs.get('batch_updates_per_epoch', 50)
         self.bc_params['add_entropy_bonus'] =\
             kwargs.get('add_entropy_bonus', True)
-        self.bc_params['unique_edges'] =\
-            kwargs.get('unique_edges', False)
         self.intermediate_bc_params = deepcopy(self.bc_params)
         self.intermediate_bc_params['epochs'] = 30
         self.temperature = kwargs.get('temperature', 0.25)
         self.val_prop = kwargs.get('val_prop', 0.05)
-        self.top_percentage_starts = kwargs.get('top_percentage_starts', 0.8)
+        self.bolt_gather_params = {}
+        self.bolt_gather_params['top_percent_starts'] =\
+                kwargs.get('top_percent_starts', 0.8)
+        self.bolt_gather_params['silent'] =\
+                kwargs.get('silent', False)
+        self.bolt_gather_params['get_unique_edges'] =\
+                kwargs.get('get_unique_edges', False)
+        self.bolt_gather_params['val_start_prop'] =\
+                kwargs.get('val_start_prop', 0.05)
         self.bc_every_iter = kwargs['bc_every_iter']
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
@@ -220,6 +227,7 @@ class BATSTrainer:
         self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
         print(f"Found {len(self.start_states)} start nodes")
         np.save(self.start_state_path, self.start_states)
+        print('Graph saved. Training dynamics...')
         self.train_dynamics()
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
@@ -576,11 +584,10 @@ class BATSTrainer:
                 graph=self.G,
                 n_collects=self.G.num_vertices(),
                 max_ep_len=self.env._max_episode_steps,
-                n_val_collects=self.val_prop * self.G.num_vertices(),
-                val_start_prop=self.val_prop,
-                silent=True,
+                n_val_collects=self.bolt_gather_params['val_start_prop']
+                               * self.G.num_vertices(),
                 starts=self.start_states,
-                top_percentage_starts=self.top_percentage_starts)
+                **self.bolt_gather_params)
         for k, v in stats.items():
             self.add_stat(k, v)
         params = deepcopy(self.intermediate_bc_params if intermediate
@@ -588,6 +595,7 @@ class BATSTrainer:
         if dir_name is not None:
             params['save_dir'] = os.path.join(params['save_dir'], dir_name)
         self.policy = behavior_clone(dataset=data,
+                                     val_dataset=val_data,
                                      env=self.env,
                                      max_ep_len=self.env._max_episode_steps,
                                      **params)
