@@ -1,4 +1,3 @@
-import os
 from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
 import time
@@ -18,7 +17,6 @@ from modelling.bisim_construction import train_bisim, load_bisim, make_trainer, 
 from modelling.utils.graph_util import make_boltzmann_policy_dataset
 from sklearn.neighbors import radius_neighbors_graph
 from util import get_starts_from_graph
-from ipdb import set_trace as db  # NOQA
 
 
 class BATSTrainer:
@@ -92,6 +90,7 @@ class BATSTrainer:
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
         self.neighbors = None
+        self.neighbor_limit = 500000000  # 500 million
         # self.possible_stitch_priorities = None
 
         # set up graph
@@ -201,8 +200,6 @@ class BATSTrainer:
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = kwargs['load_model']
 
-        self.hp_tune = kwargs['hp_tune']
-
     def save_stats(self):
         np.savez(self.stats_path, **self.stats)
 
@@ -228,7 +225,9 @@ class BATSTrainer:
         self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
         print(f"Found {len(self.start_states)} start nodes")
         np.save(self.start_state_path, self.start_states)
-        self.train_dynamics()
+        nnz = self.train_dynamics()
+        if nnz > self.neighbor_limit:
+            return -np.inf
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
@@ -254,7 +253,9 @@ class BATSTrainer:
                 self.train_bc(dir_name='itr_%d' % i, intermediate=True)
                 print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
             if self.use_bisimulation:
-                self.fine_tune_dynamics()
+                nnz = self.fine_tune_dynamics()
+                if nnz > self.neighbor_limit:
+                    return -np.inf
             self.save_stats()
         self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration()
@@ -281,8 +282,8 @@ class BATSTrainer:
                                             self.output_dir)
                 self.compute_embeddings()
             print('skipping dynamics ensemble training')
-            self.find_nearest_neighbors()
-            return
+            nnz = self.find_nearest_neighbors()
+            return nnz
         print("training ensemble of dynamics models")
         if self.use_bisimulation:
             self.model, self.trainer = train_bisim(**self.bisim_train_params)
@@ -291,7 +292,8 @@ class BATSTrainer:
         else:
             train_ensemble(self.dataset, **self.dynamics_train_params)
             self.dynamics_ensemble_path = str(self.output_dir)
-        self.find_nearest_neighbors()
+        nnz = self.find_nearest_neighbors()
+        return nnz
 
     def fine_tune_dynamics(self):
         if not self.use_bisimulation:
@@ -317,7 +319,8 @@ class BATSTrainer:
         if self.penalize_stitches:
             self.recompute_edge_values()
         self.neighbors = None
-        self.find_nearest_neighbors()
+        nnz = self.find_nearest_neighbors()
+        return nnz
 
     def recompute_edge_values(self):
         if len(self.edges_added) == 0:
@@ -466,6 +469,7 @@ class BATSTrainer:
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
         save_npz(self.output_dir / self.neighbor_name, self.neighbors)
+        return self.neighbors.nnz // 2
 
     def compute_stitch_priorities(self):
         print(f"Computing updated priorities for stitches")
@@ -587,25 +591,20 @@ class BATSTrainer:
                 graph=self.G,
                 n_collects=self.G.num_vertices(),
                 max_ep_len=self.env._max_episode_steps,
-                n_val_collects=self.bolt_gather_params['val_start_prop']
-                               * self.G.num_vertices(),
-                starts=self.start_states,
-                **self.bolt_gather_params)
-        for k, v in stats.items():
-            self.add_stat(k, v)
-        params = deepcopy(self.intermediate_bc_params if intermediate
-                          else self.bc_params)
-        if dir_name is not None:
-            params['save_dir'] = os.path.join(params['save_dir'], dir_name)
-        self.policy, bc_trainer = behavior_clone(
-                dataset=data,
-                val_dataset=val_data,
-                env=self.env,
-                max_ep_len=self.env._max_episode_steps,
-                **params
-        )
-        bc_stats = bc_trainer.get_stats()
-        self.add_stat('Behavior Clone Return', bc_stats['Returns/avg'][-1])
+                n_val_collects=0,
+                val_start_prop=0,
+                silent=True,
+                starts=self.start_states)
+        params = self.intermediate_bc_params if intermediate else self.bc_params
+        self.policy = behavior_clone(dataset=data,
+                                     env=self.env,
+                                     max_ep_len=self.env._max_episode_steps,
+                                     **params)
+        bc_path = self.output_dir / 'stats.txt'
+        with bc_path.open('r') as f:
+            last_line = f.readlines()[-1]
+        avg_return = float(last_line.split(',')[1])
+        self.add_stat('avg_return', avg_return)
 
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
