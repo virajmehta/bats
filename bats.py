@@ -1,3 +1,4 @@
+import os
 from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
 import time
@@ -65,12 +66,26 @@ class BATSTrainer:
         self.policy = None
         self.bc_params = {}
         self.bc_params['save_dir'] = str(output_dir)
-        self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
+        self.bc_params['epochs'] = kwargs.get('bc_epochs', 50)
+        self.bc_params['od_wait'] = kwargs.get('od_wait', 15)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
+        self.bc_params['batch_updates_per_epoch'] =\
+            kwargs.get('batch_updates_per_epoch', 50)
+        self.bc_params['add_entropy_bonus'] =\
+            kwargs.get('add_entropy_bonus', True)
         self.intermediate_bc_params = deepcopy(self.bc_params)
         self.intermediate_bc_params['epochs'] = 30
         self.temperature = kwargs.get('temperature', 0.25)
+        self.bolt_gather_params = {}
+        self.bolt_gather_params['top_percent_starts'] =\
+                kwargs.get('top_percent_starts', 0.8)
+        self.bolt_gather_params['silent'] =\
+                kwargs.get('silent', False)
+        self.bolt_gather_params['get_unique_edges'] =\
+                kwargs.get('get_unique_edges', False)
+        self.bolt_gather_params['val_start_prop'] =\
+                kwargs.get('val_start_prop', 0.05)
         self.bc_every_iter = kwargs['bc_every_iter']
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
@@ -234,7 +249,7 @@ class BATSTrainer:
             self.G.save(str(self.output_dir / 'mdp.gt'))
             if self.bc_every_iter:
                 bc_start_time = time.time()
-                self.train_bc(intermediate=True)
+                self.train_bc(dir_name='itr_%d' % i, intermediate=True)
                 print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
             if self.use_bisimulation:
                 self.fine_tune_dynamics()
@@ -286,7 +301,8 @@ class BATSTrainer:
                 val_start_prop=0,
                 include_reward_next_obs=True,
                 silent=True,
-                starts=self.start_states)
+                starts=self.start_states,
+                only_add_real=True)
         fine_tune_bisim(self.trainer,
                         self.fine_tune_epochs,
                         data)
@@ -560,22 +576,31 @@ class BATSTrainer:
             self.add_stat("Upper Max Value", max_value)
         self.save_stats()
 
-    def train_bc(self, intermediate=False):
+    def train_bc(self, dir_name=None, intermediate=False):
         print("cloning a policy")
-        data, _, _ = make_boltzmann_policy_dataset(
+        data, val_data, stats = make_boltzmann_policy_dataset(
                 graph=self.G,
                 n_collects=self.G.num_vertices(),
-                temperature=0.,
                 max_ep_len=self.env._max_episode_steps,
-                n_val_collects=0,
-                val_start_prop=0,
-                silent=True,
-                starts=self.start_states)
-        params = self.intermediate_bc_params if intermediate else self.bc_params
-        self.policy = behavior_clone(dataset=data,
-                                     env=self.env,
-                                     max_ep_len=self.env._max_episode_steps,
-                                     **params)
+                n_val_collects=self.bolt_gather_params['val_start_prop']
+                               * self.G.num_vertices(),
+                starts=self.start_states,
+                **self.bolt_gather_params)
+        for k, v in stats.items():
+            self.add_stat(k, v)
+        params = deepcopy(self.intermediate_bc_params if intermediate
+                          else self.bc_params)
+        if dir_name is not None:
+            params['save_dir'] = os.path.join(params['save_dir'], dir_name)
+        self.policy, bc_trainer = behavior_clone(
+                dataset=data,
+                val_dataset=val_data,
+                env=self.env,
+                max_ep_len=self.env._max_episode_steps,
+                **params
+        )
+        bc_stats = bc_trainer.get_stats()
+        self.add_stat('Behavior Clone Return', bc_stats['Returns/avg'][-1])
 
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size

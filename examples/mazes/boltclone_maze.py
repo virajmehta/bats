@@ -15,7 +15,7 @@ from tqdm import tqdm
 from env_wrapper import NormalizedBoxEnv
 from modelling.policy_construction import behavior_clone, learn_awac_policy
 from modelling.utils.graph_util import make_boltzmann_policy_dataset
-from examples.mazes.maze_util import get_starts_from_graph
+from util import get_starts_from_graph
 
 
 def run(args):
