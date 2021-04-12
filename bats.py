@@ -256,7 +256,7 @@ class BATSTrainer:
             if self.use_bisimulation:
                 nnz = self.fine_tune_dynamics()
                 if nnz > self.neighbor_limit:
-                    return -np.inf
+                    return None
             self.save_stats()
         self.G.save(str(self.output_dir / 'mdp.gt'))
         self.value_iteration()
