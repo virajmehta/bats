@@ -201,9 +201,11 @@ def behavior_clone(
             num_eval_eps=num_eval_eps,
             train_loops_per_epoch=train_loops_per_epoch,
             validation_tune_metric='MSE',
+            save_best_model=False,
     )
     trainer.fit(tr_data, epochs, val_data, od_wait,
                 batch_updates_per_epoch=batch_updates_per_epoch,
+                validation_batches_per_epoch=batch_updates_per_epoch,
                 last_column_is_weights=has_weights)
     if load_best_model_at_end:
         policy.load_model(os.path.join(save_dir, 'model.pt'))
