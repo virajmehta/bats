@@ -62,6 +62,8 @@ def hp_main(args):
         config = sample_config(config_space)
         print(f'Attempting Config \n{config}')
         returns = train_fn(config)
+        if returns is None:
+            continue
         print(f"Returns for Config {config}:")
         print(returns)
         best_iter = np.argmax(returns)
