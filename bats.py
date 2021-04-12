@@ -265,7 +265,6 @@ class BATSTrainer:
         self.value_iteration_done = True
         self.train_bc()
         self.save_stats()
-        return self.stats['Behavior Clone Return']
 
     def compute_embeddings(self):
         print("computing embeddings")

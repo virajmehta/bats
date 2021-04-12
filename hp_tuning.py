@@ -1,4 +1,5 @@
 from run import main, parse_arguments
+import sherpa
 import pickle
 import numpy as np
 from tqdm import trange
@@ -37,7 +38,15 @@ def training_function(config, args):
         suffix_list.append(f"{k}:{v:.3f}")
     args.__setattr__('num_stitching_iters', ITERS_PER_TRIAL)
     args.name = args.name + "_" + ",".join(suffix_list)
-    return main(args)
+    stats = main(args)
+    bc_returns = stats.pop('Behavior Clone Return')
+    print(f"Returns for Config {config}:")
+    print(bc_returns)
+    outputs = []
+    for i, ret in enumerate(bc_returns):
+        context = {k: v[i] for k, v in stats.items()}
+        outputs.append((ret, context))
+    return outputs
 
 
 def sample_config(config_space):
@@ -52,31 +61,20 @@ def hp_main(args):
     # for now just doing a uniform distribution over these
     best_return = -np.inf
     best_config = None
-    config_space = {
-            'epsilon_planning': (0.05, 10),
-            'planning_quantile': (0.4, 1.),
-            'epsilon_neighbors': (0.1, 0.3),
-            }
-    all_results = {}
-    for i in trange(NUM_TRIALS):
-        config = sample_config(config_space)
+    parameters = [sherpa.Continuous(name='epsilon_planning', range=[0.05, 10], scale='linear'),
+                  sherpa.Continuous(name='planning_quantile', range=[0.4, 1], scale='linear'),
+                  sherpa.Continuous(name='epsilon_neighbors', range=[0.1, 0.3], scale='linear')]
+    algorithm = sherpa.RandomSearch(max_num_trials=NUM_TRIALS)
+    study = sherpa.Study(parameters=parameters,
+                         algorithm=algorithm,
+                         lower_is_better=False)
+    for trial in study:
+        config = HPConfig(config=trial.parameters)
         print(f'Attempting Config \n{config}')
-        returns = train_fn(config)
-        if returns is None:
-            continue
-        print(f"Returns for Config {config}:")
-        print(returns)
-        best_iter = np.argmax(returns)
-        current_best_return = returns[best_iter]
-        if current_best_return > best_return:
-            best_return = current_best_return
-            best_config = config
-            best_config['num_stitching_iterations'] = best_iter
-        print(f"Current best config: {best_config}")
-        print(f"Return: {best_return}")
-        all_results[str(config)] = returns
-        with output_file.open('wb') as f:
-            pickle.dump(all_results, f)
+        outputs = train_fn(config)
+        for ret, ctx in outputs:
+            # TODO
+            pass
 
 
 if __name__ == '__main__':
