@@ -24,13 +24,16 @@ class HPConfig:
     def __setitem__(self, key, value):
         self.config[key] = value
 
+    def items(self):
+        return self.config.items()
+
 
 def training_function(config, args):
     args = deepcopy(args)
     suffix_list = []
     for k, v in config.items():
         args.__setattr__(k, v)
-        suffix_list.append(f"{k}: {v}")
+        suffix_list.append(f"{k}:{v}")
     args.name = args.name + "_" + ",".join(suffix_list)
     return main(args)
 
@@ -48,9 +51,9 @@ def hp_main(args):
     best_return = -np.inf
     best_config = None
     config_space = {
-            'epsilon_planning': (0.05, 0.5),
+            'epsilon_planning': (0.05, 10),
             'planning_quantile': (0.4, 1.),
-            'epsilon_neighbors': (1, 5),
+            'epsilon_neighbors': (0.1, 0.3),
             }
     all_results = {}
     for i in trange(NUM_TRIALS):

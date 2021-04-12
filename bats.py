@@ -2,6 +2,7 @@ from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
 import time
 import numpy as np
+from pathlib import Path
 import torch
 from scipy.sparse import diags
 from collections import defaultdict
@@ -198,7 +199,7 @@ class BATSTrainer:
             our_neighbor_path = self.output_dir / self.neighbor_name
             save_npz(our_neighbor_path, self.neighbors)
         if kwargs['load_model'] is not None:
-            self.dynamics_ensemble_path = kwargs['load_model']
+            self.dynamics_ensemble_path = Path(kwargs['load_model'])
 
     def save_stats(self):
         np.savez(self.stats_path, **self.stats)
