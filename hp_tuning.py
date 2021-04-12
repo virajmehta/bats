@@ -58,7 +58,7 @@ def hp_main(args):
     all_results = {}
     for i in trange(NUM_TRIALS):
         config = sample_config(config_space)
-        print(f'Attempting Config {config}')
+        print(f'Attempting Config \n{config}')
         returns = train_fn(config)
         print(f"Returns for Config {config}:")
         print(returns)
