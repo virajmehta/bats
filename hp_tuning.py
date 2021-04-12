@@ -8,10 +8,9 @@ from util import make_output_dir
 # from util import suppress_stdout
 from copy import deepcopy
 
-NUM_TRIALS = 8
+NUM_TRIALS = 16
 ITERS_PER_TRIAL = 10
 DUMP_FN = 'trials.pkl'
-
 
 class HPConfig:
     def __init__(self, config=None, rep=None):
@@ -64,7 +63,7 @@ def hp_main(args):
     parameters = [sherpa.Continuous(name='epsilon_planning', range=[0.05, 10], scale='linear'),
                   sherpa.Continuous(name='planning_quantile', range=[0.4, 1], scale='linear'),
                   sherpa.Continuous(name='epsilon_neighbors', range=[0.1, 0.3], scale='linear')]
-    algorithm = sherpa.RandomSearch(max_num_trials=NUM_TRIALS)
+    algorithm = sherpa.algorithms.GPyOpt(max_num_trials=NUM_TRIALS, max_concurrent=1)
     study = sherpa.Study(parameters=parameters,
                          algorithm=algorithm,
                          lower_is_better=False)
