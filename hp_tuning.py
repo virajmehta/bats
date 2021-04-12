@@ -8,6 +8,7 @@ from util import make_output_dir
 from copy import deepcopy
 
 NUM_TRIALS = 8
+ITERS_PER_TRIAL = 10
 DUMP_FN = 'trials.pkl'
 
 
@@ -33,7 +34,8 @@ def training_function(config, args):
     suffix_list = []
     for k, v in config.items():
         args.__setattr__(k, v)
-        suffix_list.append(f"{k}:{v}")
+        suffix_list.append(f"{k}:{v:.3f}")
+    args.__setattr__('num_stitching_iters', ITERS_PER_TRIAL)
     args.name = args.name + "_" + ",".join(suffix_list)
     return main(args)
 
