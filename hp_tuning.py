@@ -72,9 +72,12 @@ def hp_main(args):
         config = HPConfig(config=trial.parameters)
         print(f'Attempting Config \n{config}')
         outputs = train_fn(config)
-        for ret, ctx in outputs:
-            # TODO
-            pass
+        for i, (ret, ctx) in enumerate(outputs):
+            study.add_observation(trial=trial,
+                                  iteration=i,
+                                  objective=ret,
+                                  context=ctx)
+        study.finalize(trial)
 
 
 if __name__ == '__main__':
