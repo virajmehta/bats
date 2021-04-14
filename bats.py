@@ -111,6 +111,7 @@ class BATSTrainer:
         self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
         self.G.vp.start_node = self.G.new_vertex_property('bool')
         self.G.vp.real_node = self.G.new_vertex_property('bool')
+        self.G.vp.real_node.get_array()[:] = True
         self.G.vp.terminal = self.G.new_vertex_property('bool')
         self.start_states = None
         self.start_state_path = self.output_dir / 'starts.npy'
@@ -230,7 +231,7 @@ class BATSTrainer:
         self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
         self.value_iteration()
-        for i in trange(self.num_stitching_iters):
+        for i in self.get_iterator(self.num_stitching_iters):
             stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()
             print(f"Time to find good stitches: {time.time() - stitch_start_time:.2f}s")
@@ -596,7 +597,9 @@ class BATSTrainer:
                     str(chunksize),
                     str(self.temperature),
                     str(self.gamma),
-                    str(self.max_stitches)]
+                    str(self.max_stitches),
+                    str(self.max_stitch_length),
+                    ]
             if self.use_bisimulation:
                 args.append('-ub')
             process = Popen(args)
