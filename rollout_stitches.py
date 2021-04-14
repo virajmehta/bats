@@ -4,7 +4,6 @@ from scipy.sparse import load_npz
 from pathlib import Path
 import numpy as np
 import pickle
-from ipdb import set_trace as db
 
 
 def parse_arguments():
@@ -44,7 +43,9 @@ def get_future_stitches(G,
                         state_props,
                         action_props,
                         actions_this_far,
+                        rewards_this_far
                         startv,
+                        start_obs,
                         currv,
                         Q,
                         max_stitches,
@@ -62,9 +63,11 @@ def get_future_stitches(G,
         actions = deepcopy(actions_this_far) + [action]
         reward = edge[-1]
         nv = neigh[-1]
-        advantage = reward + nv * gamma - Q
+        updated_Q = (Q - reward) / gamma
+        advantage = nv - updated_Q
         if advantage > 0:
-            possible_stitches.append((startv, nidx, G.vp.obs[startv], n_obs
+            possible_stitches.append((startv, nidx, start_obs, n_obs
+        # TODOZZ
 
 
 def get_possible_stitches(
@@ -95,9 +98,10 @@ def get_possible_stitches(
         out_neighbors = np.delete(out_neighbors, deletes, axis=0)
         out_edges = np.delete(out_edges, deletes, axis=0)
         out_start = np.ones_like(out_neighbors[:, :1]) * currv
+        curr_obs = G.get_vertices(vprops=state_props)[currv, 1:]
         new_stitches = np.concatenate((out_start,
                                        out_neighbors[:, :1],
-                                       np.tile(G.vp.obs[currv], (out_neighbors.shape[0], 1)),
+                                       np.tile(curr_obs, (out_neighbors.shape[0], 1)),
                                        out_neighbors[:, 1:-1],
                                        out_edges[:, 2:-1]), axis=-1)
         new_advantages = out_edges[:, -1] + gamma * out_neighbors[:, -1] - Q
@@ -112,7 +116,6 @@ def get_possible_stitches(
     # take all nearest neighbors to each child vertex and add them as edges to plan toward
     for i, child_value in enumerate(children_values):
         child = int(child_value[0])
-        value = child_value[1]
         child_neighbors = np.nonzero(all_neighbors[child, :])[1]
         deletes = []
         for j, child in enumerate(child_neighbors):
@@ -126,9 +129,10 @@ def get_possible_stitches(
         actions = action_rewards[:, 1:]
         rewards = action_rewards[:, 0]
         out_start = np.ones((len(child_neighbors), 1)) * currv
+        curr_obs = G.get_vertices(vprops=state_props)[currv, 1:]
         new_stitches = np.concatenate((out_start,
                                        child_neighbors[:, np.newaxis],
-                                       np.tile(G.vp.obs[currv], (len(child_neighbors), 1)),
+                                       np.tile(curr_obs, (len(child_neighbors), 1)),
                                        child_neighbor_obs,
                                        actions), axis=-1)
         new_advantages = rewards + gamma * values - Q
