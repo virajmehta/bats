@@ -21,6 +21,7 @@ def parse_arguments():
     parser.add_argument('temperature', type=float)
     parser.add_argument('gamma', type=float)
     parser.add_argument('max_stitches', type=int)
+    parser.add_argument('max_stitch_length', type=int)
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     return parser.parse_args()
 
@@ -36,6 +37,35 @@ def clip_possible_stitches(max_node_stitches, *args):
     advantages = advantages[indices]
     return [possible_stitches], [advantages], max_node_stitches
 
+def get_future_stitches(G,
+                        gamma,
+                        all_neighbors,
+                        stitches_tried,
+                        state_props,
+                        action_props,
+                        actions_this_far,
+                        startv,
+                        currv,
+                        Q,
+                        max_stitches,
+                        depth_remaining):
+    possible_stitches = []
+    # gives a numpy array num_neighbors * (2 + state_dim)
+    neighbors = G.get_out_neighbors(currv, vprops=[*state_props, G.vp.value])
+    edges = G.get_out_edges(currv, eprops=[*action_props, G.ep.reward])
+    for neigh, edge in zip(neighbors, edges):
+        nidx = neigh[0]
+        if (startv, nidx) in stitches_tried:
+            continue
+        n_obs = neigh[1:-1]
+        action = edge[2:-1]
+        actions = deepcopy(actions_this_far) + [action]
+        reward = edge[-1]
+        nv = neigh[-1]
+        advantage = reward + nv * gamma - Q
+        if advantage > 0:
+            possible_stitches.append((startv, nidx, G.vp.obs[startv], n_obs
+
 
 def get_possible_stitches(
         G,
@@ -48,7 +78,8 @@ def get_possible_stitches(
         children_values,
         child_action_rewards,
         Q,
-        max_stitches):
+        max_stitches,
+        max_stitch_length):
     neighbors = np.nonzero(all_neighbors[currv, :])[1]
     possible_stitches = []
     advantages = []
@@ -153,7 +184,8 @@ def main(args):
                                                                                       childs,
                                                                                       edges[:, 2:],
                                                                                       0,
-                                                                                      args.rollout_chunk_size - total_stitches)
+                                                                                      args.rollout_chunk_size - total_stitches,
+                                                                                      args.max_stitch_length)
                     stitches += new_stitches
                     advantages += new_advantages
                     total_stitches += n_stitches
@@ -183,7 +215,8 @@ def main(args):
                                                                               childs,
                                                                               edges[:, 2:],
                                                                               Q,
-                                                                              args.rollout_chunk_size - total_stitches)  # NOQA
+                                                                              args.rollout_chunk_size - total_stitches,
+                                                                              args.max_stitch_length)  # NOQA
             stitches += new_stitches
             advantages += new_advantages
             total_stitches += n_stitches
