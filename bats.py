@@ -9,7 +9,7 @@ from collections import defaultdict
 import pickle
 from subprocess import Popen
 from copy import deepcopy
-from tqdm import trange, tqdm
+from tqdm import trange
 from scipy.sparse import save_npz, load_npz
 from shutil import copy
 from modelling.dynamics_construction import train_ensemble
@@ -78,13 +78,13 @@ class BATSTrainer:
         self.temperature = kwargs.get('temperature', 0.25)
         self.bolt_gather_params = {}
         self.bolt_gather_params['top_percent_starts'] =\
-                kwargs.get('top_percent_starts', 0.8)
+            kwargs.get('top_percent_starts', 0.8)
         self.bolt_gather_params['silent'] =\
-                kwargs.get('silent', False)
+            kwargs.get('silent', False)
         self.bolt_gather_params['get_unique_edges'] =\
-                kwargs.get('get_unique_edges', False)
+            kwargs.get('get_unique_edges', False)
         self.bolt_gather_params['val_start_prop'] =\
-                kwargs.get('val_start_prop', 0.05)
+            kwargs.get('val_start_prop', 0.05)
         self.bc_every_iter = kwargs['bc_every_iter']
         # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
@@ -92,8 +92,8 @@ class BATSTrainer:
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
         self.neighbors = None
         self.neighbor_limit = 500000000  # 500 million
-        # self.possible_stitch_priorities = None
 
+        self.max_stitch_length = kwargs.get('max_stitch_length', 1)
         # set up graph
         self.G = Graph()
         self.value_iteration_done = False
@@ -110,7 +110,7 @@ class BATSTrainer:
         self.G.vp.obs = self.G.new_vertex_property('vector<float>')
         self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
         self.G.vp.start_node = self.G.new_vertex_property('bool')
-        self.G.vp.occupancy = self.G.new_vertex_property('float')
+        self.G.vp.real_node = self.G.new_vertex_property('bool')
         self.G.vp.terminal = self.G.new_vertex_property('bool')
         self.start_states = None
         self.start_state_path = self.output_dir / 'starts.npy'
@@ -172,7 +172,6 @@ class BATSTrainer:
             self.std_file = None
             self.neighbor_obs = self.unique_obs
 
-        self.use_occupancy = kwargs.get('use_occupancy', False)
         # save graph stats stuff
         self.stats = defaultdict(list)
         self.stats_path = self.output_dir / 'graph_stats.npz'
@@ -218,9 +217,7 @@ class BATSTrainer:
             return range(n)
 
     def train(self):
-        if self.graph_stitching_done:
-            self.train_bc()
-        # if this order is changed loading behavior might break
+        # add the original dataset into the graph
         self.add_dataset_edges()
         # get a list of the start states for the graph
         self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
@@ -471,32 +468,6 @@ class BATSTrainer:
         save_npz(self.output_dir / self.neighbor_name, self.neighbors)
         return self.neighbors.nnz // 2
 
-    def compute_stitch_priorities(self):
-        print(f"Computing updated priorities for stitches")
-        # for now the priority will just be the -(approximate advantage)
-        priorities = np.empty(self.possible_stitches.shape[0])
-        for i, stitch in enumerate(tqdm(self.possible_stitches)):
-            start_vertex = stitch[0]
-            end_vertex = stitch[0]
-            end_vertex_value = self.G.vp.value[end_vertex]
-            start_vertex_value = self.G.vp.value[start_vertex]
-            start_vertex_occupancy = self.G.vp.occupancy[start_vertex]
-            advantage = end_vertex_value - start_vertex_value
-            priorities[i] = -advantage
-            if self.use_occupancy:
-                priorities[i] *= start_vertex_occupancy
-        self.possible_stitch_priorities = priorities
-
-    def get_prioritized_stitch_chunk(self):
-        if self.stitching_chunk_size >= len(self.possible_stitch_priorities):
-            indices = np.arange(len(self.possible_stitch_priorities)).astype(int)
-        else:
-            indices = np.argpartition(self.possible_stitch_priorities,
-                                      self.stitching_chunk_size)[:self.stitching_chunk_size]
-        stitch_chunk = self.possible_stitches[indices]
-        self.possible_stitches = np.delete(self.possible_stitches, indices, axis=0)
-        return stitch_chunk
-
     def value_iteration(self):
         '''
         This value iteration step actually computes two things:
@@ -514,10 +485,6 @@ class BATSTrainer:
             upper_reward_mat = adjacency(self.G, weight=self.G.ep.upper_reward)
         adjmat = adjacency(self.G)
         for i in pbar:
-            # first we initialize the occupancies with the first nodes as 1
-            if self.use_occupancy:
-                raise NotImplementedError('Deprecating for now, not sure if we '
-                                          'are still using or not.')
             # Construct sparse adjacency, reward, sparse value matrices.
             target_val = diags(
                 (self.gamma * self.G.vp.value.get_array()
