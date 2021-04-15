@@ -238,7 +238,7 @@ class BATSTrainer:
             print(f"Time to find good stitches: {time.time() - stitch_start_time:.2f}s")
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
-            if stitches_to_try.shape[0] == 0:
+            if len(stitches_to_try) == 0:
                 break
             plan_start_time = time.time()
             processes = self.test_neighbor_edges(stitches_to_try)
@@ -359,15 +359,16 @@ class BATSTrainer:
         if self.graph_stitching_done:
             print('skipping graph stitching')
             return
-        print(f'testing {possible_stitches.shape[0]} possible stitches')
-        chunksize = possible_stitches.shape[0] // self.plan_cpus
+        print(f'testing {len(possible_stitches)} possible stitches')
+        chunksize = len(possible_stitches) // self.plan_cpus
         input_path = self.output_dir / 'input'
         output_path = self.output_dir / 'output'
         processes = []
         for i in range(self.plan_cpus):
-            cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize, :]
-            fn = input_path / f"{i}.npy"
-            np.save(fn, cpu_chunk)
+            cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize]
+            fn = input_path / f"{i}.pkl"
+            with fn.open('wb') as f:
+                pickle.dump(cpu_chunk, f)
             output_file = output_path / f"{i}.npy"
             args = ['python',
                     'plan.py',
@@ -378,7 +379,8 @@ class BATSTrainer:
                     str(self.action_dim),
                     str(self.latent_dim),
                     str(self.epsilon_planning),
-                    str(self.planning_quantile)]
+                    str(self.planning_quantile),
+                    str(self.max_stitches)]
             if self.std_file:
                 args += [self.mean_file, self.std_file]
             if self.use_bisimulation:
@@ -584,7 +586,7 @@ class BATSTrainer:
         processes = []
         print("Getting possible stitches by rolling out best Boltzmann policy")
         for i in range(self.num_cpus):
-            output_file = output_path / f"{i}.npy"
+            output_file = output_path / f"{i}.pkl"
             args = ['python',
                     'rollout_stitches.py',
                     str(self.output_dir / 'mdp.gt'),
@@ -603,6 +605,7 @@ class BATSTrainer:
                     ]
             if self.use_bisimulation:
                 args.append('-ub')
+            print(' '.join(args))
             process = Popen(args)
             processes.append(process)
         all_advantages = []
@@ -610,23 +613,28 @@ class BATSTrainer:
         for i, process in enumerate(processes):
             process.wait()
             output_file = output_path / f"{i}.npy"
-            outputs = np.load(output_file)
-            advantages = outputs[:, 0]
-            stitches = outputs[:, 1:]
+            with output_file.open('rb') as f:
+                stitches, advantages = pickle.load(f)
             all_advantages.append(advantages)
-            all_stitches.append(stitches)
+            all_stitches += stitches
         all_advantages = np.concatenate(all_advantages, axis=0)
-        all_stitches = np.concatenate(all_stitches, axis=0)
-        stitches, unique_indices = np.unique(all_stitches, axis=0, return_index=True)
-        advantages = all_advantages[unique_indices]
-        if self.stitching_chunk_size >= len(advantages):
-            indices = np.arange(len(advantages)).astype(int)
-        else:
-            indices = np.argpartition(advantages, self.stitching_chunk_size)[:self.stitching_chunk_size]
-        stitches_to_try = stitches[indices]
-        self.remove_neighbors(stitches_to_try)
+        stitch_array = np.array([[s[0], s[1]] for s in all_stitches])
+        indices = np.unique(stitch_array, return_index=True, axis=0)[1]
+        unique_advantages = advantages[indices]
+        breakpoint()
+        start_advantages = np.argpartition(unique_advantages, len(advantages) -
+                                           self.rollout_chunk_size)[-self.rollout_chunk_size:]
+        indices = indices[start_advantages]
+        unique_stitches = []
+        for idx in indices:
+            unique_stitches.append(all_stitches[idx])
+        stitches = unique_stitches
+        advantages = advantages[indices]
+        stitch_array = stitch_array[indices, ...]
+        self.remove_neighbors(stitch_array)
+        self.add_stat('Rollout Stitches', len(advantages))
         print(f'Choosing {len(indices)} edges from Boltzmann rollouts')
-        return stitches_to_try
+        return stitches
 
     def remove_neighbors(self, stitches_to_try):
         for stitch in stitches_to_try:
