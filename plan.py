@@ -1,23 +1,24 @@
 import argparse
 import torch
+import pickle
 import numpy as np
 from pathlib import Path
 from modelling.dynamics_construction import load_ensemble
 from modelling.bisim_construction import load_bisim
 from modelling.utils.torch_utils import set_cuda_device
-from ipdb import set_trace as db
 
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('input_file')
-    parser.add_argument('output_file')
+    parser.add_argument('input_file', type=Path)
+    parser.add_argument('output_file', type=Path)
     parser.add_argument('ensemble_path')
     parser.add_argument('obs_dim', type=int)
     parser.add_argument('action_dim', type=int)
     parser.add_argument('latent_dim', type=int)
     parser.add_argument('epsilon', type=float)
     parser.add_argument('quantile', type=float)
+    parser.add_argument('max_stitches', type=int)
     parser.add_argument('mean_file', nargs='?', default=None)
     parser.add_argument('std_file', nargs='?', default=None)
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
@@ -28,7 +29,8 @@ def prepare_model_inputs_torch(obs, actions):
     return torch.cat([obs, actions], dim=-1)
 
 
-def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, quantile, mean, std, device=None, **kwargs):
+def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, max_stitches, quantile, mean, std,
+        device=None, **kwargs):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
     initializes the mean with the init action.
@@ -39,12 +41,14 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, qu
         init_action (action_dim floats);
     if we are using the bisimulation metric:
         row: a numpy array of size D = 2 + 2 * latent_dim + action_dim, assumed to be of the form:
-        start_state (int); end state (int); start_z (latent_dim floats); end_obs (latent_dim floats); init_action (action_dim floats);
+        start_state (int); end state (int); start_z (latent_dim floats); end_obs (latent_dim floats);
+            init_action (action_dim floats);
 
     if successful, returns the action and predicted reward of the transition.
     if unsuccessful, returns None, None
     for now we assume that the actions are bounded in [-1, 1]
     '''
+    # TODO: figure out what the row is, adjust planning for max_stitches
     assert (bisim_model is None) != (ensemble is None), "Can't pass both an ensemble and a bisim model"
     action_upper_bound = kwargs.get('action_upper_bound', 1.)
     action_lower_bound = kwargs.get('action_lower_bound', -1.)
@@ -101,7 +105,8 @@ def main(args):
     device_num = ''
     set_cuda_device(device_num)
     device = torch.device('cpu' if device_num == '' else 'cuda:' + device_num)
-    input_data = np.load(args.input_file)
+    with args.input_file.open('rb') as f:
+        input_data = pickle.load(f)
     mean = np.load(args.mean_file) if args.mean_file else None
     std = np.load(args.std_file) if args.std_file else None
     if args.use_bisimulation:
@@ -114,10 +119,11 @@ def main(args):
         for model in ensemble:
             model.to(device)
     outputs = []
-    input_data = torch.Tensor(input_data)
-    input_data = input_data.to(device)
+    # input_data = torch.Tensor(input_data)
+    # input_data = input_data.to(device)
     for row in input_data:
-        data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim, ensemble, bisim_model, args.epsilon, args.quantile, mean, std, device=device)
+        data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim, ensemble, bisim_model, args.epsilon, args.max_stitches,
+                   args.quantile, mean, std, device=device)
         if data is not None:
             outputs.append(data)
     outputs = np.array(outputs)
