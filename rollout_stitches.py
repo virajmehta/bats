@@ -63,6 +63,7 @@ def get_possible_stitches(
         out_neighbors = np.delete(out_neighbors, deletes, axis=0)
         out_edges = np.delete(out_edges, deletes, axis=0)
         out_start = np.ones_like(out_neighbors[:, :1]) * currv
+        currv = int(currv)
         curr_obs = G.get_vertices(vprops=state_props)[currv, 1:]
         new_stitches = np.concatenate((out_start,
                                        out_neighbors[:, :1],
@@ -94,6 +95,7 @@ def get_possible_stitches(
         actions = action_rewards[:, 1:]
         rewards = action_rewards[:, 0]
         out_start = np.ones((len(child_neighbors), 1)) * currv
+        currv = int(currv)
         curr_obs = G.get_vertices(vprops=state_props)[currv, 1:]
         new_stitches = np.concatenate((out_start,
                                        child_neighbors[:, np.newaxis],
@@ -149,7 +151,7 @@ def main(args):
                                                                                       stitches_tried,
                                                                                       state_props,
                                                                                       action_props,
-                                                                                      currv,
+                                                                                      int(currv),
                                                                                       childs,
                                                                                       edges[:, 2:],
                                                                                       0,
