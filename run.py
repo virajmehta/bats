@@ -45,6 +45,7 @@ def parse_arguments():
     parser.add_argument('--use_bisimulation', action='store_true')
     parser.add_argument('--bisim_latent_dim', type=int, default=6, help="How many dimensions for the latent space of the bisimulation metric")
     parser.add_argument('-p', '--penalize_stitches', action='store_true')
+    parser.add_argument('-pc', '--penalty_coefficient', type=float, default=1.0)
     if defaults is not None:
         parser.set_defaults(**defaults)
     return parser.parse_args(remaining)

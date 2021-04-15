@@ -138,6 +138,7 @@ class BATSTrainer:
         self.max_stitches = kwargs['max_stitches']
         self.stitches_tried = set()
         self.edges_added = []
+        self.penalty_coefficient = kwargs['penalty_coefficient']
         # this saves an empty file so the child processes can see it
         self.remove_neighbors([])
 
@@ -416,8 +417,8 @@ class BATSTrainer:
             self.edges_added.append((start, end))
             self.G.ep.action[e] = action
             if self.penalize_stitches:
-                self.G.ep.reward[e] = reward - distance * self.gamma
-                self.G.ep.upper_reward[e] = reward + distance * self.gamma
+                self.G.ep.reward[e] = reward - distance * self.gamma * self.penalty_coefficient
+                self.G.ep.upper_reward[e] = reward + distance * self.gamma * self.penalty_coefficient
             else:
                 self.G.ep.reward[e] = reward
 
