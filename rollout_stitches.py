@@ -200,36 +200,13 @@ def main(args):
         currv = np.random.choice(start_states)
         while t < max_ep_len:
             # do a Boltzmann rollout
-            if args.temperature > 0:
-                if G.vp.terminal[currv]:
-                    break
-                childs = G.get_out_neighbors(currv, vprops=[G.vp.value])
-                edges = G.get_out_edges(currv, eprops=[G.ep.reward, *action_props])
-                if len(childs) == 0:
-                    curr_obs = G.get_vertices(vprops=state_props)[currv, 1:]
-                    new_stitches, new_advantages = clip_possible_stitches(args.max_stitches,
-                                                                          G,
-                                                                          args.gamma,
-                                                                          neighbors,
-                                                                          stitches_tried,
-                                                                          state_props,
-                                                                          action_props,
-                                                                          [],
-                                                                          int(currv),
-                                                                          curr_obs,
-                                                                          int(currv),
-                                                                          # Q,?
-                                                                          args.rollout_chunk_size -
-                                                                          total_stitches,
-                                                                          args.max_stitch_length)
-                    # TODO: handle the stitches that come out gracefully,
-                    # fill out all the other clip_stitches functions,
-                    # handle the Q calculation
-
-                    stitches += new_stitches
-                    advantages += new_advantages
-                    total_stitches += len(new_advantages)
-                    break
+            assert args.temperature > 0
+            if G.vp.terminal[currv]:
+                break
+            childs = G.get_out_neighbors(currv, vprops=[G.vp.value])
+            edges = G.get_out_edges(currv, eprops=[G.ep.reward, *action_props])
+            Q = G.vp.value[currv]
+            if len(childs) > 0:
                 qs = edges[:, 2] + args.gamma * childs[:, 1]
                 norm_qs = qs - np.max(qs)
                 probs = np.exp(norm_qs / args.temperature)
@@ -237,41 +214,46 @@ def main(args):
                 arm = np.random.choice(childs.shape[0], p=probs)
                 nxtv = childs[arm, 0]
                 Q = qs[arm]
-            else:
-                raise NotImplementedError()
-                nxtv = G.vp.best_neighbor[currv]
-                edge = G.edge(currv, nxtv)
-                reward = G.ep.reward[edge]
-                value = G.vp.value[nxtv]
-                Q = reward + args.gamma * value
-            new_stitches, new_advantages, n_stitches = clip_possible_stitches(args.max_stitches,
-                                                                              G,
-                                                                              args.gamma,
-                                                                              neighbors,
-                                                                              stitches_tried,
-                                                                              state_props,
-                                                                              action_props,
-                                                                              currv,
-                                                                              childs,
-                                                                              edges[:, 2:],
-                                                                              Q,
-                                                                              args.rollout_chunk_size - total_stitches,
-                                                                              args.max_stitch_length)  # NOQA
+            curr_obs = G.get_vertices(vprops=state_props)[currv, 1:]
+            # breakpoint()
+            new_stitches, new_advantages = clip_possible_stitches(args.max_stitches,
+                                                                  G,
+                                                                  args.gamma,
+                                                                  neighbors,
+                                                                  stitches_tried,
+                                                                  state_props,
+                                                                  action_props,
+                                                                  [],
+                                                                  int(currv),
+                                                                  curr_obs,
+                                                                  int(currv),
+                                                                  Q,
+                                                                  args.rollout_chunk_size -
+                                                                  total_stitches,
+                                                                  args.max_stitch_length)
+            # TODO: handle the stitches that come out gracefully,
+            # fill out all the other clip_stitches functions,
+
             stitches += new_stitches
-            advantages += new_advantages
-            total_stitches += n_stitches
+            advantages += list(new_advantages)
+            total_stitches += len(new_advantages)
+            if len(childs) == 0:
+                break
             if total_stitches >= args.rollout_chunk_size:
                 break
             t += 1
             currv = nxtv
         neps += 1
-    stitches = np.concatenate(stitches, axis=0)
-    advantages = np.concatenate(advantages, axis=0)[:, np.newaxis]
-    data = np.concatenate([advantages, stitches], axis=1)
+    advantages = np.array(advantages)
+    '''
+    I don't think this will be an issue, really:
+
     if advantages.shape[0] > args.rollout_chunk_size:
         indices = np.argpartition(advantages[:, 0], args.rollout_chunk_size)[:args.rollout_chunk_size]
         data = data[indices, :]
-    np.save(args.output_path, data)
+    '''
+    with args.output_path.open('wb') as f:
+        pickle.dump((stitches, advantages), f)
 
 
 if __name__ == '__main__':
