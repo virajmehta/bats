@@ -39,12 +39,13 @@ def parse_arguments():
     parser.add_argument('-tvi', '--vi_tolerance', type=float, default=0.02)
     parser.add_argument('-mvi', '--max_val_iterations', type=int, default=1000, help='max number of iterations of value iterations to do during each stitching iter')
     parser.add_argument('-bei', '--bc_every_iter', action='store_true')
-    parser.add_argument('-ms', '--max_stitches', type=int, default=10, help='max stitches for a single state as the boltzmann rollouts proceed')
+    parser.add_argument('-ms', '--max_stitches', type=int, default=6, help='max stitches for a single state as the boltzmann rollouts proceed')
     parser.add_argument('-norm', '--normalize_obs', action='store_true')
     parser.add_argument('--pudb', action='store_true')
     parser.add_argument('--use_bisimulation', action='store_true')
     parser.add_argument('--bisim_latent_dim', type=int, default=6, help="How many dimensions for the latent space of the bisimulation metric")
     parser.add_argument('-p', '--penalize_stitches', action='store_true')
+    parser.add_argument('-pc', '--penalty_coefficient', type=float, default=1.0)
     if defaults is not None:
         parser.set_defaults(**defaults)
     return parser.parse_args(remaining)
@@ -58,6 +59,7 @@ def main(args):
     args = vars(args)
     bats = BATSTrainer(dataset, env, output_dir, **args)
     bats.train()
+    return bats.stats
 
 
 if __name__ == '__main__':
