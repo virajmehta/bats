@@ -86,7 +86,8 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
             # constrained_var = np.minimum(np.minimum(np.square(lb_dist / 2), np.square(ub_dist / 2)), var)
 
             # samples = X.rvs(size=[popsize, action_dim]) * np.sqrt(var) + mean
-            samples = torch.fmod(torch.randn(size=(popsize, horizon, action_dim), device=device), 2) * torch.sqrt(var) + mean
+            samples = torch.fmod(torch.randn(size=(popsize, horizon, action_dim), device=device),
+                                 2) * torch.sqrt(var) + mean
             samples = torch.clip(samples, action_lower_bound, action_upper_bound)
             start_states = start_state.repeat(popsize, 1)
             p = 1 if bisim_model else 2
@@ -94,7 +95,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
 
             # this is because the dynamics models are written to predict the reward in the first component of the output
             # and the next state in all the following components
-            displacements = model_obs[..., -1] - end_state
+            displacements = model_obs[:, :, -1, :] - end_state
             if std is not None:
                 displacements /= std
             distances = torch.linalg.norm(displacements, dim=-1, ord=p)
@@ -104,14 +105,17 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
                 threshold = min_quantile
                 # success!
                 min_index = quantiles.argmin()
-                reward = np.quantile(reward_outputs[:, min_index], 0.3)
-                return np.array([row[0], row[1], *samples[min_index, :].tolist(), min_quantile, reward])
+                rewards = np.quantile(model_rewards[min_index, ...], 0.3, dim=0)
+                actions = samples[min_index, ...].cpu().nump()
+                outputs = (start_idx, end_idx, actions, min_quantile, rewards)
+                break
+                # return np.array([row[0], row[1], *samples[min_index, :].tolist(), min_quantile, reward])
             elites = samples[torch.argsort(quantiles)[:num_elites], ...]
             new_mean = torch.mean(elites, axis=0)
             new_var = torch.var(elites, axis=0)
             mean = alpha * mean + (1 - alpha) * new_mean
             var = alpha * var + (1 - alpha) * new_var
-    return None
+    return outputs
 
 
 def main(args):
@@ -139,8 +143,8 @@ def main(args):
                    args.max_stitches, args.quantile, mean, std, args.env_name, device=device)
         if data is not None:
             outputs.append(data)
-    outputs = np.array(outputs)
-    np.save(args.output_file, outputs)
+    with args.output_file.open('wb') as f:
+        pickle.dump(outputs, f)
 
 
 if __name__ == '__main__':

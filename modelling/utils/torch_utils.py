@@ -30,6 +30,7 @@ def torch_to(torch_obj: Any) -> Any:
     """Put the torch object onto a device."""
     return torch_obj.float().to(torch_device)
 
+
 def torchify_to(obj: Any) -> torch.Tensor:
     if type(obj) is not torch.Tensor:
         obj = torch.Tensor(obj)
@@ -77,7 +78,6 @@ def unroll(env, policy, max_ep_len=float('inf'), replay_buffer=None):
         ret += r
         s = n
     return ret
-
 
 
 def swish(x):
@@ -165,20 +165,28 @@ class ModelUnroller(object):
                     means.append(ens_mean.cpu().numpy())
                     stds.append(np.exp(ens_logvar.cpu().numpy() / 2))
             means, stds = np.asarray(means), np.asarray(stds)
+        '''
+        Viraj: I want all the model outputs
         # Randomly select one of the models to get the next obs from.
         if self.mean_transitions:
             samples = means[0]
         else:
             samples = np.random.normal(means[0], stds[0])
-        rewards, deltas = samples[:, 0], samples[:, 1:]
+        '''
+        if self.mean_transitions:
+            samples = means
+        else:
+            samples = np.random.normal(means, stds)
         # Get penalty term.
+        rewards, deltas = samples[..., 0], samples[..., 1:]
         return {'deltas': deltas, 'rewards': rewards}
+
 
 class Standardizer(nn.Module):
 
     def __init__(
             self,
-            standardizers:Sequence[Tuple[torch.Tensor, torch.Tensor]],
+            standardizers: Sequence[Tuple[torch.Tensor, torch.Tensor]],
     ):
         """Constructor."""
         super(Standardizer, self).__init__()
