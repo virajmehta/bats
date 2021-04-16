@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 from modelling.dynamics_construction import load_ensemble
 from modelling.bisim_construction import load_bisim
-from modelling.utils.torch_utils import set_cuda_device
+from modelling.utils.torch_utils import set_cuda_device, ModelUnroller
 
 
 def parse_arguments():
@@ -19,6 +19,7 @@ def parse_arguments():
     parser.add_argument('epsilon', type=float)
     parser.add_argument('quantile', type=float)
     parser.add_argument('max_stitches', type=int)
+    parser.add_argument('env_name')
     parser.add_argument('mean_file', nargs='?', default=None)
     parser.add_argument('std_file', nargs='?', default=None)
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
@@ -29,8 +30,21 @@ def prepare_model_inputs_torch(obs, actions):
     return torch.cat([obs, actions], dim=-1)
 
 
+def make_init_action(actions, horizon):
+    action_horizon = len(actions)
+    action_dim = len(actions[0])
+    action = torch.Tensor(actions)
+    if horizon == action_horizon:
+        return action
+    elif horizon < action_horizon:
+        return action[:horizon, ...]
+    else:
+        padding = torch.zeros((horizon - action_horizon, action_dim))
+        return torch.cat((action, padding))
+
+
 def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, max_stitches, quantile, mean, std,
-        device=None, **kwargs):
+        env_name, device=None, **kwargs):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
     initializes the mean with the init action.
@@ -50,12 +64,15 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
     '''
     # TODO: figure out what the row is, adjust planning for max_stitches
     assert (bisim_model is None) != (ensemble is None), "Can't pass both an ensemble and a bisim model"
+    model = ModelUnroller(env_name, bisim_model if ensemble is None else ensemble)
+    start_idx, end_idx, start_state, end_state, actions = row
+    start_state = torch.Tensor(start_state).to(device)
+    end_state = torch.Tensor(end_state).to(device)
     action_upper_bound = kwargs.get('action_upper_bound', 1.)
     action_lower_bound = kwargs.get('action_lower_bound', -1.)
-    for n_actions in range(1, max_stitches + 1):
-        start_state = row[2:2 + latent_dim] if bisim_model else row[2:2 + obs_dim]
-        end_state = row[2 + latent_dim:2 + 2 * latent_dim] if bisim_model else row[2 + obs_dim:2 + 2 * obs_dim]
-        init_action = row[-action_dim:]
+    threshold = epsilon
+    for horizon in range(1, max_stitches + 1):
+        init_action = make_init_action(actions, horizon)
         initial_variance_divisor = kwargs.get('initial_variance_divisor', 4)
         max_iters = kwargs.get('max_iters', 6)
         popsize = kwargs.get('popsize', 256)
@@ -69,27 +86,22 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
             # constrained_var = np.minimum(np.minimum(np.square(lb_dist / 2), np.square(ub_dist / 2)), var)
 
             # samples = X.rvs(size=[popsize, action_dim]) * np.sqrt(var) + mean
-            samples = torch.fmod(torch.randn(size=(popsize, action_dim), device=device), 2) * torch.sqrt(var) + mean
+            samples = torch.fmod(torch.randn(size=(popsize, horizon, action_dim), device=device), 2) * torch.sqrt(var) + mean
             samples = torch.clip(samples, action_lower_bound, action_upper_bound)
             start_states = start_state.repeat(popsize, 1)
-            input_data = prepare_model_inputs_torch(start_states, samples)
-            if bisim_model:
-                model_outputs = bisim_model.get_mean_logvar(input_data)[0]
-                p = 1
-            else:
-                model_outputs = torch.stack([member.get_mean_logvar(input_data)[0] for member in ensemble])
-                p = 2
+            p = 1 if bisim_model else 2
+            model_obs, model_actions, model_rewards, model_terminals = model.model_unroll(start_states, samples)
+
             # this is because the dynamics models are written to predict the reward in the first component of the output
             # and the next state in all the following components
-            state_outputs = model_outputs[:, :, 1:]
-            reward_outputs = model_outputs[:, :, 0]
-            displacements = state_outputs + start_states - end_state
+            displacements = model_obs[..., -1] - end_state
             if std is not None:
                 displacements /= std
             distances = torch.linalg.norm(displacements, dim=-1, ord=p)
             quantiles = torch.quantile(distances, quantile, dim=0)
             min_quantile = quantiles.min()
-            if min_quantile < epsilon:
+            if min_quantile < threshold:
+                threshold = min_quantile
                 # success!
                 min_index = quantiles.argmin()
                 reward = np.quantile(reward_outputs[:, min_index], 0.3)
@@ -124,7 +136,7 @@ def main(args):
     # input_data = input_data.to(device)
     for row in input_data:
         data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim, ensemble, bisim_model, args.epsilon,
-                   args.max_stitches, args.quantile, mean, std, device=device)
+                   args.max_stitches, args.quantile, mean, std, args.env_name, device=device)
         if data is not None:
             outputs.append(data)
     outputs = np.array(outputs)

@@ -119,7 +119,7 @@ class ModelUnroller(object):
         else:
             self.terminal_function = get_terminal_function(env_name)
         self.model = model
-        self.mean_trainsitions = mean_transitions
+        self.mean_transitions = mean_transitions
 
     def model_unroll(self, start_states, actions):
         """Unroll for multiple trajectories at once.
@@ -168,7 +168,7 @@ class ModelUnroller(object):
                     stds.append(np.exp(ens_logvar.cpu().numpy() / 2))
             means, stds = np.asarray(means), np.asarray(stds)
         # Randomly select one of the models to get the next obs from.
-        if self.mean_trainsitions:
+        if self.mean_transitions:
             samples = means[0]
         else:
             samples = np.random.normal(means[0], stds[0])
