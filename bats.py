@@ -270,6 +270,7 @@ class BATSTrainer:
         embeddings = np.array(self.model.get_encoding(self.unique_obs))
         self.neighbor_obs = embeddings
         self.G.vp.z.set_2d_array(embeddings.copy().T)
+        self.vertices = {obs.tobytes(): i for i, obs in enumerate(self.neighbor_obs)}
 
     def train_dynamics(self):
         if self.dynamics_ensemble_path or self.graph_stitching_done:
@@ -394,8 +395,9 @@ class BATSTrainer:
         output_path = self.output_dir / 'output'
         for i, process in enumerate(processes):
             process.wait()
-            output_file = output_path / f"{i}.npy"
-            edges_to_add = np.load(output_file)
+            output_file = output_path / f"{i}.pkl"
+            with output_file.open('rb') as f:
+                edges_to_add = pickle.load(f)
             if len(edges_to_add) == 0:
                 continue
             edges_added += self.add_edges(edges_to_add)
@@ -403,26 +405,39 @@ class BATSTrainer:
         self.add_stat('edges_added', edges_added)
 
     def add_edges(self, edges_to_add):
-        starts = edges_to_add[:, 0].astype(int)
-        ends = edges_to_add[:, 1].astype(int)
-        actions = edges_to_add[:, 2:self.action_dim + 2]
-        distances = edges_to_add[:, -2]
-        rewards = edges_to_add[:, -1]
         added = 0
-        for start, end, action, distance, reward in zip(starts, ends, actions, distances, rewards):
-            if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
-                # we don't want to add edges originating from terminal states
-                continue
-            e = self.G.add_edge(start, end)
-            self.edges_added.append((start, end))
-            self.G.ep.action[e] = action
-            if self.penalize_stitches:
-                self.G.ep.reward[e] = reward - distance * self.gamma * self.penalty_coefficient
-                self.G.ep.upper_reward[e] = reward + distance * self.gamma * self.penalty_coefficient
-            else:
-                self.G.ep.reward[e] = reward
-
-            self.G.ep.imagined[e] = True
+        for start, end, actions, distance, rewards, obs_history in edges_to_add:
+            for i, action in enumerate(actions):
+                if i == 0:
+                    start_v = start
+                else:
+                    start_obs = obs_history[i - 1, :]
+                    start_v = self.vertices[start_obs.tobytes()]
+                if i + 1 == len(actions):
+                    end_v = end
+                else:
+                    v = self.G.add_vertex()
+                    end_v = self.G.vertex_index[v]
+                    self.G.vp.value[v] = 0
+                    self.G.vp.upper_value[v] = 0
+                    self.G.vp.real_node[v] = False
+                    self.G.vp.terminal[v] = False
+                if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
+                    break
+                e = self.G.add_edge(start_v, end_v)
+                self.edges_added.append((start, end))
+                self.G.ep.imagined = True
+                self.G.ep.action[e] = action
+                reward = rewards[i]
+                if self.penalize_stitches:
+                    if i + 1 != len(actions):
+                        self.G.ep.reward[e] = reward
+                        self.G.ep.upper_reward[e] = reward
+                    else:
+                        self.G.ep.reward[e] = reward - distance * self.gamma * self.penalty_coefficient
+                        self.G.ep.upper_reward[e] = reward + distance * self.gamma * self.penalty_coefficient
+                else:
+                    self.G.ep.reward[e] = reward
             added += 1
         return added
 
@@ -466,7 +481,9 @@ class BATSTrainer:
         # this is the only step with quadratic time complexity, watch out for how long it takes
         start = time.time()
         p = 1 if self.use_bisimulation else 2
-        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p).astype(bool)
+        size = self.G.num_vertices()
+        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors,
+                                                p=p).astype(bool).resize((size, size))
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
         save_npz(self.output_dir / self.neighbor_name, self.neighbors)

@@ -92,6 +92,11 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
             start_states = start_state.repeat(popsize, 1)
             p = 1 if bisim_model else 2
             model_obs, model_actions, model_rewards, model_terminals = model.model_unroll(start_states, samples)
+            good_indices = torch.nonzero(model_terminals)
+            model_obs = model_obs[good_indices, ...]
+            model_actions = model_actions[good_indices, ...]
+            model_rewards = model_rewards[good_indices, ...]
+            samples = samples[good_indices, ...]
 
             # this is because the dynamics models are written to predict the reward in the first component of the output
             # and the next state in all the following components
@@ -105,9 +110,10 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
                 threshold = min_quantile
                 # success!
                 min_index = quantiles.argmin()
+                obs_history = model_obs[min_index, :, 1:-1, :].mean(dim=0).cpu().numpy()
                 rewards = np.quantile(model_rewards[min_index, ...], 0.3, dim=0)
                 actions = samples[min_index, ...].cpu().nump()
-                outputs = (start_idx, end_idx, actions, min_quantile, rewards)
+                outputs = (start_idx, end_idx, actions, min_quantile, rewards, obs_history)
                 break
                 # return np.array([row[0], row[1], *samples[min_index, :].tolist(), min_quantile, reward])
             elites = samples[torch.argsort(quantiles)[:num_elites], ...]
