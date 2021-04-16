@@ -128,8 +128,6 @@ class ModelUnroller(object):
                 w shape (num_starts, obs_dim).
             actions: The actions as (num_starts, horizon, action_dim)
         """
-        if self.is_bisim:
-            start_states = self.model.get_encoding(torch.Tensor(start_states))
         horizon = actions.shape[1]
         obs = np.zeros((start_states.shape[0], horizon + 1,
                         start_states.shape[1]))
