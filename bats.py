@@ -36,6 +36,7 @@ class BATSTrainer:
         self.unique_obs = np.unique(all_obs, axis=0)
         self.graph_size = self.unique_obs.shape[0]
         self.dataset_size = self.dataset['observations'].shape[0]
+        self.verbose = kwargs['verbose']
 
         # set up the parameters for the dynamics model training
         self.model = None
@@ -382,6 +383,8 @@ class BATSTrainer:
                 args += [self.mean_file, self.std_file]
             if self.use_bisimulation:
                 args.append('-ub')
+            if self.verbose and i == 0:
+                print(' '.join(args))
             process = Popen(args)
             processes.append(process)
         return processes
@@ -602,6 +605,8 @@ class BATSTrainer:
                     ]
             if self.use_bisimulation:
                 args.append('-ub')
+            if self.verbose and i == 0:
+                print(' '.join(args))
             process = Popen(args)
             processes.append(process)
         all_advantages = []
