@@ -371,7 +371,7 @@ class BATSTrainer:
             fn = input_path / f"{i}.pkl"
             with fn.open('wb') as f:
                 pickle.dump(cpu_chunk, f)
-            output_file = output_path / f"{i}.npy"
+            output_file = output_path / f"{i}.pkl"
             args = ['python',
                     'plan.py',
                     str(fn),
@@ -485,8 +485,8 @@ class BATSTrainer:
         start = time.time()
         p = 1 if self.use_bisimulation else 2
         size = self.G.num_vertices()
-        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors,
-                                                p=p).astype(bool).resize((size, size))
+        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p).astype(bool)
+        self.neighbors.resize((size, size))
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
         save_npz(self.output_dir / self.neighbor_name, self.neighbors)
@@ -633,7 +633,7 @@ class BATSTrainer:
         all_stitches = []
         for i, process in enumerate(processes):
             process.wait()
-            output_file = output_path / f"{i}.npy"
+            output_file = output_path / f"{i}.pkl"
             with output_file.open('rb') as f:
                 stitches, advantages = pickle.load(f)
             all_advantages.append(advantages)
