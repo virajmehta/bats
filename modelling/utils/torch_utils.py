@@ -10,7 +10,8 @@ import numpy as np
 import torch
 from torch import nn
 
-from modelling.utils.terminal_functions import get_terminal_function
+from modelling.utils.terminal_functions import get_terminal_function,\
+        no_terminal
 
 
 torch_device = 'cpu'
@@ -112,10 +113,13 @@ class ModelUnroller(object):
             mean_transitions: Whether to sample or take mean estimate for
                 transition.
         """
-        self.terminal_function = get_terminal_function(env_name)
+        self.is_bisim = not isinstance(model, list)
+        if self.is_bisim:
+            self.terminal_function = no_terminal
+        else:
+            self.terminal_function = get_terminal_function(env_name)
         self.model = model
         self.mean_trainsitions = mean_transitions
-        self.is_bisim = not isinstance(model, list)
 
     def model_unroll(self, start_states, actions):
         """Unroll for multiple trajectories at once.
@@ -124,6 +128,8 @@ class ModelUnroller(object):
                 w shape (num_starts, obs_dim).
             actions: The actions as (num_starts, horizon, action_dim)
         """
+        if self.is_bisim:
+            start_states = self.model.get_encoding(torch.Tensor(start_states))
         horizon = actions.shape[1]
         obs = np.zeros((start_states.shape[0], horizon + 1,
                         start_states.shape[1]))
@@ -137,8 +143,8 @@ class ModelUnroller(object):
             nxt_info = self.get_next_transition(obs[:, hidx], acts)
             obs[:, hidx+1] = obs[:, hidx] + nxt_info['deltas']
             rewards[:, hidx] = nxt_info['rewards']
-            terminals[:, hidx] = self.terminate_function(obs[hidx+1])
-            is_running = np.logical_and(is_running, ~terminals[hidx])
+            terminals[:, hidx] = self.terminal_function(obs[:, hidx+1])
+            is_running = np.logical_and(is_running, ~terminals[:, hidx])
             if np.sum(is_running) == 0:
                 break
         return obs, actions, rewards, np.any(terminals, axis=1)
@@ -151,7 +157,7 @@ class ModelUnroller(object):
         if self.is_bisim:
             with torch.no_grad():
                 mean, logvar = self.model.get_mean_logvar(net_ins)
-            mean = mean.numpy()
+            means = mean.numpy()
             stds = (0.5 * logvar).exp().numpy()
         else:
             means, stds = [], []
@@ -162,7 +168,7 @@ class ModelUnroller(object):
                     stds.append(np.exp(ens_logvar.cpu().numpy() / 2))
             means, stds = np.asarray(means), np.asarray(stds)
         # Randomly select one of the models to get the next obs from.
-        if self.mean_trainsition:
+        if self.mean_trainsitions:
             samples = means[0]
         else:
             samples = np.random.normal(means[0], stds[0])
