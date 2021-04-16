@@ -76,8 +76,9 @@ def get_future_stitches(G,
         advantages.append(advantage)
         max_stitches -= 1
         # how to calculate advantage / propagate rewards?
-        if advantage > 0 and (startv, nidx) not in stitches_tried:
-            possible_stitches += [(startv, nidx, start_obs, n_obs, actions)], np.array(advantages) * gamma
+        if advantage > 0 and (startv, nidx) not in stitches_tried and G.vp.real[startv] and G.vp.real[nidx]:
+            possible_stitches += [(startv, nidx, start_obs, n_obs, actions)]
+            advantages.append(np.array(advantages) * gamma)
         output = get_future_stitches(G,
                                      gamma,
                                      all_neighbors,
@@ -152,7 +153,7 @@ def get_neighbor_stitches(G,
             value = G.vp.value[cn]
             cnobs = G.get_vertices(vprops=state_props)[cn, :]
             advantage = value - updated_Q
-            if advantage > 0 and (startv, cn) not in stitches_tried:
+            if advantage > 0 and (startv, cn) not in stitches_tried and G.vp.real[startv] and G.vp.real[cn]:
                 possible_stitches += [(startv, cn, start_obs, cnobs, actions)]
                 advantages += [advantage]
         output = get_neighbor_stitches(G,
