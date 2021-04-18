@@ -9,7 +9,8 @@ from torch.nn.functional import tanh
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 
-from modelling.models import DeterministicPolicy, StochasticPolicy, Critic
+from modelling.critic_construction import get_critic
+from modelling.models import DeterministicPolicy, StochasticPolicy
 from modelling.trainers import ActorCriticTrainer, AWACTrainer, ModelTrainer
 from util import s2i
 
@@ -260,84 +261,6 @@ def fine_tune_bc(
 
 
 
-def supervise_critic(
-    # A dictionary containing 'observations', 'actions', 'values', or 'advantage
-    dataset,
-    save_dir,
-    epochs,
-    hidden_sizes='256,256',
-    od_wait=None,  # Epochs of no validation improvement before break.
-    val_size=0,
-    batch_size=256,
-    learning_rate=1e-3,
-    weight_decay=0,
-    cuda_device='',
-    save_freq=-1,
-    silent=False,
-):
-    use_gpu = cuda_device != ''
-    # Get data into trainable form.
-    x_data = torch.Tensor(dataset['observations'])
-    y_data = torch.Tensor(dataset['actions'])
-    val_key = 'advantages' if 'advantages' in dataset else 'values'
-    val_data = torch.Tensor(dataset[val_key])
-    tensor_data = [x_data, y_data, val_data]
-    has_weights = 'weights' in dataset
-    if has_weights:
-        tensor_data.append(torch.Tensor(dataset['weights']))
-    tr_data, val_data = split_supervised_data(
-            tensor_data, val_size, batch_size, use_gpu)
-    net = get_critic(x_data.shape[1], y_data.shape[1], hidden_sizes)
-    trainer = ModelTrainer(
-            model=net,
-            learning_rate=learning_rate,
-            weight_decay=weight_decay,
-            cuda_device=cuda_device,
-            save_freq=save_freq,
-            save_path=save_dir,
-    )
-    trainer.fit(tr_data, epochs, val_data, od_wait,
-                last_column_is_weights=has_weights)
-    net.load_model(os.path.join(save_dir, 'model.pt'))
-    return net
-
-
-def sarsa_learn_critic(
-    # A dictionary containing the qlearning standards.
-    dataset,
-    policy,
-    save_dir,
-    epochs,
-    num_qs=1,
-    hidden_sizes='256,256',
-    gamma=0.99,
-    batch_size=256,
-    learning_rate=1e-3,
-    weight_decay=0,
-    cuda_device='',
-    save_freq=-1,
-    silent=False,
-):
-    use_gpu = cuda_device != ''
-    obs_dim = dataset['observations'].shape[1]
-    act_dim = dataset['actions'].shape[1]
-    dataloader = get_qlearning_dataloader(dataset, cuda_device, batch_size,
-                                          shuffle=True)
-    qnets = [get_critic(obs_dim, act_dim, hidden_sizes) for _ in range(num_qs)]
-    qts = [get_critic(obs_dim, act_dim, hidden_sizes) for _ in range(num_qs)]
-    trainer = ActorCriticTrainer(
-        policy=policy,
-        qnets=qnets,
-        qtargets=qts,
-        gamma=gamma,
-        learning_rate=learning_rate,
-        weight_decay=weight_decay,
-        cuda_device=cuda_device,
-        save_freq=save_freq,
-        save_path=save_dir,
-    )
-    trainer.train(dataloader, epochs, train_policy=False)
-    return qnets
 
 
 def train_policy_to_maximize_critic(
@@ -473,28 +396,3 @@ def get_policy(
             target_entropy=target_entropy,
             standardize_targets=standardize_targets,
         )
-
-
-def load_critic(
-    load_dir,
-    obs_dim,
-    act_dim,
-    hidden_sizes='256,256',
-    cuda_device='',
-):
-    critic = get_critic(obs_dim, act_dim, hidden_sizes)
-    device = 'cpu' if cuda_device == '' else 'cuda:' + cuda_device
-    critic.load_model(os.path.join(load_dir, 'model.pt'), map_location=device)
-    return critic
-
-
-def get_critic(
-    obs_dim,
-    act_dim,
-    hidden_sizes='256,256',
-):
-    return Critic(
-        state_dim=obs_dim,
-        act_dim=act_dim,
-        hidden_sizes=s2i(hidden_sizes),
-    )
