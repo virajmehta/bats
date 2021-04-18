@@ -23,6 +23,7 @@ def tdlambda_critic(
     hidden_sizes='256,256',
     batch_size=256,
     batch_updates_per_epoch=50, # If None then epoch is going through dataset.
+    supervision_epochs=0, # Number of epochs where supervise values from graph.
     learning_rate=1e-3,
     weight_decay=0,
     cuda_device='',
@@ -50,8 +51,15 @@ def tdlambda_critic(
         batch_size=batch_size,
         shuffle=True,
     )
-    trainer.fit(tr_data, epochs)
+    if supervision_epochs > 0:
+        vf.set_supervision_train_mode(True)
+        trainer.fit(tr_data, supervision_epochs,
+                    batch_updates_per_epoch=batch_updates_per_epoch)
+    vf.set_supervision_train_mode(False)
+    trainer.fit(tr_data, epochs,
+                batch_updates_per_epoch=batch_updates_per_epoch)
     return vf, trainer
+
 
 def supervise_critic(
     # A dictionary containing 'observations', 'actions', 'values', or 'advantage

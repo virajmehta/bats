@@ -30,6 +30,7 @@ def parse_args():
     parser.add_argument('--save_dir', required=True)
     parser.add_argument('--nsteps', type=int, default=10)
     parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--supervision_epochs', type=int, default=50)
     parser.add_argument('--batch_updates_per_epoch', type=int, default=50)
     parser.add_argument('--max_data', type=int, default=1000)
     parser.add_argument('--vf_architecture', default='256,256')

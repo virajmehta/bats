@@ -197,7 +197,7 @@ def get_nstep_learning_set(graph, nsteps, silent=False, max_data=float('inf')):
         a terminal or not.
     """
     data = {k: [] for k in ['observations', 'next_observations', 'rewards',
-                            'nsteps', 'terminals']}
+                            'values', 'nsteps', 'terminals']}
     collects = min(graph.num_vertices(), max_data)
     if not silent:
         pbar = tqdm(total=collects)
@@ -207,6 +207,7 @@ def get_nstep_learning_set(graph, nsteps, silent=False, max_data=float('inf')):
         if not silent:
             pbar.update(1)
         ob = graph.vp.obs[v]
+        value = graph.vp.value[v]
         nxts = np.zeros((nsteps, len(ob)))
         rewards = np.zeros(nsteps)
         t = 0
@@ -226,6 +227,7 @@ def get_nstep_learning_set(graph, nsteps, silent=False, max_data=float('inf')):
         data['observations'].append(ob)
         data['next_observations'].append(nxts)
         data['rewards'].append(rewards)
+        data['values'].append(value)
         data['nsteps'].append(t)
         data['terminals'].append(done)
         if n_collects >= collects:

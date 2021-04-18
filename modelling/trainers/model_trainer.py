@@ -111,8 +111,11 @@ class ModelTrainer(object):
                 detection if a validation set was provided. This is the
                 number of epochs to wait since seeing best validation score
                 before stopping early.
-            dont_reset_model: Whether to reset the model or not.
+            last_column_is_weights: Whether the las column of batches
+                corresponds to weights.
             batch_updates_per_epoch: If not None, each epoch corresponds
+                to a number of batch updates rather than updating all data.
+            validation_batches_per_epoch: If not None, each epoch corresponds
                 to a number of batch updates rather than updating all data.
         """
         if not self._silent:

@@ -48,6 +48,7 @@ class ValueFunction(BaseModel):
         )
         self._criterion = torch.nn.MSELoss()
         self._standardize_targets = standardize_targets
+        self._supervision_train_mode = False
 
     def __call__(self, state):
         """Get predictions from the network."""
@@ -57,37 +58,42 @@ class ValueFunction(BaseModel):
 
     def model_forward(self, batch: Sequence[torch.Tensor]) -> Dict[str, Any]:
         """Forward pass data through the model."""
-        obs, nxts, rewards, nsteps, terminals = batch
+        obs, nxts, rewards, values, nsteps, terminals = batch
         batch_size = len(obs)
         max_steps = nxts.shape[1]
         preds = self._net.forward(obs)
-        # Form TD-Lambda targets.
-        with torch.no_grad():
-            nxt_vals = self._net.forward(nxts.reshape(-1, self.input_dim))
-        nxt_vals = nxt_vals.reshape(-1, max_steps)
-        # Put into matrices with 0 entries past information.
-        target_vals = torch_zeros((batch_size, max_steps))
-        rewmat = torch_zeros((batch_size, max_steps))
-        coefs = torch_zeros((batch_size, max_steps))
-        for validx, valrow in enumerate(nxt_vals):
-            end = int(nsteps[validx].item())
-            target_vals[validx, :end] = valrow[:end]
-            rewmat[validx, :end] = rewards[validx, :end]
-            if terminals[validx].item():
-                target_vals[validx, end - 1] = 0
-            if end > 1:
-                coefs[validx, :end] = torch.pow(torch_ones(end) * self.lmbda,
-                                                torch_to(torch.arange(end)))
-                coefs[validx, :end - 1] *= (1 - self.lmbda)
-            else:
-                coefs[validx, 0] = 1
-        targets = torch_zeros(batch_size)
-        gammas = torch.pow(torch_ones(max_steps) * self.discount,
-                           torch_to(torch.arange(max_steps)))
-        for st in range(1, max_steps):
-            targets += (coefs[:, st - 1]
-                        * (torch.sum(rewmat[:, :st] * gammas[:st], dim=1)
-                           + (gammas[st] * target_vals[:, st-1])))
+        if self._supervision_train_mode:
+            targets = values
+        else:
+            # Form TD-Lambda targets.
+            with torch.no_grad():
+                nxt_vals = self._net.forward(nxts.reshape(-1, self.input_dim))
+            nxt_vals = nxt_vals.reshape(-1, max_steps)
+            # Put into matrices with 0 entries past information.
+            target_vals = torch_zeros((batch_size, max_steps))
+            rewmat = torch_zeros((batch_size, max_steps))
+            coefs = torch_zeros((batch_size, max_steps))
+            for validx, valrow in enumerate(nxt_vals):
+                end = int(nsteps[validx].item())
+                target_vals[validx, :end] = valrow[:end]
+                rewmat[validx, :end] = rewards[validx, :end]
+                if terminals[validx].item():
+                    target_vals[validx, end - 1] = 0
+                if end > 1:
+                    coefs[validx, :end] = torch.pow(
+                            torch_ones(end) * self.lmbda,
+                            torch_to(torch.arange(end)),
+                    )
+                    coefs[validx, :end - 1] *= (1 - self.lmbda)
+                else:
+                    coefs[validx, 0] = 1
+            targets = torch_zeros(batch_size)
+            gammas = torch.pow(torch_ones(max_steps) * self.discount,
+                               torch_to(torch.arange(max_steps)))
+            for st in range(1, max_steps):
+                targets += (coefs[:, st - 1]
+                            * (torch.sum(rewmat[:, :st] * gammas[:st], dim=1)
+                               + (gammas[st] * target_vals[:, st-1])))
         od = OrderedDict(
             preds=preds,
             targets=targets,
@@ -112,3 +118,6 @@ class ValueFunction(BaseModel):
             Value=targets.detach().cpu().mean().item(),
         )
         return {'Model': loss}, stats
+
+    def set_supervision_train_mode(self, mode):
+        self._supervision_train_mode = mode
