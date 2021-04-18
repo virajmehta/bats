@@ -553,14 +553,14 @@ class BATSTrainer:
                 upper_bellman_error = np.max(np.square(upper_values - old_upper_values))
                 pbar.set_description(f"{lower_bellman_error=:.3f}, {upper_bellman_error=:.3f}")
                 bellman_error = max(bellman_error, upper_bellman_error)
+                upper_values[is_dead_end] = 0
+                self.G.vp.upper_value.a = upper_values
             else:
                 pbar.set_description(f"{bellman_error=:.3f}")
             values[is_dead_end] = 0
-            upper_values[is_dead_end] = 0
             bst_childs[is_dead_end] = -1
             self.G.vp.best_neighbor.a = bst_childs
             self.G.vp.value.a = values
-            self.G.vp.upper_value.a = upper_values
             if bellman_error < self.vi_tolerance:
                 break
         pbar.close()
