@@ -190,7 +190,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     return data, val_data, stats
 
 
-def get_nstep_learning_set(graph, nsteps):
+def get_nstep_learning_set(graph, nsteps, silent=False, max_data=float('inf')):
     """Make a dataset for doing n-step on-policy value learning.
     Returns: A dictionary where nsteps is how many steps <= nsteps are in
         a given rollout and terminals is boolean whether the last step is
@@ -198,7 +198,14 @@ def get_nstep_learning_set(graph, nsteps):
     """
     data = {k: [] for k in ['observations', 'next_observations', 'rewards',
                             'nsteps', 'terminals']}
+    collects = min(graph.num_vertices(), max_data)
+    if not silent:
+        pbar = tqdm(total=collects)
+    n_collects = 0
     for v in graph.iter_vertices():
+        n_collects += 1
+        if not silent:
+            pbar.update(1)
         ob = graph.vp.obs[v]
         nxts = np.zeros((nsteps, len(ob)))
         rewards = np.zeros(nsteps)
@@ -206,7 +213,7 @@ def get_nstep_learning_set(graph, nsteps):
         done = False
         currv = v
         nxtv = graph.vp.best_neighbor[currv]
-        if currv < 1:
+        if nxtv < 1:
             continue
         while not done and t < nsteps:
             edge = graph.edge(currv, nxtv)
@@ -215,17 +222,21 @@ def get_nstep_learning_set(graph, nsteps):
             currv = nxtv
             nxtv = graph.vp.best_neighbor[currv]
             t += 1
-            done = currv < 1:
+            done = nxtv < 1
         data['observations'].append(ob)
         data['next_observations'].append(nxts)
         data['rewards'].append(rewards)
         data['nsteps'].append(t)
         data['terminals'].append(done)
+        if n_collects >= collects:
+            break
     for k, v in data.items():
         npv = np.array(v)
         if len(npv.shape) == 1:
             npv = npv.reshape(-1, 1)
         data[k] = npv
+    if not silent:
+        pbar.close()
     return data
 
 

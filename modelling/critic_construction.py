@@ -11,7 +11,7 @@ from torch.nn.functional import tanh
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 
-from modelling.models import Critic
+from modelling.models import ValueFunction
 from modelling.trainers import ModelTrainer
 from util import s2i
 
@@ -40,17 +40,18 @@ def tdlambda_critic(
             cuda_device=cuda_device,
             save_freq=save_freq,
             save_path=save_dir,
+            track_stats=['Value'],
     )
     with open(os.path.join(save_dir, 'params.pkl'), 'wb') as f:
-        pkl.dump(OrderedDict(hidden_sizes=hidden_sizes, obs_dim=obs_dim)
+        pkl.dump(OrderedDict(hidden_sizes=hidden_sizes, obs_dim=obs_dim), f)
     tr_data = DataLoader(
-        TensorDataset(**[torch.Tensor(dataset[k] for k in ['observations',
-            'next_observations', 'rewards', 'nsteps', 'terminals'])),
+        TensorDataset(*[torch.Tensor(dataset[k]) for k in ['observations',
+            'next_observations', 'rewards', 'nsteps', 'terminals']]),
         batch_size=batch_size,
         shuffle=True,
     )
     trainer.fit(tr_data, epochs)
-    return net
+    return vf, trainer
 
 def supervise_critic(
     # A dictionary containing 'observations', 'actions', 'values', or 'advantage

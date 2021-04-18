@@ -78,7 +78,7 @@ class ValueFunction(BaseModel):
             if end > 1:
                 coefs[validx, :end] = torch.pow(torch_ones(end) * self.lmbda,
                                                 torch_to(torch.arange(end)))
-                coefs[validx, :end - 1] *= 1 - self.lmbda
+                coefs[validx, :end - 1] *= (1 - self.lmbda)
             else:
                 coefs[validx, 0] = 1
         targets = torch_zeros(batch_size)
