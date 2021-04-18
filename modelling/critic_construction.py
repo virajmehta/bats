@@ -41,13 +41,13 @@ def tdlambda_critic(
             cuda_device=cuda_device,
             save_freq=save_freq,
             save_path=save_dir,
-            track_stats=['Value'],
+            track_stats=['PredictedValue', 'TargetValue'],
     )
     with open(os.path.join(save_dir, 'params.pkl'), 'wb') as f:
         pkl.dump(OrderedDict(hidden_sizes=hidden_sizes, obs_dim=obs_dim), f)
     tr_data = DataLoader(
         TensorDataset(*[torch.Tensor(dataset[k]) for k in ['observations',
-            'next_observations', 'rewards', 'nsteps', 'terminals']]),
+            'next_observations', 'rewards', 'values', 'nsteps', 'terminals']]),
         batch_size=batch_size,
         shuffle=True,
     )

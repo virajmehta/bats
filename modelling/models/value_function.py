@@ -22,7 +22,7 @@ class ValueFunction(BaseModel):
         output_activation=None,
         standardize_targets: bool = False,
         discount: float = 0.99,
-        lmbda: float = 0.95,
+        lmbda: float = 0.5,
     ):
         """Constructor.
         Args:
@@ -34,7 +34,7 @@ class ValueFunction(BaseModel):
             standardize_targets: Whether to standardize the targets to predict.
             linear_wrapper: Wrapper for linear layers such as regularizer.
         """
-        super(ValueFunction, self).__init__([state_dim, state_dim, 1, 1, 1])
+        super(ValueFunction, self).__init__([state_dim, state_dim, 1, 1, 1, 1])
         self.input_dim = state_dim
         self.output_dim = 1
         self.discount = discount
@@ -115,7 +115,8 @@ class ValueFunction(BaseModel):
         loss = error.mean()
         stats = OrderedDict(
             Loss=loss.item(),
-            Value=targets.detach().cpu().mean().item(),
+            PredictedValue=preds.detach().cpu().mean().item(),
+            TargetValue=targets.detach().cpu().mean().item(),
         )
         return {'Model': loss}, stats
 
