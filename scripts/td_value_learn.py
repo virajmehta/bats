@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--supervision_epochs', type=int, default=50)
     parser.add_argument('--batch_updates_per_epoch', type=int, default=50)
-    parser.add_argument('--max_data', type=int, default=10000)
+    parser.add_argument('--max_data', type=int, default=int(1e7))
     parser.add_argument('--vf_architecture', default='256,256')
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--pudb', action='store_true')
