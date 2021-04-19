@@ -1,7 +1,9 @@
 """
 Policy construction through behavior cloning.
 """
+from collections import OrderedDict
 import os
+import pickle as pkl
 
 import numpy as np
 import torch
@@ -11,7 +13,8 @@ from sklearn.model_selection import train_test_split
 
 from modelling.critic_construction import get_critic
 from modelling.models import DeterministicPolicy, StochasticPolicy
-from modelling.trainers import ActorCriticTrainer, AWACTrainer, ModelTrainer
+from modelling.trainers import ActorCriticTrainer, AWACTrainer, ModelTrainer,\
+        ModelPPOTrainer
 from util import s2i
 
 
@@ -204,12 +207,64 @@ def behavior_clone(
             validation_tune_metric='MSE',
             save_best_model=False,
     )
+    with open(os.path.join(save_dir, params.pkl), 'wb') as f:
+        pkl.dump(OrderedDict(
+            obs_dim=obs_dim, act_dim=act_dim, hidden_sizes=hidden_sizes), f)
     trainer.fit(tr_data, epochs, val_data, od_wait,
                 batch_updates_per_epoch=batch_updates_per_epoch,
                 validation_batches_per_epoch=batch_updates_per_epoch,
                 last_column_is_weights=has_weights)
     if load_best_model_at_end:
         policy.load_model(os.path.join(save_dir, 'model.pt'))
+    return policy, trainer
+
+
+def ppo_fine_tune(
+    dataset, # Dataset is a dictionary of states to start at.
+    epochs,
+    policy,
+    vf,
+    model_unroller,
+    save_path,
+    horizon=5,
+    start_unroll_batches_per_epoch=int(1e3),
+    num_policy_batch_update_per_epoch=250,
+    ppo_update_batch_size=256,
+    outer_loops=1,
+    gamma=0.99,
+    lmbda=0.95,
+    epsilon=0.2,
+    silent=False,
+    cuda_device='',
+    save_freq=-1,
+    env=None,
+    max_ep_len=1000,
+    num_eval_eps=10,
+):
+    trainer = ModelPPOTrainer(
+        policy=policy,
+        vf=vf,
+        model_unroller=model_unroller,
+        gamma=gamma,
+        lmbda=lmbda,
+        epislon=epsilon,
+        cuda_device=cuda_device,
+        save_path=save_path,
+        save_freq=save_freq,
+        silent=silent,
+        env=env,
+        max_ep_len=max_ep_len,
+        num_eval_eps=num_eval_eps,
+    )
+    trainer.train(
+        dataset=dataset,
+        inner_loops=epochs,
+        horizon=horizon,
+        start_unroll_batches_per_epoch=start_unroll_batches_per_epoch,
+        num_policy_batch_update_per_epoch=num_policy_batch_update_per_epoch,
+        ppo_update_batch_size=ppo_update_batch_size,
+        outer_loops=outer_loops,
+    )
     return policy, trainer
 
 
@@ -258,9 +313,6 @@ def fine_tune_bc(
                 batch_updates_per_epoch=batch_updates_per_epoch,
                 last_column_is_weights=has_weights)
     return trainer
-
-
-
 
 
 def train_policy_to_maximize_critic(

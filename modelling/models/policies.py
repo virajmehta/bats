@@ -197,6 +197,18 @@ class StochasticPolicy(Policy):
             return torch.tanh(action)
         return action
 
+    def sample_action_and_logpi(
+            self,
+            states: torch.Tensor,
+    ):
+        """Get action from policy."""
+        mean, logvar = self.__call__(states)
+        action = reparameterize(mean, logvar)
+        logpi = self._gaussian_net.get_log_prob(mean, logvar, action)
+        if self._tanh_transform:
+            return torch.tanh(action)
+        return action, logpi
+
     def get_log_prob(
         self,
         mean: torch.Tensor,
@@ -271,6 +283,35 @@ class StochasticPolicy(Policy):
             stats['Weighting'] = forward_out['weighting'].cpu().mean().item()
         return loss_dict, stats
 
+    def ppo_loss(
+            self,
+            forward_out: Dict[str, Any],
+            epsilon: float = 0.2,
+    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        """Compute loss from the output of the network and targets.
+        Returns the loss and additional stats.
+        """
+        mean = forward_out['mean']
+        logvar = forward_out['logvar']
+        labels = forward_out['labels']
+        log_pi = forward_out['log_pi']
+        oldlogpi = forward_out['oldlogpi']
+        advantage = forward_out['advantage']
+        # Normalize the advantages.
+        adv = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
+        # Get the policy loss.
+        ratio = (log_pi - oldlogpi).exp()
+        loss = -1 * torch.mean(torch.min(
+            ratio * adv,
+            torch.clamp(ratio, 1 - epsilon, 1 + epsilon) * adv,
+        ))
+        stats = OrderedDict(
+            Loss=loss.item(),
+            Ratio=ratio.detach().cpu().mean().item(),
+            Advantage=advantage.detach().cpu().mean().item(),
+        )
+        loss_dict = {'Model': loss}
+        return loss_dict, stats
 
     def get_alpha_loss(
             self,

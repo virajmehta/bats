@@ -4,6 +4,7 @@ Utils functions for torch.
 Author: Ian Char
 Date: 8/26/2020
 """
+from collections import OrderedDict
 from typing import Any, Sequence, Tuple
 
 import numpy as np
@@ -130,31 +131,50 @@ class ModelUnroller(object):
         self.model = model
         self.mean_trainsitions = mean_transitions
 
-    def model_unroll(self, start_states, actions):
+    def model_unroll(self, start_states, actions=None, policy=None, horizon=5):
         """Unroll for multiple trajectories at once.
         Args:
             start_states: The start states to unroll at as ndarray
                 w shape (num_starts, obs_dim).
             actions: The actions as (num_starts, horizon, action_dim)
+            policy: Policy for getting actions to perform.
         """
-        horizon = actions.shape[1]
+        if actions is None:
+            if policy is None:
+                raise ValueError('Need some way of getting actions!')
+        else:
+            horizon = actions.shape[1]
         obs = np.zeros((start_states.shape[0], horizon + 1,
                         start_states.shape[1]))
         obs[:, 0] = start_states
         rewards = np.zeros((start_states.shape[0], horizon))
         terminals = np.full((start_states.shape[0], horizon), True)
         is_running = np.full(start_states.shape[0], True)
+        logpis = np.zeros((start_states.shape[0], horizon))
         for hidx in range(horizon):
-            acts = actions[:, hidx]
+            if policy is None:
+                acts = actions[:, hidx]
+            else:
+                with torch.no_grad():
+                    acts, probs = policy.sample_action_and_logpi(
+                        torch.Tensor(obs[:, hidx]))
+                acts = acts.cpu().numpy()
+                if actions is None:
+                    actions = np.zeros((acts.shape[0], horizon, acts.shape[1]))
+                actions[:, hidx] = acts
+                logpis[:, hidx] = probs
             # Roll all states forward.
             nxt_info = self.get_next_transition(obs[:, hidx], acts)
             obs[:, hidx+1] = obs[:, hidx] + nxt_info['deltas']
             rewards[:, hidx] = nxt_info['rewards']
             terminals[:, hidx] = self.terminal_function(obs[:, hidx+1])
+            terminals[:, hidx] = np.any(terminals, axis=1)
             is_running = np.logical_and(is_running, ~terminals[:, hidx])
             if np.sum(is_running) == 0:
                 break
-        return obs, actions, rewards, np.any(terminals, axis=1)
+        return obs, actions, rewards, terminals, OrderedDict(
+            logpis=logpis,
+        )
 
     def get_next_transition(self, obs, acts):
         net_ins = torch.cat([
