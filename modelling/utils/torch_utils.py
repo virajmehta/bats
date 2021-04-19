@@ -4,10 +4,15 @@ Utils functions for torch.
 Author: Ian Char
 Date: 8/26/2020
 """
+from collections import OrderedDict
 from typing import Any, Sequence, Tuple
 
+import numpy as np
 import torch
 from torch import nn
+
+from modelling.utils.terminal_functions import get_terminal_function,\
+        no_terminal
 
 
 torch_device = 'cpu'
@@ -84,6 +89,7 @@ def unroll(env, policy, max_ep_len=float('inf'), replay_buffer=None):
     return ret
 
 
+
 def swish(x):
     return x * torch.sigmoid(x)
 
@@ -105,6 +111,97 @@ class IteratedDataLoader(object):
             self._iterator = iter(self._dataloader)
             batch = next(self._iterator)
         return batch
+
+
+class ModelUnroller(object):
+
+    def __init__(self, env_name, model, mean_transitions=True):
+        """
+        Args:
+            env_name: Name of environment.
+            model: Either list of PNN or bisim model.
+            mean_transitions: Whether to sample or take mean estimate for
+                transition.
+        """
+        self.is_bisim = not isinstance(model, list)
+        if self.is_bisim:
+            self.terminal_function = no_terminal
+        else:
+            self.terminal_function = get_terminal_function(env_name)
+        self.model = model
+        self.mean_trainsitions = mean_transitions
+
+    def model_unroll(self, start_states, actions=None, policy=None, horizon=5):
+        """Unroll for multiple trajectories at once.
+        Args:
+            start_states: The start states to unroll at as ndarray
+                w shape (num_starts, obs_dim).
+            actions: The actions as (num_starts, horizon, action_dim)
+            policy: Policy for getting actions to perform.
+        """
+        if actions is None:
+            if policy is None:
+                raise ValueError('Need some way of getting actions!')
+        else:
+            horizon = actions.shape[1]
+        obs = np.zeros((start_states.shape[0], horizon + 1,
+                        start_states.shape[1]))
+        obs[:, 0] = start_states
+        rewards = np.zeros((start_states.shape[0], horizon))
+        terminals = np.full((start_states.shape[0], horizon), True)
+        is_running = np.full(start_states.shape[0], True)
+        logpis = np.zeros((start_states.shape[0], horizon))
+        for hidx in range(horizon):
+            if policy is None:
+                acts = actions[:, hidx]
+            else:
+                with torch.no_grad():
+                    acts, probs = policy.sample_action_and_logpi(
+                        torch.Tensor(obs[:, hidx]))
+                acts = acts.cpu().numpy()
+                if actions is None:
+                    actions = np.zeros((acts.shape[0], horizon, acts.shape[1]))
+                actions[:, hidx] = acts
+                logpis[:, hidx] = probs
+            # Roll all states forward.
+            nxt_info = self.get_next_transition(obs[:, hidx], acts)
+            obs[:, hidx+1] = obs[:, hidx] + nxt_info['deltas']
+            rewards[:, hidx] = nxt_info['rewards']
+            terminals[:, hidx] = self.terminal_function(obs[:, hidx+1])
+            terminals[:, hidx] = np.any(terminals, axis=1)
+            is_running = np.logical_and(is_running, ~terminals[:, hidx])
+            if np.sum(is_running) == 0:
+                break
+        return obs, actions, rewards, terminals, OrderedDict(
+            logpis=logpis,
+        )
+
+    def get_next_transition(self, obs, acts):
+        net_ins = torch.cat([
+            torch.Tensor(obs),
+            torch.Tensor(acts),
+        ], dim=1)
+        if self.is_bisim:
+            with torch.no_grad():
+                mean, logvar = self.model.get_mean_logvar(net_ins)
+            means = mean.numpy()
+            stds = (0.5 * logvar).exp().numpy()
+        else:
+            means, stds = [], []
+            with torch.no_grad():
+                for ens in self.model:
+                    ens_mean, ens_logvar = ens.get_mean_logvar(net_ins)
+                    means.append(ens_mean.cpu().numpy())
+                    stds.append(np.exp(ens_logvar.cpu().numpy() / 2))
+            means, stds = np.asarray(means), np.asarray(stds)
+        # Randomly select one of the models to get the next obs from.
+        if self.mean_trainsitions:
+            samples = means[0]
+        else:
+            samples = np.random.normal(means[0], stds[0])
+        rewards, deltas = samples[:, 0], samples[:, 1:]
+        # Get penalty term.
+        return {'deltas': deltas, 'rewards': rewards}
 
 class Standardizer(nn.Module):
 
