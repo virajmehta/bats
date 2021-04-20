@@ -42,11 +42,14 @@ class ModelPPOTrainer(object):
         # Put networks on correct device.
         self.policy = torch_to(policy)
         self.policy.train(False)
-        self.vf = torch_to(policy)
+        self.vf = torch_to(vf)
         self.vf.train(False)
+        model_unroller.model = [torch_to(m) for m in model_unroller.model]
+        for m in model_unroller.model:
+            m.train(False)
         self.model_unroller = model_unroller
         # Set up optimizer for policy.
-        to_opt = {'policy': self.policy}
+        to_opt = {'Model': self.policy}
         self.optimizers = {}
         for netname, net in to_opt.items():
             psets = net.get_parameter_sets()
@@ -60,7 +63,7 @@ class ModelPPOTrainer(object):
                                  for k in psets.keys()}
             else:
                 wdict = weight_decay
-            self.optimizers.update({'%s_%s' % (netname, k): torch.optim.Adam(
+            self.optimizers.update({'%s' % netname: torch.optim.Adam(
                 v,
                 lr=ldict['%s_%s' % (netname, k)],
                 weight_decay=wdict['%s_%s' % (netname, k)],
@@ -85,7 +88,7 @@ class ModelPPOTrainer(object):
         self._stats = OrderedDict()
         self._tr_stats = OrderedDict()
         if track_stats is None:
-            track_stats = ['Returns', 'policy/Loss']
+            track_stats = ['Returns', 'Loss', 'Ratio', 'Advantage']
         self._track_stats = track_stats
         self._env = env
         self._max_ep_len = max_ep_len
@@ -108,6 +111,8 @@ class ModelPPOTrainer(object):
         # For each epoch...
         for ep in range(outer_loops):
             # Collect data from the model environment.
+            if not self._silent:
+                print('Collecting imaginary data...')
             ppo_data = self.collect_ppo_data(
                 start_replay=start_replay,
                 horizon=horizon,
@@ -115,6 +120,8 @@ class ModelPPOTrainer(object):
                 ppo_update_batch_size=ppo_update_batch_size,
             )
             # Train the policy for a number of epochs.
+            if not self._silent:
+                print('Performing policy updates...')
             self.ppo_updates(
                     ppo_data,
                     inner_loops,
@@ -134,23 +141,24 @@ class ModelPPOTrainer(object):
     ) -> DataLoader:
         observations, actions, advantages, logpis =\
                 [[] for _ in range(4)]
-        for _ in range(start_unroll_batches_per_epoch):
+        for _ in tqdm(range(start_unroll_batches_per_epoch)):
             # Collect trajectories from the model.
             obs, acts, rews, terminals, infos =\
                     self.model_unroller.model_unroll(
-                            start_states=start_replay.next(),
+                            start_states=start_replay.next()[0],
                             policy=self.policy,
                             horizon=horizon,
                     )
             # Calculate the advantages.
             with torch.no_grad():
-                vals = self.vf(torchify_to(obs)).cpu().numpy()
+                vals = self.vf(torchify_to(obs.reshape(-1, obs.shape[-1])))
+            vals = vals.cpu().numpy().reshape(obs.shape[:-1])
             is_past = np.cumsum(terminals, axis=1) > 1
             deltas = (rews * (1 - is_past)
                       + self._gamma * vals[:, 1:] * (1 - terminals)
                       - vals[:, :-1])
             # Add the information
-            for rollout, ridx in enumerate(obs):
+            for ridx, rollout in enumerate(obs):
                 curradv = 0
                 for hidx in range(horizon - 1, -1, -1):
                     if is_past[ridx, hidx]:
@@ -189,7 +197,7 @@ class ModelPPOTrainer(object):
                 model_out['oldlogpi'] = torch_to(batch[3])
                 losses, bstats = self.policy.ppo_loss(model_out,
                                                       epsilon=self._epsilon)
-                for k, v in bstats.item():
+                for k, v in bstats.items():
                     dict_append(self._tr_stats, k, v)
                 for loss_name, loss in losses.items():
                     self.optimizers[loss_name].zero_grad()

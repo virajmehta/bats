@@ -36,6 +36,7 @@ def run(args):
         starts = None
     data, _, _ = make_boltzmann_policy_dataset(
             graph=graph,
+            # n_collects=1000,
             n_collects=graph.num_vertices(),
             temperature=0,
             gamma=args.gamma,
@@ -79,12 +80,15 @@ def parse_args():
     parser.add_argument('--vf_dir', required=True)
     parser.add_argument('--dyn_dir', required=True)
     parser.add_argument('--save_path', required=True)
-    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--horizon', type=int, default=5)
     parser.add_argument('--start_unroll_batches_per_epoch', type=int,
                         default=int(1e3))
+    # parser.add_argument('--start_unroll_batches_per_epoch', type=int,
+    #                     default=int(100))
     parser.add_argument('--num_policy_batch_update_per_epoch', type=int,
-                        default=256)
+                        default=25)
+    parser.add_argument('--ppo_update_batch_size', type=int, default=256)
     parser.add_argument('--outer_loops', type=int, default=1)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--lmbda', type=float, default=0.95)

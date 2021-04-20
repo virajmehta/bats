@@ -197,18 +197,6 @@ class StochasticPolicy(Policy):
             return torch.tanh(action)
         return action
 
-    def sample_action_and_logpi(
-            self,
-            states: torch.Tensor,
-    ):
-        """Get action from policy."""
-        mean, logvar = self.__call__(states)
-        action = reparameterize(mean, logvar)
-        logpi = self._gaussian_net.get_log_prob(mean, logvar, action)
-        if self._tanh_transform:
-            return torch.tanh(action)
-        return action, logpi
-
     def get_log_prob(
         self,
         mean: torch.Tensor,

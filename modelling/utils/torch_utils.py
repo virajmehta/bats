@@ -148,7 +148,7 @@ class ModelUnroller(object):
                         start_states.shape[1]))
         obs[:, 0] = start_states
         rewards = np.zeros((start_states.shape[0], horizon))
-        terminals = np.full((start_states.shape[0], horizon), True)
+        terminals = np.full((start_states.shape[0], horizon), False)
         is_running = np.full(start_states.shape[0], True)
         logpis = np.zeros((start_states.shape[0], horizon))
         for hidx in range(horizon):
@@ -156,13 +156,13 @@ class ModelUnroller(object):
                 acts = actions[:, hidx]
             else:
                 with torch.no_grad():
-                    acts, probs = policy.sample_action_and_logpi(
+                    acts, logprobs = policy.sample_actions_and_logprobs(
                         torch.Tensor(obs[:, hidx]))
                 acts = acts.cpu().numpy()
                 if actions is None:
                     actions = np.zeros((acts.shape[0], horizon, acts.shape[1]))
                 actions[:, hidx] = acts
-                logpis[:, hidx] = probs
+                logpis[:, hidx] = logprobs.cpu().numpy()
             # Roll all states forward.
             nxt_info = self.get_next_transition(obs[:, hidx], acts)
             obs[:, hidx+1] = obs[:, hidx] + nxt_info['deltas']
@@ -177,10 +177,10 @@ class ModelUnroller(object):
         )
 
     def get_next_transition(self, obs, acts):
-        net_ins = torch.cat([
+        net_ins = torch_to(torch.cat([
             torch.Tensor(obs),
             torch.Tensor(acts),
-        ], dim=1)
+        ], dim=1))
         if self.is_bisim:
             with torch.no_grad():
                 mean, logvar = self.model.get_mean_logvar(net_ins)

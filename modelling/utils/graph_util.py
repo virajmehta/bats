@@ -152,7 +152,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 edge_set.add((currv, nxtv))
             done = graph.vp.terminal[nxtv]
             ret += graph.ep.reward[edge]
-            upper_ret += graph.ep.upper_reward[edge]
+            # upper_ret += graph.ep.upper_reward[edge]
             currv = nxtv
             t += 1
             if n_edges >= n_collects:

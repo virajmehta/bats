@@ -207,9 +207,10 @@ def behavior_clone(
             validation_tune_metric='MSE',
             save_best_model=False,
     )
-    with open(os.path.join(save_dir, params.pkl), 'wb') as f:
+    with open(os.path.join(save_dir, 'params.pkl'), 'wb') as f:
         pkl.dump(OrderedDict(
-            obs_dim=obs_dim, act_dim=act_dim, hidden_sizes=hidden_sizes), f)
+            obs_dim=tr_x.shape[1], act_dim=tr_y.shape[1],
+            hidden_sizes=hidden_sizes), f)
     trainer.fit(tr_data, epochs, val_data, od_wait,
                 batch_updates_per_epoch=batch_updates_per_epoch,
                 validation_batches_per_epoch=batch_updates_per_epoch,
@@ -247,7 +248,7 @@ def ppo_fine_tune(
         model_unroller=model_unroller,
         gamma=gamma,
         lmbda=lmbda,
-        epislon=epsilon,
+        epsilon=epsilon,
         cuda_device=cuda_device,
         save_path=save_path,
         save_freq=save_freq,
