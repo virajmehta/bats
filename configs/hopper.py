@@ -31,3 +31,14 @@ HOPPER_CONFIGS['hopper-mixed']['load_model'] = 'experiments/hopper_medium_replay
 
 HOPPER_CONFIGS['hopper-medium'] = deepcopy(base_config)
 HOPPER_CONFIGS['hopper-medium']['env_name'] = 'hopper-medium-v2'
+
+for k, v in HOPPER_CONFIGS.items():
+    config = deepcopy(v)
+    config['use_all_planning_itrs'] = True
+    config['continue_after_no_advantage'] = True
+    config['num_stitching_iters'] = 25
+    # For mixed dataset edge distance = 0.726 +- 0.632
+    config['epsilon_neighbors'] = 0.8
+    config['planning_quantile'] = 0.4
+    config['epsilon_planning'] = 10
+    HOPPER_CONFIGS[k + '-tune'] = config

@@ -33,3 +33,14 @@ WALKER_CONFIGS['walker-mixed']['num_stitching_iters'] = 2
 
 WALKER_CONFIGS['walker-medium'] = deepcopy(base_config)
 WALKER_CONFIGS['walker-medium']['env_name'] = 'walker2d-medium-v2'
+
+for k, v in WALKER_CONFIGS.items():
+    config = deepcopy(v)
+    config['use_all_planning_itrs'] = True
+    config['continue_after_no_advantage'] = True
+    config['num_stitching_iters'] = 25
+    # For mixed dataset edge distance = 1.83 +- 1.34
+    config['epsilon_neighbors'] = 2
+    config['planning_quantile'] = 0.4
+    config['epsilon_planning'] = 10
+    WALKER_CONFIGS[k + '-tune'] = config

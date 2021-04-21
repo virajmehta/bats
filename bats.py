@@ -86,7 +86,6 @@ class BATSTrainer:
         self.bolt_gather_params['val_start_prop'] =\
                 kwargs.get('val_start_prop', 0.05)
         self.bc_every_iter = kwargs['bc_every_iter']
-        # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
@@ -143,6 +142,7 @@ class BATSTrainer:
         self.stitches_tried = set()
         self.edges_added = []
         self.penalty_coefficient = kwargs['penalty_coefficient']
+        self.use_all_planning_itrs = kwargs.get('use_all_planning_itrs', False)
         # this saves an empty file so the child processes can see it
         self.remove_neighbors([])
 
@@ -151,6 +151,11 @@ class BATSTrainer:
 
         # parameters for interleaving
         self.num_stitching_iters = kwargs.get('num_stitching_iters', 50)
+        # Whether to keep making suboptimal stitches after no positive
+        # advantage stitches can be made. This is good for hyper parameter opt.
+        self.continue_after_no_advantage =\
+                kwargs.get('continue_after_no_advantage', False)
+        self.pick_positive_adv = True  # Set to False after no positive adv.
 
         # printing parameters
         self.neighbor_print_period = 1000
@@ -245,7 +250,11 @@ class BATSTrainer:
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
             if stitches_to_try.shape[0] == 0:
-                break
+                if self.continue_after_no_advantage:
+                    self.pick_positive_adv = False
+                    continue
+                else:
+                    break
             plan_start_time = time.time()
             processes = self.test_neighbor_edges(stitches_to_try)
             self.block_add_edges(processes, i + 1)
@@ -389,6 +398,7 @@ class BATSTrainer:
                 args += [self.mean_file, self.std_file]
             if self.use_bisimulation:
                 args.append('-ub')
+            if self.
             process = Popen(args)
             processes.append(process)
         return processes
@@ -643,6 +653,8 @@ class BATSTrainer:
                     str(self.max_stitches)]
             if self.use_bisimulation:
                 args.append('-ub')
+            if not self.pick_positive_adv:
+                args.append('-ppa')
             process = Popen(args)
             processes.append(process)
         all_advantages = []

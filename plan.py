@@ -28,7 +28,8 @@ def prepare_model_inputs_torch(obs, actions):
     return torch.cat([obs, actions], dim=-1)
 
 
-def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, quantile, mean, std, device=None, **kwargs):
+def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
+        quantile, mean, std, device=None, use_all_iterations=False, **kwargs):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
     initializes the mean with the init action.
@@ -59,6 +60,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, qu
     mean = init_action
     var = torch.ones_like(mean) * ((action_upper_bound - action_lower_bound) / initial_variance_divisor) ** 2
     # X = stats.truncnorm(-2, 2, loc=np.zeros_like(mean), scale=np.ones_like(var))
+    best_found, best_qscore = None, float('inf')
     for i in range(max_iters):
         # lb_dist, ub_dist = mean - action_lower_bound, action_upper_bound - mean
         # constrained_var = np.minimum(np.minimum(np.square(lb_dist / 2), np.square(ub_dist / 2)), var)
@@ -89,15 +91,19 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, qu
             # success!
             min_index = quantiles.argmin()
             reward = np.quantile(reward_outputs[:, min_index], 0.3)
-            return np.array([row[0], row[1], *samples[min_index, :].tolist(),
-                             min_quantile, reward,
-                             *distances[:, min_qidx].tolist())
+            if min_quantile < best_qscore:
+                best_found = np.array([
+                    row[0], row[1], *samples[min_index, :].tolist(),
+                    min_quantile, reward, *distances[:, min_qidx].tolist()])
+                best_qscore = min_quantile
+            if not use_all_iterations:
+                return best_found
 `       elites = samples[torch.argsort(quantiles)[:num_elites], ...]
         new_mean = torch.mean(elites, axis=0)
         new_var = torch.var(elites, axis=0)
         mean = alpha * mean + (1 - alpha) * new_mean
         var = alpha * var + (1 - alpha) * new_var
-    return None
+    return best_found
 
 
 def main(args):
