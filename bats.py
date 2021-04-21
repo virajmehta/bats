@@ -124,6 +124,10 @@ class BATSTrainer:
         self.G.ep.upper_reward = self.G.new_edge_property("float")
         # whether an edge is real or imagined
         self.G.ep.imagined = self.G.new_edge_property('bool')
+        # The model errors for stitching if this is a stitched edge.
+        self.G.ep.model_errors = self.G.new_edge_property('vector<float>')
+        # Iteration that the model was stitched at.
+        self.G.ep.stitch_itr = self.G.new_edge_property('int')
 
         self.action_props = ungroup_vector_property(self.G.ep.action, range(self.action_dim))
         self.state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
@@ -244,7 +248,7 @@ class BATSTrainer:
                 break
             plan_start_time = time.time()
             processes = self.test_neighbor_edges(stitches_to_try)
-            self.block_add_edges(processes)
+            self.block_add_edges(processes, i + 1)
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
             vi_start_time = time.time()
             self.value_iteration()
@@ -389,7 +393,7 @@ class BATSTrainer:
             processes.append(process)
         return processes
 
-    def block_add_edges(self, processes):
+    def block_add_edges(self, processes, iteration):
         edges_added = 0
         output_path = self.output_dir / 'output'
         for i, process in enumerate(processes):
@@ -398,16 +402,17 @@ class BATSTrainer:
             edges_to_add = np.load(output_file)
             if len(edges_to_add) == 0:
                 continue
-            edges_added += self.add_edges(edges_to_add)
+            edges_added += self.add_edges(edges_to_add, iteration)
         print(f"adding {edges_added} edges")
         self.add_stat('edges_added', edges_added)
 
-    def add_edges(self, edges_to_add):
+    def add_edges(self, edges_to_add, iteration):
         starts = edges_to_add[:, 0].astype(int)
         ends = edges_to_add[:, 1].astype(int)
         actions = edges_to_add[:, 2:self.action_dim + 2]
-        distances = edges_to_add[:, -2]
-        rewards = edges_to_add[:, -1]
+        distances = edges_to_add[:, self.action_dim + 2]
+        rewards = edges_to_add[:, self.action_dim + 3]
+        model_errs = edges_to_add[:, self.action_dim + 4:]
         added = 0
         for start, end, action, distance, reward in zip(starts, ends, actions, distances, rewards):
             if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
@@ -423,6 +428,8 @@ class BATSTrainer:
                 self.G.ep.reward[e] = reward
 
             self.G.ep.imagined[e] = True
+            self.G.ep.model_errors[e] = model_errs
+            self.G.ep.stitch_itr = iteration
             added += 1
         return added
 
@@ -451,6 +458,9 @@ class BATSTrainer:
             self.G.ep.upper_reward[e] = reward
             self.G.ep.imagined[e] = False
             self.G.vp.terminal[v_to] = terminal
+            # This is hardcoded to assume there are 5 models.
+            self.G.ep.model_errors[e] = [0 for _ in range(5)]
+            self.G.ep.stitch_itr[e] = 0
         start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
         self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 
