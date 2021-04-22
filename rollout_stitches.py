@@ -21,11 +21,14 @@ def parse_arguments():
     parser.add_argument('gamma', type=float)
     parser.add_argument('max_stitches', type=int)
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
+    parser.add_argument('-ppa', '--pick_positive_advantage',
+                        action='store_true')
     return parser.parse_args()
 
 
-def clip_possible_stitches(max_node_stitches, *args):
-    possible_stitches, advantages, n_stitches = get_possible_stitches(*args)
+def clip_possible_stitches(max_node_stitches, *args, **kwargs):
+    possible_stitches, advantages, n_stitches = get_possible_stitches(*args,
+            **kwargs)
     if n_stitches < max_node_stitches:
         return possible_stitches, advantages, n_stitches
     possible_stitches = np.concatenate(possible_stitches, axis=0)
@@ -47,7 +50,9 @@ def get_possible_stitches(
         children_values,
         child_action_rewards,
         Q,
-        max_stitches):
+        max_stitches,
+        pick_positive_adv=True,
+):
     neighbors = np.nonzero(all_neighbors[currv, :])[1]
     possible_stitches = []
     advantages = []
@@ -71,9 +76,14 @@ def get_possible_stitches(
                                        out_neighbors[:, 1:-1],
                                        out_edges[:, 2:-1]), axis=-1)
         new_advantages = out_edges[:, -1] + gamma * out_neighbors[:, -1] - Q
-        deletes = new_advantages <= 0
-        new_stitches = np.delete(new_stitches, deletes, axis=0)
-        new_advantages = np.delete(new_advantages, deletes, axis=0)
+        if pick_positive_adv:
+            deletes = new_advantages <= 0
+            new_stitches = np.delete(new_stitches, deletes, axis=0)
+            new_advantages = np.delete(new_advantages, deletes, axis=0)
+        else:
+            srtdidxs = np.argsort(new_advantages)
+            new_stitches = new_stitches[srtdidxs[-max_stitches:]]
+            new_advantages = new_advantages[srtdidxs[-max_stitches:]]
         n_stitches += new_advantages.shape[0]
         possible_stitches.append(new_stitches)
         advantages.append(new_advantages)
@@ -103,9 +113,14 @@ def get_possible_stitches(
                                        child_neighbor_obs,
                                        actions), axis=-1)
         new_advantages = rewards + gamma * values - Q
-        deletes = new_advantages <= 0
-        new_stitches = np.delete(new_stitches, deletes, axis=0)
-        new_advantages = np.delete(new_advantages, deletes, axis=0)
+        if pick_positive_adv:
+            deletes = new_advantages <= 0
+            new_stitches = np.delete(new_stitches, deletes, axis=0)
+            new_advantages = np.delete(new_advantages, deletes, axis=0)
+        else:
+            srtdidxs = np.argsort(new_advantages)
+            new_stitches = new_stitches[srtdidxs[-max_stitches:]]
+            new_advantages = new_advantages[srtdidxs[-max_stitches:]]
         possible_stitches.append(new_stitches)
         advantages.append(new_advantages)
         n_stitches += new_advantages.shape[0]
@@ -144,19 +159,22 @@ def main(args):
                 childs = G.get_out_neighbors(currv, vprops=[G.vp.value])
                 edges = G.get_out_edges(currv, eprops=[G.ep.reward, *action_props])
                 if len(childs) == 0:
-                    new_stitches, new_advantages, n_stitches = clip_possible_stitches(args.max_stitches,
-                                                                                      G,
-                                                                                      args.gamma,
-                                                                                      neighbors,
-                                                                                      stitches_tried,
-                                                                                      state_props,
-                                                                                      action_props,
-                                                                                      int(currv),
-                                                                                      childs,
-                                                                                      edges[:, 2:],
-                                                                                      0,
-                                                                                      args.rollout_chunk_size -
-                                                                                      total_stitches)
+                    new_stitches, new_advantages, n_stitches =\
+                            clip_possible_stitches(
+                                    args.max_stitches,
+                                    G,
+                                    args.gamma,
+                                    neighbors,
+                                    stitches_tried,
+                                    state_props,
+                                    action_props,
+                                    int(currv),
+                                    childs,
+                                    edges[:, 2:],
+                                    0,
+                                    args.rollout_chunk_size - total_stitches,
+                                    pick_positive_adv=args.pick_positive_advantage,
+                            )
                     stitches += new_stitches
                     advantages += new_advantages
                     total_stitches += n_stitches
@@ -175,18 +193,21 @@ def main(args):
                 reward = G.ep.reward[edge]
                 value = G.vp.value[nxtv]
                 Q = reward + args.gamma * value
-            new_stitches, new_advantages, n_stitches = clip_possible_stitches(args.max_stitches,
-                                                                              G,
-                                                                              args.gamma,
-                                                                              neighbors,
-                                                                              stitches_tried,
-                                                                              state_props,
-                                                                              action_props,
-                                                                              currv,
-                                                                              childs,
-                                                                              edges[:, 2:],
-                                                                              Q,
-                                                                              args.rollout_chunk_size - total_stitches)  # NOQA
+            new_stitches, new_advantages, n_stitches = clip_possible_stitches(
+                   args.max_stitches,
+                   G,
+                   args.gamma,
+                   neighbors,
+                   stitches_tried,
+                   state_props,
+                   action_props,
+                   currv,
+                   childs,
+                   edges[:, 2:],
+                   Q,
+                   args.rollout_chunk_size - total_stitches,
+                   pick_positive_adv=args.pick_positive_advantage,
+            )  # NOQA
             stitches += new_stitches
             advantages += new_advantages
             total_stitches += n_stitches
