@@ -7,7 +7,7 @@ from copy import deepcopy
 base_config = OrderedDict(
     epsilon_planning=0.1,
     epsilon_neighbors=0.225,
-    num_cpus=80,
+    num_cpus=60,
     stitching_chunk_size=50000,
 )
 
@@ -22,6 +22,7 @@ MAZE_CONFIGS['maze-medium']['env_name'] = 'maze2d-medium-v1'
 
 MAZE_CONFIGS['maze-large'] = deepcopy(base_config)
 MAZE_CONFIGS['maze-large']['env_name'] = 'maze2d-large-v1'
+MAZE_CONFIGS['maze-large']['epsilon_neighbors'] = 0.15
 
 to_add = OrderedDict()
 for k, v in MAZE_CONFIGS.items():

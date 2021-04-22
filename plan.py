@@ -100,7 +100,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
                 best_qscore = min_quantile
             if not use_all_iterations:
                 return best_found
-`       elites = samples[torch.argsort(quantiles)[:num_elites], ...]
+        elites = samples[torch.argsort(quantiles)[:num_elites], ...]
         new_mean = torch.mean(elites, axis=0)
         new_var = torch.var(elites, axis=0)
         mean = alpha * mean + (1 - alpha) * new_mean
