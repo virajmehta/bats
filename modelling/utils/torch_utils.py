@@ -116,8 +116,10 @@ class ModelUnroller(object):
         self.is_bisim = not isinstance(model, list)
         if self.is_bisim:
             self.terminal_function = no_terminal
+            self.n_ensemble = model.num_dyn_nets
         else:
             self.terminal_function = get_terminal_function(env_name)
+            self.n_ensemble = len(model)
         self.model = model
         self.mean_transitions = mean_transitions
 
@@ -129,23 +131,34 @@ class ModelUnroller(object):
             actions: The actions as (num_starts, horizon, action_dim)
         """
         horizon = actions.shape[1]
-        obs = np.zeros((start_states.shape[0], horizon + 1,
+        act_dim = actions.shape[-1]
+        obs_dim = start_states.shape[-1]
+
+        obs = np.zeros((start_states.shape[0], self.n_ensemble, horizon + 1,
                         start_states.shape[1]))
-        obs[:, 0] = start_states
-        rewards = np.zeros((start_states.shape[0], horizon))
-        terminals = np.full((start_states.shape[0], horizon), True)
-        is_running = np.full(start_states.shape[0], True)
+        obs[:, :, 0, :] = torch.unsqueeze(start_states, 1).repeat(1, self.n_ensemble, 1)
+        rewards = np.zeros((start_states.shape[0], self.n_ensemble, horizon))
+        terminals = np.full((start_states.shape[0], self.n_ensemble, horizon), True)
+        is_running = np.full((start_states.shape[0], self.n_ensemble), True)
         for hidx in range(horizon):
-            acts = actions[:, hidx]
+            acts = torch.unsqueeze(actions[:, hidx], 1).repeat(1, self.n_ensemble, 1)
+            flat_acts = acts.reshape(-1, act_dim)
+            flat_obs = obs[:, :, hidx, :].reshape(-1, obs_dim)
             # Roll all states forward.
-            nxt_info = self.get_next_transition(obs[:, hidx], acts)
-            obs[:, hidx+1] = obs[:, hidx] + nxt_info['deltas']
-            rewards[:, hidx] = nxt_info['rewards']
-            terminals[:, hidx] = self.terminal_function(obs[:, hidx+1])
-            is_running = np.logical_and(is_running, ~terminals[:, hidx])
+            nxt_info = self.get_next_transition(flat_obs, flat_acts)
+            # need to get the model predictions from the same model to the same model
+            deltas = nxt_info['deltas'].reshape(-1, self.n_ensemble, self.n_ensemble, obs_dim)[:,
+                                                    range(self.n_ensemble), range(self.n_ensemble), :]
+            obs[:, :, hidx+1, :] = obs[:, :, hidx, :] + deltas
+            new_rewards = nxt_info['rewards'].T.reshape(-1, self.n_ensemble, self.n_ensemble)[:,
+                                                    range(self.n_ensemble), range(self.n_ensemble)]
+            rewards[..., hidx] = new_rewards
+            terminal_inputs = obs[:, :, hidx + 1, :].reshape(-1, obs_dim)
+            terminals[..., hidx] = self.terminal_function(terminal_inputs).reshape(-1, self.n_ensemble)
+            is_running = np.logical_and(is_running, ~terminals[..., hidx])
             if np.sum(is_running) == 0:
                 break
-        return obs, actions, rewards, np.any(terminals, axis=1)
+        return obs, actions, rewards, np.any(terminals, axis=-1)
 
     def get_next_transition(self, obs, acts):
         net_ins = torch.cat([

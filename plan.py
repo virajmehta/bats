@@ -18,7 +18,7 @@ def parse_arguments():
     parser.add_argument('latent_dim', type=int)
     parser.add_argument('epsilon', type=float)
     parser.add_argument('quantile', type=float)
-    parser.add_argument('max_stitches', type=int)
+    parser.add_argument('max_stitch_length', type=int)
     parser.add_argument('env_name')
     parser.add_argument('mean_file', nargs='?', default=None)
     parser.add_argument('std_file', nargs='?', default=None)
@@ -43,7 +43,7 @@ def make_init_action(actions, horizon):
         return torch.cat((action, padding))
 
 
-def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, max_stitches, quantile, mean, std,
+def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, max_stitch_length, quantile, mean, std,
         env_name, device=None, **kwargs):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
@@ -71,7 +71,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
     action_upper_bound = kwargs.get('action_upper_bound', 1.)
     action_lower_bound = kwargs.get('action_lower_bound', -1.)
     threshold = epsilon
-    for horizon in range(1, max_stitches + 1):
+    for horizon in range(1, max_stitch_length + 1):
         init_action = make_init_action(actions, horizon)
         initial_variance_divisor = kwargs.get('initial_variance_divisor', 4)
         max_iters = kwargs.get('max_iters', 6)
@@ -92,36 +92,36 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
             start_states = start_state.repeat(popsize, 1)
             p = 1 if bisim_model else 2
             model_obs, model_actions, model_rewards, model_terminals = model.model_unroll(start_states, samples)
-            good_indices = torch.nonzero(model_terminals)
-            model_obs = model_obs[good_indices, ...]
-            model_actions = model_actions[good_indices, ...]
-            model_rewards = model_rewards[good_indices, ...]
-            samples = samples[good_indices, ...]
+            good_indices = np.nonzero(~model_terminals.any(axis=1))
+            model_obs = model_obs[good_indices[0], ...]
+            model_actions = model_actions[good_indices[0], ...]
+            model_rewards = model_rewards[good_indices[0], ...]
+            samples = samples[good_indices[0], ...]
 
             # this is because the dynamics models are written to predict the reward in the first component of the output
             # and the next state in all the following components
-            displacements = model_obs[:, :, -1, :] - end_state
+            displacements = model_obs[:, :, -1, :] - end_state[None, None, :].cpu().numpy()
             if std is not None:
                 displacements /= std
-            distances = torch.linalg.norm(displacements, dim=-1, ord=p)
-            quantiles = torch.quantile(distances, quantile, dim=0)
+            distances = np.linalg.norm(displacements, axis=-1, ord=p)
+            quantiles = np.quantile(distances, quantile, axis=0)
             min_quantile = quantiles.min()
             if min_quantile < threshold:
                 threshold = min_quantile
                 # success!
                 min_index = quantiles.argmin()
-                obs_history = model_obs[min_index, :, 1:-1, :].mean(dim=0).cpu().numpy()
-                rewards = np.quantile(model_rewards[min_index, ...], 0.3, dim=0)
-                actions = samples[min_index, ...].cpu().nump()
+                obs_history = model_obs[min_index, :, 1:-1, :].mean(axis=0)
+                rewards = np.quantile(model_rewards[min_index, ...], 0.3, axis=0)
+                actions = samples[min_index, ...]
                 outputs = (start_idx, end_idx, actions, min_quantile, rewards, obs_history)
-                break
+                return outputs
                 # return np.array([row[0], row[1], *samples[min_index, :].tolist(), min_quantile, reward])
-            elites = samples[torch.argsort(quantiles)[:num_elites], ...]
-            new_mean = torch.mean(elites, axis=0)
-            new_var = torch.var(elites, axis=0)
+            elites = samples[np.argsort(quantiles)[:num_elites], ...]
+            new_mean = torch.mean(elites, dim=0)
+            new_var = torch.var(elites, dim=0)
             mean = alpha * mean + (1 - alpha) * new_mean
             var = alpha * var + (1 - alpha) * new_var
-    return outputs
+    return None
 
 
 def main(args):
@@ -146,7 +146,7 @@ def main(args):
     # input_data = input_data.to(device)
     for row in input_data:
         data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim, ensemble, bisim_model, args.epsilon,
-                   args.max_stitches, args.quantile, mean, std, args.env_name, device=device)
+                   args.max_stitch_length, args.quantile, mean, std, args.env_name, device=device)
         if data is not None:
             outputs.append(data)
     with args.output_file.open('wb') as f:

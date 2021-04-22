@@ -1,5 +1,6 @@
 from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
+import sys
 import time
 import numpy as np
 from pathlib import Path
@@ -153,6 +154,7 @@ class BATSTrainer:
         # printing parameters
         self.neighbor_print_period = 1000
 
+        self.normalize_obs = kwargs['normalize_obs']
         # normalizing before neighbors
         if self.use_bisimulation:
             self.mean = None
@@ -382,7 +384,8 @@ class BATSTrainer:
                     str(self.latent_dim),
                     str(self.epsilon_planning),
                     str(self.planning_quantile),
-                    str(self.max_stitches)]
+                    str(self.max_stitch_length),
+                    str(self.env_name)]
             if self.std_file:
                 args += [self.mean_file, self.std_file]
             if self.use_bisimulation:
@@ -407,6 +410,25 @@ class BATSTrainer:
         print(f"adding {edges_added} edges")
         self.add_stat('edges_added', edges_added)
 
+    def add_vertex(self, obs, bisim_obs=None):
+        v = self.G.add_vertex()
+        self.G.vp.value[v] = 0
+        self.G.vp.upper_value[v] = 0
+        self.G.vp.real_node[v] = False
+        self.G.vp.terminal[v] = False
+        self.G.vp.obs[v] = obs
+        self.vertices[obs.tobytes()] = self.unique_obs.shape[0]
+        self.unique_obs = np.concatenate((self.unique_obs, obs[None, ...]))
+        if self.use_bisimulation:
+            self.neighbor_obs = np.concatenate((self.neighbor_obs, bisim_obs[None, ...]))
+        elif self.normalize_obs:
+            norm_obs = (obs - self.mean) / self.std
+            self.neighbor_obs = np.concatenate((self.neighbor_obs, norm_obs[None, ...]))
+        else:
+            self.neighbor_obs = np.concatenate((self.neighbor_obs, obs[None, ...]))
+
+        return self.G.vertex_index[v]
+
     def add_edges(self, edges_to_add):
         added = 0
         for start, end, actions, distance, rewards, obs_history in edges_to_add:
@@ -414,23 +436,23 @@ class BATSTrainer:
                 if i == 0:
                     start_v = start
                 else:
-                    start_obs = obs_history[i - 1, :]
-                    start_v = self.vertices[start_obs.tobytes()]
+                    # start_obs = obs_history[i - 1, :]
+                    start_v = end_v
                 if i + 1 == len(actions):
                     end_v = end
                 else:
-                    v = self.G.add_vertex()
-                    end_v = self.G.vertex_index[v]
-                    self.G.vp.value[v] = 0
-                    self.G.vp.upper_value[v] = 0
-                    self.G.vp.real_node[v] = False
-                    self.G.vp.terminal[v] = False
+                    end_obs = obs_history[i, :]
+                    if self.use_bisimulation:
+                        raise NotImplementedError()
+                        # need to get the real obs and bisim obs from somewhere and pass them
+                    else:
+                        v = self.add_vertex(end_obs)
                 if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
                     break
                 e = self.G.add_edge(start_v, end_v)
                 self.edges_added.append((start, end))
-                self.G.ep.imagined = True
                 self.G.ep.action[e] = action
+                self.G.ep.imagined[e] = True
                 reward = rewards[i]
                 if self.penalize_stitches:
                     if i + 1 != len(actions):
@@ -641,16 +663,18 @@ class BATSTrainer:
         all_advantages = np.concatenate(all_advantages, axis=0)
         stitch_array = np.array([[s[0], s[1]] for s in all_stitches])
         indices = np.unique(stitch_array, return_index=True, axis=0)[1]
-        unique_advantages = advantages[indices]
-        breakpoint()
-        start_advantages = np.argpartition(unique_advantages, len(advantages) -
-                                           self.rollout_chunk_size)[-self.rollout_chunk_size:]
-        indices = indices[start_advantages]
+        unique_advantages = all_advantages[indices]
+        if len(unique_advantages) > self.rollout_chunk_size:
+            start_advantages = np.argpartition(unique_advantages, len(unique_advantages) -
+                                               self.rollout_chunk_size)[-self.rollout_chunk_size:]
+            indices = indices[start_advantages]
+            advantages = unique_advantages[start_advantages]
+        else:
+            advantages = unique_advantages
         unique_stitches = []
         for idx in indices:
             unique_stitches.append(all_stitches[idx])
         stitches = unique_stitches
-        advantages = advantages[indices]
         stitch_array = stitch_array[indices, ...]
         self.remove_neighbors(stitch_array)
         self.add_stat('Rollout Stitches', len(advantages))

@@ -47,6 +47,7 @@ def parse_arguments():
     parser.add_argument('-p', '--penalize_stitches', action='store_true')
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('-pc', '--penalty_coefficient', type=float, default=1.0)
+    parser.add_argument('-msl', '--max_stitch_length', type=int, default=1)
     if defaults is not None:
         parser.set_defaults(**defaults)
     return parser.parse_args(remaining)
