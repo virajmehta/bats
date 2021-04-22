@@ -51,7 +51,8 @@ def get_possible_stitches(
         child_action_rewards,
         Q,
         max_stitches,
-        pick_positive_adv=True):
+        pick_positive_adv=True,
+):
     neighbors = np.nonzero(all_neighbors[currv, :])[1]
     possible_stitches = []
     advantages = []
@@ -82,7 +83,7 @@ def get_possible_stitches(
         else:
             srtdidxs = np.argsort(new_advantages)
             new_stitches = new_stitches[srtdidxs[-max_stitches:]]
-            new_advantages = new_advantages[stdidxs[-max_stitches:]]
+            new_advantages = new_advantages[srtdidxs[-max_stitches:]]
         n_stitches += new_advantages.shape[0]
         possible_stitches.append(new_stitches)
         advantages.append(new_advantages)
@@ -119,7 +120,7 @@ def get_possible_stitches(
         else:
             srtdidxs = np.argsort(new_advantages)
             new_stitches = new_stitches[srtdidxs[-max_stitches:]]
-            new_advantages = new_advantages[stdidxs[-max_stitches:]]
+            new_advantages = new_advantages[srtdidxs[-max_stitches:]]
         possible_stitches.append(new_stitches)
         advantages.append(new_advantages)
         n_stitches += new_advantages.shape[0]
@@ -172,7 +173,7 @@ def main(args):
                                     edges[:, 2:],
                                     0,
                                     args.rollout_chunk_size - total_stitches,
-                                    pick_positive_adv=args.pick_positive_adv,
+                                    pick_positive_adv=args.pick_positive_advantage,
                             )
                     stitches += new_stitches
                     advantages += new_advantages
@@ -205,7 +206,7 @@ def main(args):
                    edges[:, 2:],
                    Q,
                    args.rollout_chunk_size - total_stitches,
-                   pick_positive_adv=args.pick_positive_adv,
+                   pick_positive_adv=args.pick_positive_advantage,
             )  # NOQA
             stitches += new_stitches
             advantages += new_advantages

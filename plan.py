@@ -21,6 +21,8 @@ def parse_arguments():
     parser.add_argument('mean_file', nargs='?', default=None)
     parser.add_argument('std_file', nargs='?', default=None)
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
+    parser.add_argument('-uapi', '--use_all_planning_itrs',
+                        action='store_true')
     return parser.parse_args()
 
 
@@ -126,7 +128,10 @@ def main(args):
     input_data = torch.Tensor(input_data)
     input_data = input_data.to(device)
     for row in input_data:
-        data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim, ensemble, bisim_model, args.epsilon, args.quantile, mean, std, device=device)
+        data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim,
+                   ensemble, bisim_model, args.epsilon, args.quantile, mean,
+                   std, use_all_planning_itrs=args.use_all_planning_itrs,
+                   device=device)
         if data is not None:
             outputs.append(data)
     outputs = np.array(outputs)

@@ -398,7 +398,8 @@ class BATSTrainer:
                 args += [self.mean_file, self.std_file]
             if self.use_bisimulation:
                 args.append('-ub')
-            if self.
+            if self.use_all_planning_itrs:
+                args.append('-uapi')
             process = Popen(args)
             processes.append(process)
         return processes
