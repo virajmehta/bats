@@ -45,7 +45,7 @@ for k, v in WALKER_CONFIGS.items():
     config['epsilon_neighbors'] = 0.2
     config['planning_quantile'] = 0.4
     config['epsilon_planning'] = 10
-    config['load_model'] = ('zfsauton/project/public/ichar/'
+    config['load_model'] = ('/zfsauton/project/public/ichar/'
                             'd4rl_models/walker/wk_%s' % task_type)
     to_add[k + '-tune'] = config
 WALKER_CONFIGS.update(to_add)

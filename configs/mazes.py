@@ -36,7 +36,7 @@ for k, v in MAZE_CONFIGS.items():
     # For umaze dataset edge distance = 0.11 +- 0.03
     config['planning_quantile'] = 0.4
     config['epsilon_planning'] = 1.5
-    config['load_model'] = ('zfsauton/project/public/ichar/'
+    config['load_model'] = ('/zfsauton/project/public/ichar/'
                             'd4rl_models/mazes/%s' % task_type)
     to_add[k + '-tune'] = config
 MAZE_CONFIGS.update(to_add)
