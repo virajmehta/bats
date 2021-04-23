@@ -436,7 +436,6 @@ class BATSTrainer:
                 if i == 0:
                     start_v = start
                 else:
-                    # start_obs = obs_history[i - 1, :]
                     start_v = end_v
                 if i + 1 == len(actions):
                     end_v = end
@@ -446,7 +445,7 @@ class BATSTrainer:
                         raise NotImplementedError()
                         # need to get the real obs and bisim obs from somewhere and pass them
                     else:
-                        v = self.add_vertex(end_obs)
+                        end_v = self.add_vertex(end_obs)
                 if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
                     break
                 e = self.G.add_edge(start_v, end_v)
