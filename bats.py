@@ -426,7 +426,8 @@ class BATSTrainer:
         rewards = edges_to_add[:, self.action_dim + 3]
         model_errs = edges_to_add[:, self.action_dim + 4:]
         added = 0
-        for start, end, action, distance, reward in zip(starts, ends, actions, distances, rewards):
+        for start, end, action, distance, reward, model_err in zip(
+                starts, ends, actions, distances, rewards, model_errs):
             if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
                 # we don't want to add edges originating from terminal states
                 continue
@@ -440,8 +441,8 @@ class BATSTrainer:
                 self.G.ep.reward[e] = reward
 
             self.G.ep.imagined[e] = True
-            self.G.ep.model_errors[e] = model_errs
-            self.G.ep.stitch_itr = iteration
+            self.G.ep.model_errors[e] = model_err
+            self.G.ep.stitch_itr[e] = iteration
             added += 1
         return added
 
