@@ -41,7 +41,7 @@ class BATSTrainer:
         self.verbose = kwargs['verbose']
 
         # set up the parameters for the dynamics model training
-        self.model = None
+        self.bisim_model = None
         self.trainer = None
 
         self.dynamics_train_params = {}
@@ -234,6 +234,7 @@ class BATSTrainer:
         np.save(self.start_state_path, self.start_states)
         nnz = self.train_dynamics()
         if nnz > self.neighbor_limit:
+            print(f"Too many nearest neighbors ({nnz}), max is {self.neighbor_limit}")
             return None
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
@@ -274,13 +275,13 @@ class BATSTrainer:
 
     def compute_embeddings(self):
         print("computing embeddings")
-        embeddings = np.array(self.model.get_encoding(self.unique_obs))
+        embeddings = np.array(self.bisim_model.get_encoding(self.unique_obs))
         self.neighbor_obs = embeddings
         self.G.vp.z.set_2d_array(embeddings.copy().T)
         self.vertices = {obs.tobytes(): i for i, obs in enumerate(self.neighbor_obs)}
 
     def train_dynamics(self):
-        if self.dynamics_ensemble_path is None:
+        if self.dynamics_ensemble_path is None and self.max_stitch_length > 1:
             print('training ensemble of dynamics models')
             train_ensemble(self.dataset, **self.dynamics_train_params)
             self.dynamics_ensemble_path = str(self.output_dir)
@@ -290,9 +291,9 @@ class BATSTrainer:
         if self.use_bisimulation:
             if self.bisim_model_path is not None:
                 print('loading bisimulation model')
-                self.model = load_bisim(self.dynamics_ensemble_path)
-                copy(self.dynamics_ensemble_path / 'params.pkl', self.output_dir)
-                self.trainer = make_trainer(self.model,
+                self.bisim_model = load_bisim(self.bisim_model_path)
+                copy(self.bisim_model_path / 'params.pkl', self.output_dir)
+                self.trainer = make_trainer(self.bisim_model,
                                             self.bisim_n_members,
                                             self.output_dir)
             else:
@@ -302,7 +303,8 @@ class BATSTrainer:
                 self.bisim_model, self.bisim_trainer = train_bisim(**self.bisim_train_params)
                 self.bisim_model_path = str(self.output_dir)
             self.compute_embeddings()
-            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim, '')
+            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
+                                              cuda_device='')
             self.dynamics_unroller = ModelUnroller(self.env_name, dynamics_ensemble)
         nnz = self.find_nearest_neighbors()
         return nnz
@@ -347,7 +349,7 @@ class BATSTrainer:
             actions.append(action)
         actions = np.array(actions)
         conditions = np.concatenate([start_obs, actions], axis=1)
-        model_outputs = self.model.get_mean_logvar(conditions)[0]
+        model_outputs = self.bisim_model.get_mean_logvar(conditions)[0]
         state_outputs = model_outputs[:, :, 1:]
         reward_outputs = model_outputs[:, :, 0]
         displacements = state_outputs + start_obs - end_obs
