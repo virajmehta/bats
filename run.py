@@ -28,6 +28,7 @@ def parse_arguments():
     parser.add_argument('-en', '--epsilon_neighbors', type=float, default=0.1, help="The threshold for two states to be considered possible neighbors in an MDP")  # NOQA
     parser.add_argument('--dataset_fraction', type=float, default=1., help="The fraction of the offline dataset to use for the algorithm. Useful for testing on smaller data")  # NOQA
     parser.add_argument('-lm', '--load_model', type=Path, default=None, help="Load a dynamics model ensemble from this directory")
+    parser.add_argument('-lbm', '--load_bisim_model', type=Path, default=None, help="Load a dynamics model ensemble from this directory")
     parser.add_argument('-lg', '--load_graph', type=Path, default=None, help="Load a graph pre-value iteration from this directory")
     parser.add_argument('-lvi', '--load_value_iteration', type=Path, default=None, help="Load a graph after value iteration from this directory.")
     parser.add_argument('-ln', '--load_neighbors', type=Path, default=None, help="Load nearest neighbors")

@@ -1,6 +1,5 @@
 from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
-import sys
 import time
 import numpy as np
 from pathlib import Path
@@ -15,7 +14,9 @@ from scipy.sparse import save_npz, load_npz
 from shutil import copy
 from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import load_policy, behavior_clone
+from modelling.dynamics_construction import load_ensemble
 from modelling.bisim_construction import train_bisim, load_bisim, make_trainer, fine_tune_bisim
+from modelling.utils.torch_utils import ModelUnroller
 from modelling.utils.graph_util import make_boltzmann_policy_dataset
 from sklearn.neighbors import radius_neighbors_graph
 from util import get_starts_from_graph
@@ -42,7 +43,6 @@ class BATSTrainer:
         # set up the parameters for the dynamics model training
         self.model = None
         self.trainer = None
-        self.dynamics_ensemble_path = None
 
         self.dynamics_train_params = {}
         self.dynamics_train_params['n_members'] = kwargs.get('dynamics_n_members', 7)
@@ -202,8 +202,12 @@ class BATSTrainer:
             self.neighbors = load_npz(neighbors_path)
             our_neighbor_path = self.output_dir / self.neighbor_name
             save_npz(our_neighbor_path, self.neighbors)
+        self.dynamics_ensemble_path = None
+        self.dynamics_unroller = None
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = Path(kwargs['load_model'])
+        if kwargs['load_bisim_model'] is not None:
+            self.bisim_model_path = Path(kwargs['load_bisim_model'])
 
     def save_stats(self):
         np.savez(self.stats_path, **self.stats)
@@ -244,7 +248,7 @@ class BATSTrainer:
             if len(stitches_to_try) == 0:
                 break
             plan_start_time = time.time()
-            processes = self.test_neighbor_edges(stitches_to_try)
+            processes = self.test_possible_stitches(stitches_to_try)
             self.block_add_edges(processes)
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
             vi_start_time = time.time()
@@ -276,25 +280,30 @@ class BATSTrainer:
         self.vertices = {obs.tobytes(): i for i, obs in enumerate(self.neighbor_obs)}
 
     def train_dynamics(self):
-        if self.dynamics_ensemble_path or self.graph_stitching_done:
-            if self.use_bisimulation:
+        if self.dynamics_ensemble_path is None:
+            print('training ensemble of dynamics models')
+            train_ensemble(self.dataset, **self.dynamics_train_params)
+            self.dynamics_ensemble_path = str(self.output_dir)
+        else:
+            print('skipping dynamics model training')
+
+        if self.use_bisimulation:
+            if self.bisim_model_path is not None:
+                print('loading bisimulation model')
                 self.model = load_bisim(self.dynamics_ensemble_path)
                 copy(self.dynamics_ensemble_path / 'params.pkl', self.output_dir)
                 self.trainer = make_trainer(self.model,
                                             self.bisim_n_members,
                                             self.output_dir)
-                self.compute_embeddings()
-            print('skipping dynamics ensemble training')
-            nnz = self.find_nearest_neighbors()
-            return nnz
-        print("training ensemble of dynamics models")
-        if self.use_bisimulation:
-            self.model, self.trainer = train_bisim(**self.bisim_train_params)
-            self.dynamics_ensemble_path = str(self.output_dir)
+            else:
+                print('training bisimulation model')
+                # viraj: it's possible I guess that the regular model training writes to the same place in the
+                #        output_dir as the bisimulation training below but I'm not too worried about that rn
+                self.bisim_model, self.bisim_trainer = train_bisim(**self.bisim_train_params)
+                self.bisim_model_path = str(self.output_dir)
             self.compute_embeddings()
-        else:
-            train_ensemble(self.dataset, **self.dynamics_train_params)
-            self.dynamics_ensemble_path = str(self.output_dir)
+            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim, '')
+            self.dynamics_unroller = ModelUnroller(self.env_name, dynamics_ensemble)
         nnz = self.find_nearest_neighbors()
         return nnz
 
@@ -352,7 +361,7 @@ class BATSTrainer:
             self.G.ep.reward[edge] = low_reward[i]
             self.G.ep.upper_reward[edge] = high_reward[i]
 
-    def test_neighbor_edges(self, possible_stitches):
+    def test_possible_stitches(self, possible_stitches):
         '''
         This function currently assumes whatever prioritization there is exists outside the function and that it is
         supposed to try all possible stitches.
@@ -411,6 +420,7 @@ class BATSTrainer:
         self.add_stat('edges_added', edges_added)
 
     def add_vertex(self, obs, bisim_obs=None):
+        assert obs is not None
         v = self.G.add_vertex()
         self.G.vp.value[v] = 0
         self.G.vp.upper_value[v] = 0
@@ -429,9 +439,24 @@ class BATSTrainer:
 
         return self.G.vertex_index[v]
 
+    def get_middle_obs(self, start_obs, actions):
+        start_obs = torch.Tensor(start_obs)
+        actions = torch.Tensor(actions)
+        breakpoint()
+        model_obs, model_actions, model_rewards, model_terminals = self.dynamics_unroller.model_unroll(start_obs,
+                                                                                                       actions)
+        if model_terminals.any():
+            return None
+        return model_obs.mean(axis=0).cpu().numpy(), model_rewards.mean(axis=0).cpu().numpy()
+
     def add_edges(self, edges_to_add):
         added = 0
         for start, end, actions, distance, rewards, obs_history in edges_to_add:
+            start_obs = self.G.vp.obs[start]
+            middle_obs, dynamics_rewards = self.get_middle_obs(start_obs, actions)
+            if middle_obs is None:
+                continue
+            end_v = None
             for i, action in enumerate(actions):
                 if i == 0:
                     start_v = start
@@ -442,6 +467,7 @@ class BATSTrainer:
                 else:
                     end_obs = obs_history[i, :]
                     if self.use_bisimulation:
+                        end_v = self.add_vertex(middle_obs[i, :], end_obs)
                         raise NotImplementedError()
                         # need to get the real obs and bisim obs from somewhere and pass them
                     else:

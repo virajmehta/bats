@@ -94,7 +94,6 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
             model_obs, model_actions, model_rewards, model_terminals = model.model_unroll(start_states, samples)
             good_indices = np.nonzero(~model_terminals.any(axis=1))
             model_obs = model_obs[good_indices[0], ...]
-            model_actions = model_actions[good_indices[0], ...]
             model_rewards = model_rewards[good_indices[0], ...]
             samples = samples[good_indices[0], ...]
 
