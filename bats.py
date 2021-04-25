@@ -386,11 +386,12 @@ class BATSTrainer:
             with fn.open('wb') as f:
                 pickle.dump(cpu_chunk, f)
             output_file = output_path / f"{i}.pkl"
+            model_path = str(self.bisim_model_path) if self.use_bisimulation else str(self.dynamics_ensemble_path)
             args = ['python',
                     'plan.py',
                     str(fn),
                     str(output_file),
-                    str(self.dynamics_ensemble_path),
+                    model_path,
                     str(self.obs_dim),
                     str(self.action_dim),
                     str(self.latent_dim),
@@ -443,8 +444,8 @@ class BATSTrainer:
         return self.G.vertex_index[v]
 
     def get_middle_obs(self, start_obs, actions):
-        start_obs = torch.Tensor(start_obs)
-        actions = torch.Tensor(actions)
+        start_obs = torch.Tensor(start_obs[None, :])
+        actions = torch.Tensor(actions[None, :])
         breakpoint()
         model_obs, model_actions, model_rewards, model_terminals = self.dynamics_unroller.model_unroll(start_obs,
                                                                                                        actions)
@@ -686,6 +687,7 @@ class BATSTrainer:
         all_stitches = []
         for i, process in enumerate(processes):
             process.wait()
+        for i in range(len(processes)):
             output_file = output_path / f"{i}.pkl"
             with output_file.open('rb') as f:
                 stitches, advantages = pickle.load(f)
