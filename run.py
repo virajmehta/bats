@@ -26,6 +26,7 @@ def parse_arguments():
     parser.add_argument('-ep', '--epsilon_planning', type=float, default=0.05, help="The threshold for the planning to add graph edges")  # NOQA
     parser.add_argument('-pq', '--planning_quantile', type=float, default=0.8, help="The quantile of the dynamics ensemble used for planning to add graph edges")  # NOQA
     parser.add_argument('-en', '--epsilon_neighbors', type=float, default=0.1, help="The threshold for two states to be considered possible neighbors in an MDP")  # NOQA
+    parser.add_argument('-kn', -'--k_neighbors', type=int, default=None, help="The K to use for KNN for our neighbor-finding. Overrides epsilon_neighbors")
     parser.add_argument('--dataset_fraction', type=float, default=1., help="The fraction of the offline dataset to use for the algorithm. Useful for testing on smaller data")  # NOQA
     parser.add_argument('-lm', '--load_model', type=Path, default=None, help="Load a dynamics model ensemble from this directory")
     parser.add_argument('-lbm', '--load_bisim_model', type=Path, default=None, help="Load a dynamics model ensemble from this directory")
