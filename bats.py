@@ -18,7 +18,7 @@ from modelling.dynamics_construction import load_ensemble
 from modelling.bisim_construction import train_bisim, load_bisim, make_trainer, fine_tune_bisim
 from modelling.utils.torch_utils import ModelUnroller
 from modelling.utils.graph_util import make_boltzmann_policy_dataset
-from sklearn.neighbors import radius_neighbors_graph
+from sklearn.neighbors import radius_neighbors_graph, kneighbors_graph
 from util import get_starts_from_graph
 
 
@@ -92,6 +92,7 @@ class BATSTrainer:
 
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
+        self.k_neighbors = kwargs['k_neighbors']
         self.neighbors = None
         self.neighbor_limit = 500000000  # 500 million
 
@@ -534,7 +535,10 @@ class BATSTrainer:
         start = time.time()
         p = 1 if self.use_bisimulation else 2
         size = self.G.num_vertices()
-        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p).astype(bool)
+        if self.k_neighbors is None:
+            self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p).astype(bool)
+        else:
+            self.neighbors = kneighbors_graph(self.neighbor_obs, self.k_neighbors, p=p).astype(bool)
         self.neighbors.resize((size, size))
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
