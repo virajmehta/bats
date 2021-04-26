@@ -1,3 +1,4 @@
+import os
 from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
 import sys
@@ -604,20 +605,25 @@ class BATSTrainer:
                 graph=self.G,
                 n_collects=self.G.num_vertices(),
                 max_ep_len=self.env._max_episode_steps,
-                n_val_collects=0,
-                val_start_prop=0,
-                silent=True,
-                starts=self.start_states)
-        params = self.intermediate_bc_params if intermediate else self.bc_params
-        self.policy = behavior_clone(dataset=data,
-                                     env=self.env,
-                                     max_ep_len=self.env._max_episode_steps,
-                                     **params)
-        bc_path = self.output_dir / 'stats.txt'
-        with bc_path.open('r') as f:
-            last_line = f.readlines()[-1]
-        avg_return = float(last_line.split(',')[1])
-        self.add_stat('avg_return', avg_return)
+                n_val_collects=self.bolt_gather_params['val_start_prop']
+                               * self.G.num_vertices(),
+                starts=self.start_states,
+                **self.bolt_gather_params)
+        for k, v in stats.items():
+            self.add_stat(k, v)
+        params = deepcopy(self.intermediate_bc_params if intermediate
+                          else self.bc_params)
+        if dir_name is not None:
+            params['save_dir'] = os.path.join(params['save_dir'], dir_name)
+        self.policy, bc_trainer = behavior_clone(
+                dataset=data,
+                val_dataset=val_data,
+                env=self.env,
+                max_ep_len=self.env._max_episode_steps,
+                **params
+        )
+        bc_stats = bc_trainer.get_stats()
+        self.add_stat('avg_return', bc_stats['Returns/avg'][-1])
 
     def get_rollout_stitch_chunk(self):
         # need to be less than rollout_chunk_size
