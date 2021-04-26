@@ -444,14 +444,13 @@ class BATSTrainer:
         return self.G.vertex_index[v]
 
     def get_middle_obs(self, start_obs, actions):
-        start_obs = torch.Tensor(start_obs[None, :])
-        actions = torch.Tensor(actions[None, :])
-        breakpoint()
+        start_obs = torch.Tensor(start_obs)[None, ...]
+        actions = torch.Tensor(actions)[None, ...]
         model_obs, model_actions, model_rewards, model_terminals = self.dynamics_unroller.model_unroll(start_obs,
                                                                                                        actions)
         if model_terminals.any():
-            return None
-        return model_obs.mean(axis=0).cpu().numpy(), model_rewards.mean(axis=0).cpu().numpy()
+            return None, None
+        return model_obs.mean(axis=1)[0, ...], model_rewards.mean(axis=1)[0, ...]
 
     def add_edges(self, edges_to_add):
         added = 0
@@ -472,14 +471,13 @@ class BATSTrainer:
                     end_obs = obs_history[i, :]
                     if self.use_bisimulation:
                         end_v = self.add_vertex(middle_obs[i, :], end_obs)
-                        raise NotImplementedError()
                         # need to get the real obs and bisim obs from somewhere and pass them
                     else:
                         end_v = self.add_vertex(end_obs)
                 if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
                     break
                 e = self.G.add_edge(start_v, end_v)
-                self.edges_added.append((start, end))
+                self.edges_added.append((start_v, end_v))
                 self.G.ep.action[e] = action
                 self.G.ep.imagined[e] = True
                 reward = rewards[i]
