@@ -622,13 +622,17 @@ class BATSTrainer:
             change = start_value - self.stats['Mean Start Value'][-2]
             print(f'Change in Mean Start Value: {change:.2f}')
         if self.penalize_stitches:
+            start_value = np.mean(upper_values[self.start_states])
             self.add_stat("Upper Mean Start Value", start_value)
-            mean_value = np.mean(values)
+            mean_value = np.mean(upper_values)
             self.add_stat("Upper Mean Value", mean_value)
-            min_value = np.min(values)
+            min_value = np.min(upper_values)
             self.add_stat("Upper Min Value", min_value)
-            max_value = np.max(values)
+            max_value = np.max(upper_values)
             self.add_stat("Upper Max Value", max_value)
+            if len(self.stats['Upper Mean Start Value']) > 1:
+                change = start_value - self.stats['Upper Mean Start Value'][-2]
+                print(f'Change in Upper Mean Start Value: {change:.2f}')
 
     def train_bc(self, dir_name=None, intermediate=False):
         print("cloning a policy")
