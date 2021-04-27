@@ -253,6 +253,7 @@ class BATSTrainer:
             plan_start_time = time.time()
             processes = self.test_possible_stitches(stitches_to_try)
             self.block_add_edges(processes)
+            size = self.G.num_vertices()
             self.neighbors.resize((size, size))
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
             vi_start_time = time.time()
