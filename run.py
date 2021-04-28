@@ -26,8 +26,10 @@ def parse_arguments():
     parser.add_argument('-ep', '--epsilon_planning', type=float, default=0.05, help="The threshold for the planning to add graph edges")  # NOQA
     parser.add_argument('-pq', '--planning_quantile', type=float, default=0.8, help="The quantile of the dynamics ensemble used for planning to add graph edges")  # NOQA
     parser.add_argument('-en', '--epsilon_neighbors', type=float, default=0.1, help="The threshold for two states to be considered possible neighbors in an MDP")  # NOQA
+    parser.add_argument('-kn', '--k_neighbors', type=int, default=None, help="The K to use for KNN for our neighbor-finding. Overrides epsilon_neighbors")
     parser.add_argument('--dataset_fraction', type=float, default=1., help="The fraction of the offline dataset to use for the algorithm. Useful for testing on smaller data")  # NOQA
     parser.add_argument('-lm', '--load_model', type=Path, default=None, help="Load a dynamics model ensemble from this directory")
+    parser.add_argument('-lbm', '--load_bisim_model', type=Path, default=None, help="Load a dynamics model ensemble from this directory")
     parser.add_argument('-lg', '--load_graph', type=Path, default=None, help="Load a graph pre-value iteration from this directory")
     parser.add_argument('-lvi', '--load_value_iteration', type=Path, default=None, help="Load a graph after value iteration from this directory.")
     parser.add_argument('-ln', '--load_neighbors', type=Path, default=None, help="Load nearest neighbors")
@@ -42,7 +44,7 @@ def parse_arguments():
     parser.add_argument('-ms', '--max_stitches', type=int, default=6, help='max stitches for a single state as the boltzmann rollouts proceed')
     parser.add_argument('-norm', '--normalize_obs', action='store_true')
     parser.add_argument('--pudb', action='store_true')
-    parser.add_argument('--use_bisimulation', action='store_true')
+    parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     parser.add_argument('--bisim_latent_dim', type=int, default=6, help="How many dimensions for the latent space of the bisimulation metric")
     parser.add_argument('-p', '--penalize_stitches', action='store_true')
     parser.add_argument('-v', '--verbose', action='store_true')
