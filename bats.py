@@ -1,7 +1,6 @@
 import os
 from graph_tool import Graph, load_graph, ungroup_vector_property
 from graph_tool.spectral import adjacency
-import sys
 import time
 import numpy as np
 from pathlib import Path
@@ -16,9 +15,11 @@ from scipy.sparse import save_npz, load_npz
 from shutil import copy
 from modelling.dynamics_construction import train_ensemble
 from modelling.policy_construction import load_policy, behavior_clone
+from modelling.dynamics_construction import load_ensemble
 from modelling.bisim_construction import train_bisim, load_bisim, make_trainer, fine_tune_bisim
+from modelling.utils.torch_utils import ModelUnroller
 from modelling.utils.graph_util import make_boltzmann_policy_dataset
-from sklearn.neighbors import radius_neighbors_graph
+from sklearn.neighbors import radius_neighbors_graph, kneighbors_graph
 from util import get_starts_from_graph
 
 
@@ -41,9 +42,8 @@ class BATSTrainer:
         self.verbose = kwargs['verbose']
 
         # set up the parameters for the dynamics model training
-        self.model = None
+        self.bisim_model = None
         self.trainer = None
-        self.dynamics_ensemble_path = None
 
         self.dynamics_train_params = {}
         self.dynamics_train_params['n_members'] = kwargs.get('dynamics_n_members', 7)
@@ -92,6 +92,7 @@ class BATSTrainer:
 
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
+        self.k_neighbors = kwargs['k_neighbors']
         self.neighbors = None
         self.neighbor_limit = 500000000  # 500 million
 
@@ -212,8 +213,12 @@ class BATSTrainer:
             self.neighbors = load_npz(neighbors_path)
             our_neighbor_path = self.output_dir / self.neighbor_name
             save_npz(our_neighbor_path, self.neighbors)
+        self.dynamics_ensemble_path = None
+        self.dynamics_unroller = None
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = Path(kwargs['load_model'])
+        if kwargs['load_bisim_model'] is not None:
+            self.bisim_model_path = Path(kwargs['load_bisim_model'])
 
     def save_stats(self):
         np.savez(self.stats_path, **self.stats)
@@ -240,6 +245,7 @@ class BATSTrainer:
         np.save(self.start_state_path, self.start_states)
         nnz = self.train_dynamics()
         if nnz > self.neighbor_limit:
+            print(f"Too many nearest neighbors ({nnz}), max is {self.neighbor_limit}")
             return None
         self.G.save(str(self.output_dir / 'dataset.gt'))
         self.G.save(str(self.output_dir / 'mdp.gt'))
@@ -260,6 +266,7 @@ class BATSTrainer:
             plan_start_time = time.time()
             processes = self.test_neighbor_edges(stitches_to_try)
             self.block_add_edges(processes, i + 1)
+            size = self.G.num_vertices()
             self.neighbors.resize((size, size))
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
             vi_start_time = time.time()
@@ -285,31 +292,37 @@ class BATSTrainer:
 
     def compute_embeddings(self):
         print("computing embeddings")
-        embeddings = np.array(self.model.get_encoding(self.unique_obs))
+        embeddings = np.array(self.bisim_model.get_encoding(self.unique_obs))
         self.neighbor_obs = embeddings
         self.G.vp.z.set_2d_array(embeddings.copy().T)
         self.vertices = {obs.tobytes(): i for i, obs in enumerate(self.neighbor_obs)}
 
     def train_dynamics(self):
-        if self.dynamics_ensemble_path or self.graph_stitching_done:
-            if self.use_bisimulation:
-                self.model = load_bisim(self.dynamics_ensemble_path)
-                copy(self.dynamics_ensemble_path / 'params.pkl', self.output_dir)
-                self.trainer = make_trainer(self.model,
-                                            self.bisim_n_members,
-                                            self.output_dir)
-                self.compute_embeddings()
-            print('skipping dynamics ensemble training')
-            nnz = self.find_nearest_neighbors()
-            return nnz
-        print("training ensemble of dynamics models")
-        if self.use_bisimulation:
-            self.model, self.trainer = train_bisim(**self.bisim_train_params)
-            self.dynamics_ensemble_path = str(self.output_dir)
-            self.compute_embeddings()
-        else:
+        if self.dynamics_ensemble_path is None and self.max_stitch_length > 1:
+            print('training ensemble of dynamics models')
             train_ensemble(self.dataset, **self.dynamics_train_params)
             self.dynamics_ensemble_path = str(self.output_dir)
+        else:
+            print('skipping dynamics model training')
+
+        if self.use_bisimulation:
+            if self.bisim_model_path is not None:
+                print('loading bisimulation model')
+                self.bisim_model = load_bisim(self.bisim_model_path)
+                copy(self.bisim_model_path / 'params.pkl', self.output_dir)
+                self.trainer = make_trainer(self.bisim_model,
+                                            self.bisim_n_members,
+                                            self.output_dir)
+            else:
+                print('training bisimulation model')
+                # viraj: it's possible I guess that the regular model training writes to the same place in the
+                #        output_dir as the bisimulation training below but I'm not too worried about that rn
+                self.bisim_model, self.bisim_trainer = train_bisim(**self.bisim_train_params)
+                self.bisim_model_path = str(self.output_dir)
+            self.compute_embeddings()
+            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
+                                              cuda_device='')
+            self.dynamics_unroller = ModelUnroller(self.env_name, dynamics_ensemble)
         nnz = self.find_nearest_neighbors()
         return nnz
 
@@ -353,7 +366,7 @@ class BATSTrainer:
             actions.append(action)
         actions = np.array(actions)
         conditions = np.concatenate([start_obs, actions], axis=1)
-        model_outputs = self.model.get_mean_logvar(conditions)[0]
+        model_outputs = self.bisim_model.get_mean_logvar(conditions)[0]
         state_outputs = model_outputs[:, :, 1:]
         reward_outputs = model_outputs[:, :, 0]
         displacements = state_outputs + start_obs - end_obs
@@ -367,7 +380,7 @@ class BATSTrainer:
             self.G.ep.reward[edge] = low_reward[i]
             self.G.ep.upper_reward[edge] = high_reward[i]
 
-    def test_neighbor_edges(self, possible_stitches):
+    def test_possible_stitches(self, possible_stitches):
         '''
         This function currently assumes whatever prioritization there is exists outside the function and that it is
         supposed to try all possible stitches.
@@ -389,11 +402,12 @@ class BATSTrainer:
             with fn.open('wb') as f:
                 pickle.dump(cpu_chunk, f)
             output_file = output_path / f"{i}.pkl"
+            model_path = str(self.bisim_model_path) if self.use_bisimulation else str(self.dynamics_ensemble_path)
             args = ['python',
                     'plan.py',
                     str(fn),
                     str(output_file),
-                    str(self.dynamics_ensemble_path),
+                    model_path,
                     str(self.obs_dim),
                     str(self.action_dim),
                     str(self.latent_dim),
@@ -428,6 +442,7 @@ class BATSTrainer:
         self.add_stat('edges_added', edges_added)
 
     def add_vertex(self, obs, bisim_obs=None):
+        assert obs is not None
         v = self.G.add_vertex()
         self.G.vp.value[v] = 0
         self.G.vp.upper_value[v] = 0
@@ -446,9 +461,23 @@ class BATSTrainer:
 
         return self.G.vertex_index[v]
 
+    def get_middle_obs(self, start_obs, actions):
+        start_obs = torch.Tensor(start_obs)[None, ...]
+        actions = torch.Tensor(actions)[None, ...]
+        model_obs, model_actions, model_rewards, model_terminals = self.dynamics_unroller.model_unroll(start_obs,
+                                                                                                       actions)
+        if model_terminals.any():
+            return None, None
+        return model_obs.mean(axis=1)[0, ...], model_rewards.mean(axis=1)[0, ...]
+
     def add_edges(self, edges_to_add, iteration):
         added = 0
         for start, end, actions, distance, rewards, obs_history, model_errs in edges_to_add:
+            start_obs = self.G.vp.obs[start]
+            middle_obs, dynamics_rewards = self.get_middle_obs(start_obs, actions)
+            if middle_obs is None:
+                continue
+            end_v = None
             for i, action in enumerate(actions):
                 if i == 0:
                     start_v = start
@@ -459,14 +488,14 @@ class BATSTrainer:
                 else:
                     end_obs = obs_history[i, :]
                     if self.use_bisimulation:
-                        raise NotImplementedError()
+                        end_v = self.add_vertex(middle_obs[i, :], end_obs)
                         # need to get the real obs and bisim obs from somewhere and pass them
                     else:
                         end_v = self.add_vertex(end_obs)
                 if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
                     break
                 e = self.G.add_edge(start_v, end_v)
-                self.edges_added.append((start, end))
+                self.edges_added.append((start_v, end_v))
                 self.G.ep.action[e] = action
                 self.G.ep.imagined[e] = True
                 reward = rewards[i]
@@ -529,7 +558,10 @@ class BATSTrainer:
         start = time.time()
         p = 1 if self.use_bisimulation else 2
         size = self.G.num_vertices()
-        self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p).astype(bool)
+        if self.k_neighbors is None:
+            self.neighbors = radius_neighbors_graph(self.neighbor_obs, self.epsilon_neighbors, p=p).astype(bool)
+        else:
+            self.neighbors = kneighbors_graph(self.neighbor_obs, self.k_neighbors, p=p).astype(bool)
         self.neighbors.resize((size, size))
         print(f"Time to find possible neighbors: {time.time() - start:.2f}s")
         print(f"Found {self.neighbors.nnz // 2} neighbor pairs")
@@ -612,13 +644,17 @@ class BATSTrainer:
             change = start_value - self.stats['Mean Start Value'][-2]
             print(f'Change in Mean Start Value: {change:.2f}')
         if self.penalize_stitches:
+            start_value = np.mean(upper_values[self.start_states])
             self.add_stat("Upper Mean Start Value", start_value)
-            mean_value = np.mean(values)
+            mean_value = np.mean(upper_values)
             self.add_stat("Upper Mean Value", mean_value)
-            min_value = np.min(values)
+            min_value = np.min(upper_values)
             self.add_stat("Upper Min Value", min_value)
-            max_value = np.max(values)
+            max_value = np.max(upper_values)
             self.add_stat("Upper Max Value", max_value)
+            if len(self.stats['Upper Mean Start Value']) > 1:
+                change = start_value - self.stats['Upper Mean Start Value'][-2]
+                print(f'Change in Upper Mean Start Value: {change:.2f}')
 
     def train_bc(self, dir_name=None, intermediate=False):
         print("cloning a policy")
@@ -684,6 +720,7 @@ class BATSTrainer:
         all_stitches = []
         for i, process in enumerate(processes):
             process.wait()
+        for i in range(len(processes)):
             output_file = output_path / f"{i}.pkl"
             with output_file.open('rb') as f:
                 stitches, advantages = pickle.load(f)

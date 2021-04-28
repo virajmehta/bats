@@ -30,7 +30,7 @@ HALFCHEETAH_CONFIGS['halfcheetah-random']['env_name'] = 'halfcheetah-random-v2'
 HALFCHEETAH_CONFIGS['halfcheetah-mixed'] = deepcopy(base_config)
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['env_name'] =\
     'halfcheetah-medium-replay-v2'
-HALFCHEETAH_CONFIGS['halfcheetah-mixed']['load_model'] = Path("/zfsauton/project/public/ichar/models/bisimulation/halfcheetah")  # NOQA
+HALFCHEETAH_CONFIGS['halfcheetah-mixed']['load_bisim_model'] = Path("/zfsauton/project/public/ichar/models/bisimulation/halfcheetah")  # NOQA
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['use_bisimulation'] = True
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['penalize_stitches'] = True
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['num_stitching_iterations'] = 10
