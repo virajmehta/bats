@@ -38,5 +38,8 @@ for k, v in MAZE_CONFIGS.items():
     config['epsilon_planning'] = 1.5
     config['load_model'] = ('/zfsauton/project/public/ichar/'
                             'd4rl_models/mazes/%s' % task_type)
+    config['verbose'] = True
+    config['k_neighbors'] = 25
+    config['max_stitch_length'] = 5
     to_add[k + '-tune'] = config
 MAZE_CONFIGS.update(to_add)
