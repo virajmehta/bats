@@ -89,7 +89,6 @@ class BATSTrainer:
         self.bolt_gather_params['val_start_prop'] =\
             kwargs.get('val_start_prop', 0.05)
         self.bc_every_iter = kwargs['bc_every_iter']
-        # self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256, 256')
 
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
@@ -129,6 +128,10 @@ class BATSTrainer:
         self.G.ep.upper_reward = self.G.new_edge_property("float")
         # whether an edge is real or imagined
         self.G.ep.imagined = self.G.new_edge_property('bool')
+        # The model errors for stitching if this is a stitched edge.
+        self.G.ep.model_errors = self.G.new_edge_property('vector<float>')
+        # Iteration that the model was stitched at.
+        self.G.ep.stitch_itr = self.G.new_edge_property('int')
 
         self.action_props = ungroup_vector_property(self.G.ep.action, range(self.action_dim))
         self.state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
@@ -144,6 +147,7 @@ class BATSTrainer:
         self.stitches_tried = set()
         self.edges_added = []
         self.penalty_coefficient = kwargs['penalty_coefficient']
+        self.use_all_planning_itrs = kwargs.get('use_all_planning_itrs', False)
         # this saves an empty file so the child processes can see it
         self.remove_neighbors([])
 
@@ -152,6 +156,11 @@ class BATSTrainer:
 
         # parameters for interleaving
         self.num_stitching_iters = kwargs.get('num_stitching_iters', 50)
+        # Whether to keep making suboptimal stitches after no positive
+        # advantage stitches can be made. This is good for hyper parameter opt.
+        self.continue_after_no_advantage =\
+                kwargs.get('continue_after_no_advantage', False)
+        self.pick_positive_adv = True  # Set to False after no positive adv.
 
         # printing parameters
         self.neighbor_print_period = 1000
@@ -249,10 +258,14 @@ class BATSTrainer:
             # edges_to_add should be an asynchronous result object, we'll run value iteration and
             # all other computations needed to prioritize the next round of stitches while this is running
             if len(stitches_to_try) == 0:
-                break
+                if self.continue_after_no_advantage:
+                    self.pick_positive_adv = False
+                    continue
+                else:
+                    break
             plan_start_time = time.time()
-            processes = self.test_possible_stitches(stitches_to_try)
-            self.block_add_edges(processes)
+            processes = self.test_neighbor_edges(stitches_to_try)
+            self.block_add_edges(processes, i + 1)
             size = self.G.num_vertices()
             self.neighbors.resize((size, size))
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
@@ -406,13 +419,15 @@ class BATSTrainer:
                 args += [self.mean_file, self.std_file]
             if self.use_bisimulation:
                 args.append('-ub')
+            if self.use_all_planning_itrs:
+                args.append('-uapi')
             if self.verbose and i == 0:
                 print(' '.join(args))
             process = Popen(args)
             processes.append(process)
         return processes
 
-    def block_add_edges(self, processes):
+    def block_add_edges(self, processes, iteration):
         edges_added = 0
         output_path = self.output_dir / 'output'
         for i, process in enumerate(processes):
@@ -422,7 +437,7 @@ class BATSTrainer:
                 edges_to_add = pickle.load(f)
             if len(edges_to_add) == 0:
                 continue
-            edges_added += self.add_edges(edges_to_add)
+            edges_added += self.add_edges(edges_to_add, iteration)
         print(f"adding {edges_added} edges")
         self.add_stat('edges_added', edges_added)
 
@@ -455,9 +470,9 @@ class BATSTrainer:
             return None, None
         return model_obs.mean(axis=1)[0, ...], model_rewards.mean(axis=1)[0, ...]
 
-    def add_edges(self, edges_to_add):
+    def add_edges(self, edges_to_add, iteration):
         added = 0
-        for start, end, actions, distance, rewards, obs_history in edges_to_add:
+        for start, end, actions, distance, rewards, obs_history, model_errs in edges_to_add:
             start_obs = self.G.vp.obs[start]
             middle_obs, dynamics_rewards = self.get_middle_obs(start_obs, actions)
             if middle_obs is None:
@@ -484,6 +499,9 @@ class BATSTrainer:
                 self.G.ep.action[e] = action
                 self.G.ep.imagined[e] = True
                 reward = rewards[i]
+                self.G.ep.model_errors[e] = model_errs
+                self.G.ep.stitch_itr[e] = iteration
+                self.G.ep.stitch_length[e] = actions.shape[0]
                 if self.penalize_stitches:
                     if i + 1 != len(actions):
                         self.G.ep.reward[e] = reward
@@ -521,6 +539,9 @@ class BATSTrainer:
             self.G.ep.upper_reward[e] = reward
             self.G.ep.imagined[e] = False
             self.G.vp.terminal[v_to] = terminal
+            # This is hardcoded to assume there are 5 models.
+            self.G.ep.model_errors[e] = [0 for _ in range(5)]
+            self.G.ep.stitch_itr[e] = 0
         start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
         self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 
@@ -689,6 +710,8 @@ class BATSTrainer:
                     ]
             if self.use_bisimulation:
                 args.append('-ub')
+            if not self.pick_positive_adv:
+                args.append('-ppa')
             if self.verbose and i == 0:
                 print(' '.join(args))
             process = Popen(args)

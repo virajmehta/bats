@@ -190,6 +190,38 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     return data, val_data, stats
 
 
+def make_graph_consistent(
+    graph,
+    planning_quantile,
+    epsilon_planning,
+    silent=False,
+):
+    """Go through the graph and remove any edges that are not consistent with
+    the given hyperparameters.
+    """
+    stats = OrderedDict(EdgesRemoved=0, EdgesKept=0)
+    # Loop through all of the edges in the graph.
+    if not silent:
+        pbar = tqdm(total=graph.num_edges())
+    for inv, outv, eidx, im in graph.get_edges([graph.edge_index,
+                                                graph.ep.imagined]):
+        if not im:
+            stats['EdgesKept'] += 1
+        else:
+            errs = graph.ep.model_errors[eidx]
+            if np.quantile(errs, planning_quantile) < epsilon_planning:
+                stats['EdgesKept'] += 1
+            else:
+                stats['EdgesRemoved'] += 1
+                graph.remove_edge(eidx)
+        if not silent:
+            pbar.update(1)
+            pbar.set_postfix(stats)
+    if not silent:
+        pbar.close()
+    return stats
+
+
 def get_best_policy_returns(
         graph,
         starts=None,

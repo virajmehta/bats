@@ -22,7 +22,10 @@ def parse_arguments():
     parser.add_argument('max_stitches', type=int)
     parser.add_argument('max_stitch_length', type=int)
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
+    parser.add_argument('-ppa', '--pick_positive_advantage',
+                        action='store_true')
     return parser.parse_args()
+
 
 def sample_truncated_geometric(p, max_idx):
     val = np.inf
@@ -31,7 +34,7 @@ def sample_truncated_geometric(p, max_idx):
     return val
 
 
-def clip_possible_stitches(max_node_stitches, *args):
+def clip_possible_stitches(max_node_stitches, *args, **kwargs):
     possible_stitches, advantages = get_neighbor_stitches(*args)
     stitch_array = np.array([[s[0], s[1]] for s in possible_stitches])
     indices = np.unique(stitch_array, return_index=True, axis=0)[1]
@@ -61,7 +64,9 @@ def get_future_stitches(G,
                         currv,
                         Q,
                         max_stitches,
-                        depth_remaining):
+                        depth_remaining,
+                        pick_positive_adv=True,
+):
     if depth_remaining == 0 or max_stitches <= 0:
         return [], np.array([])
     possible_stitches = []
@@ -70,6 +75,9 @@ def get_future_stitches(G,
     neighbors = G.get_out_neighbors(currv, vprops=[*state_props, G.vp.value])
     # gives a numpy array num_neighbors * (3 + action_dim)
     edges = G.get_out_edges(currv, eprops=[*action_props, G.ep.reward])
+    # Compute all advantages ahead of time and prioritize search by adding
+    # them to list by advantage. Only matters if max_stitches is restrictive
+    all_advantages = []
     for neigh, edge in zip(neighbors, edges):
         nidx = int(neigh[0])
         n_obs = neigh[1:-1]
@@ -79,8 +87,15 @@ def get_future_stitches(G,
         nv = neigh[-1]
         updated_Q = (Q - reward) / gamma
         advantage = nv - updated_Q
+        all_advantages.append(advantage)
+    ranking = np.argsort(all_advantages)[::-1]
+    all_advantages = np.array(all_advantages)[ranking]
+    neighbors = neighbors[ranking]
+    edges = edges[ranking]
+    for neigh, edge, advantage in zip(neighbors, edges, all_advantages):
         # how to calculate advantage / propagate rewards?
-        if advantage > 0 and (startv, nidx) not in stitches_tried and G.vp.real_node[startv] and G.vp.real_node[nidx]:
+        adv_crit_met = advantage > 0 or not pick_positive_adv
+        if adv_crit_met and (startv, nidx) not in stitches_tried and G.vp.real_node[startv] and G.vp.real_node[nidx]:
             possible_stitches += [(startv, nidx, start_obs, n_obs, actions)]
             advantages.append(advantage)
             max_stitches -= 1
@@ -96,8 +111,8 @@ def get_future_stitches(G,
                                      nidx,
                                      updated_Q,
                                      max_stitches,
-                                     depth_remaining - 1)
-
+                                     depth_remaining - 1,
+                                     pick_positive_adv=pick_positive_adv)
         possible_stitches += output[0]
         advantages += list(output[1])
         max_stitches -= output[1].shape[0]
@@ -118,7 +133,8 @@ def get_neighbor_stitches(G,
                           currv,
                           Q,
                           max_stitches,
-                          depth_remaining):
+                          depth_remaining,
+                          pick_positive_adv=True):
     if depth_remaining == 0 or max_stitches <= 0:
         return [], np.array([])
     possible_stitches = []
@@ -141,7 +157,8 @@ def get_neighbor_stitches(G,
                                      neighbor,
                                      Q,
                                      max_stitches,
-                                     depth_remaining)
+                                     depth_remaining,
+                                     pick_positive_adv=pick_positive_adv)
         possible_stitches += output[0]
         advantages += list(output[1])
         max_stitches -= len(output[1])
@@ -165,7 +182,8 @@ def get_neighbor_stitches(G,
             value = G.vp.value[cn]
             cnobs = G.get_vertices(vprops=state_props)[cn, 1:]
             advantage = value - updated_Q
-            if advantage > 0 and (startv, cn) not in stitches_tried and G.vp.real_node[startv] and G.vp.real_node[cn]:
+            adv_crit_met = advantage > 0 or not pick_positive_adv
+            if adv_crit_met and (startv, cn) not in stitches_tried and G.vp.real_node[startv] and G.vp.real_node[cn]:
                 possible_stitches += [(startv, cn, start_obs, cnobs, actions)]
                 advantages += [advantage]
         output = get_neighbor_stitches(G,
@@ -180,7 +198,8 @@ def get_neighbor_stitches(G,
                                        currv,
                                        updated_Q,
                                        max_stitches,
-                                       depth_remaining - 1)
+                                       depth_remaining - 1,
+                                       pick_positive_adv=pick_positive_adv)
         max_stitches -= len(output[1])
         if max_stitches <= 0:
             return possible_stitches, np.array(advantages) * gamma
@@ -231,22 +250,23 @@ def main(args):
             curr_obs = G.get_vertices(vprops=state_props)[currv, 1:]
             currv_obs_Q.append((currv, curr_obs, Q))
             if np.random.random() > args.gamma:
-                new_stitches, new_advantages = clip_possible_stitches(args.max_stitches,
-                                                                      G,
-                                                                      args.gamma,
-                                                                      neighbors,
-                                                                      stitches_tried,
-                                                                      state_props,
-                                                                      action_props,
-                                                                      [],
-                                                                      int(currv),
-                                                                      curr_obs,
-                                                                      int(currv),
-                                                                      Q,
-                                                                      args.rollout_chunk_size -
-                                                                      total_stitches,
-                                                                      args.max_stitch_length)
-
+                new_stitches, new_advantages = clip_possible_stitches(
+                        args.max_stitches,
+                        G,
+                        args.gamma,
+                        neighbors,
+                        stitches_tried,
+                        state_props,
+                        action_props,
+                        [],
+                        int(currv),
+                        curr_obs,
+                        int(currv),
+                        Q,
+                        args.rollout_chunk_size -
+                        total_stitches,
+                        args.max_stitch_length,
+                        pick_positive_adv=args.pick_positive_adv)
                 stitches += new_stitches
                 advantages += list(new_advantages)
                 total_stitches += len(new_advantages)
@@ -260,22 +280,23 @@ def main(args):
             # need to sample and add stitches
             idx = sample_truncated_geometric(1 - args.gamma, len(currv_obs_Q)) - 1
             currv, curr_obs, Q = currv_obs_Q[idx]
-            new_stitches, new_advantages = clip_possible_stitches(args.max_stitches,
-                                                                  G,
-                                                                  args.gamma,
-                                                                  neighbors,
-                                                                  stitches_tried,
-                                                                  state_props,
-                                                                  action_props,
-                                                                  [],
-                                                                  int(currv),
-                                                                  curr_obs,
-                                                                  int(currv),
-                                                                  Q,
-                                                                  args.rollout_chunk_size -
-                                                                  total_stitches,
-                                                                  args.max_stitch_length)
-
+            new_stitches, new_advantages = clip_possible_stitches(
+                    args.max_stitches,
+                    G,
+                    args.gamma,
+                    neighbors,
+                    stitches_tried,
+                    state_props,
+                    action_props,
+                    [],
+                    int(currv),
+                    curr_obs,
+                    int(currv),
+                    Q,
+                    args.rollout_chunk_size -
+                    total_stitches,
+                    args.max_stitch_length,
+                    pick_positive_adv=args.pick_positive_adv)
             stitches += new_stitches
             advantages += list(new_advantages)
             total_stitches += len(new_advantages)
