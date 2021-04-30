@@ -22,7 +22,7 @@ def parse_arguments():
     parser.add_argument('max_stitches', type=int)
     parser.add_argument('max_stitch_length', type=int)
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
-    parser.add_argument('-ppa', '--pick_positive_advantage',
+    parser.add_argument('-ppa', '--pick_positive_adv',
                         action='store_true')
     return parser.parse_args()
 
