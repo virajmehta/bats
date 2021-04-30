@@ -605,7 +605,7 @@ class BATSTrainer:
                     # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
             old_values = self.G.vp.value.get_array()
-            lower_bellman_error = bellman_error = np.max(np.square(values - old_values))
+            lower_bellman_error = bellman_error = np.max(np.abs(values - old_values))
             if self.penalize_stitches:
                 upper_target_val = diags(
                         (self.gamma * self.G.vp.upper_value.get_array()
@@ -617,7 +617,7 @@ class BATSTrainer:
                 upper_values = np.asarray(
                         upper_qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
                 old_upper_values = self.G.vp.upper_value.get_array()
-                upper_bellman_error = np.max(np.square(upper_values - old_upper_values))
+                upper_bellman_error = np.max(np.abs(upper_values - old_upper_values))
                 pbar.set_description(f"{lower_bellman_error=:.3f}, {upper_bellman_error=:.3f}")
                 bellman_error = max(bellman_error, upper_bellman_error)
                 upper_values[is_dead_end] = 0
