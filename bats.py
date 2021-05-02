@@ -73,12 +73,12 @@ class BATSTrainer:
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
         self.bc_params['batch_updates_per_epoch'] =\
-            kwargs.get('batch_updates_per_epoch', 50)
+            kwargs.get('batch_updates_per_epoch', None)
         self.bc_params['add_entropy_bonus'] =\
             kwargs.get('add_entropy_bonus', True)
         self.intermediate_bc_params = deepcopy(self.bc_params)
         self.intermediate_bc_params['epochs'] = 30
-        self.temperature = kwargs.get('temperature', 0.25)
+        self.temperature = kwargs.get('temperature', 0.0)
         self.bolt_gather_params = {}
         self.bolt_gather_params['top_percent_starts'] =\
             kwargs.get('top_percent_starts', 0.8)
@@ -417,7 +417,7 @@ class BATSTrainer:
                     str(self.max_stitch_length),
                     str(self.env_name)]
             if self.std_file:
-                args += [self.mean_file, self.std_file]
+                args += [str(self.mean_file), str(self.std_file)]
             if self.use_bisimulation:
                 args.append('-ub')
             if self.use_all_planning_itrs:
