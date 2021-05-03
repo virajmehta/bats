@@ -5,7 +5,8 @@ from collections import OrderedDict
 from copy import deepcopy
 
 base_config = OrderedDict(
-    epsilon_planning=0.1,
+    planning_quantile=0.8,
+    epsilon_planning=0.425,
     epsilon_neighbors=0.225,
     num_cpus=60,
     stitching_chunk_size=50000,
@@ -19,6 +20,9 @@ MAZE_CONFIGS['maze-umaze']['env_name'] = 'maze2d-umaze-v1'
 
 MAZE_CONFIGS['maze-medium'] = deepcopy(base_config)
 MAZE_CONFIGS['maze-medium']['env_name'] = 'maze2d-medium-v1'
+MAZE_CONFIGS['maze-medium']['num_stitching_iters'] = 10
+MAZE_CONFIGS['maze-medium']['load_model'] =\
+        '/zfsauton/project/public/ichar/d4rl_models/mazes/mediummaze'
 
 MAZE_CONFIGS['maze-large'] = deepcopy(base_config)
 MAZE_CONFIGS['maze-large']['env_name'] = 'maze2d-large-v1'
