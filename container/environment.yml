@@ -11,3 +11,6 @@ dependencies:
     - tqdm
     - patchelf
     - osmesa
+    - pip
+    - pip:
+        - gym
