@@ -22,11 +22,11 @@ from util import get_starts_from_graph
 def run(args):
     # Learn an advantage weighting function.
     env = gym.make(args.env)
-    graph = load_graph(os.path.join(args.graph_dir, 'vi.gt'))
+    graph = load_graph(os.path.join(args.graph_dir, args.graph_name))
     if args.n_collects is None:
         args.n_collects = graph.num_vertices()
     if 'maze' in args.env:
-        starts = get_starts_from_graph(graph, env)
+        starts = get_starts_from_graph(graph, env, args.env)
     else:
         starts = None
     data, val_data, _ = make_boltzmann_policy_dataset(
@@ -67,8 +67,8 @@ def parse_args():
     parser.add_argument('--env')
     parser.add_argument('--graph_dir')
     parser.add_argument('--save_dir')
-    parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--batch_updates_per_epoch', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=25)
+    parser.add_argument('--batch_updates_per_epoch', type=int, default=None)
     parser.add_argument('--od_wait', type=int, default=10)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
@@ -85,6 +85,7 @@ def parse_args():
     parser.add_argument('--add_entropy_bonus', action='store_true')
     parser.add_argument('--target_entropy', type=float, default=None)
     parser.add_argument('--cuda_device', type=str, default='')
+    parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
