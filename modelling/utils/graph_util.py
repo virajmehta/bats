@@ -148,7 +148,11 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                     if include_reward_next_obs:
                         data['next_observations'].append(np.array(graph.vp.obs[nxtv]))
                         data['rewards'].append(graph.ep.reward[edge])
-
+                        data['infos'].append(dict(
+                            stitch_itr = graph.ep.stitch_itr[edge],
+                            upper_reward = graph.ep.upper_reward[edge],
+                            t = t,
+                        ))
                 edge_set.add((currv, nxtv))
             done = graph.vp.terminal[nxtv]
             ret += graph.ep.reward[edge]
@@ -183,10 +187,14 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         UpperReturnsStd=np.std(upper_returns),
         UniqueEdges=len(edge_set),
     )
-    data = {k: np.vstack(v) for k, v in data.items()}
     for k, v in data.items():
-        if len(v.shape) == 1:
-            data[k] = v.reshape(-1, 1)
+        if k == 'infos':
+            continue
+        else:
+            v = np.vstack(v)
+            if len(v.shape) == 1:
+                v = v.reshape(-1, 1)
+            data[k] = v
     return data, val_data, stats
 
 
@@ -194,6 +202,7 @@ def make_graph_consistent(
     graph,
     planning_quantile,
     epsilon_planning,
+    stitch_itr=None,
     silent=False,
 ):
     """Go through the graph and remove any edges that are not consistent with
@@ -203,23 +212,26 @@ def make_graph_consistent(
     # Loop through all of the edges in the graph.
     if not silent:
         pbar = tqdm(total=graph.num_edges())
-    for inv, outv, eidx, im in graph.get_edges([graph.edge_index,
-                                                graph.ep.imagined]):
-        if not im:
-            stats['EdgesKept'] += 1
-        else:
-            errs = graph.ep.model_errors[eidx]
-            if np.quantile(errs, planning_quantile) < epsilon_planning:
+    for inv, outv, im in graph.get_edges([graph.ep.imagined]):
+        if im:
+            edge = graph.edge(inv, outv)
+            errs = graph.ep.model_errors[edge]
+            should_remove =\
+                    np.quantile(errs, planning_quantile) > epsilon_planning
+            if stitch_itr is not None:
+                should_remove = (should_remove
+                        or graph.ep.stitch_itr[edge] <= stitch_itr)
+            if should_remove:
                 stats['EdgesKept'] += 1
             else:
                 stats['EdgesRemoved'] += 1
-                graph.remove_edge(eidx)
+                graph.remove_edge(graph.edge(inv, outv))
         if not silent:
             pbar.update(1)
             pbar.set_postfix(stats)
     if not silent:
         pbar.close()
-    return stats
+    return graph, stats
 
 
 def get_best_policy_returns(
