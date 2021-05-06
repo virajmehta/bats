@@ -8,7 +8,7 @@ base_config = OrderedDict(
     epsilon_planning=0.1,
     epsilon_neighbors=0.225,
     num_cpus=60,
-    stitching_chunk_size=50000,
+    stitching_chunk_size=20000,
 )
 
 # For any additional configurations, add them here.
