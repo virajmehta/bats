@@ -22,7 +22,7 @@ from util import get_starts_from_graph
 def run(args):
     # Learn an advantage weighting function.
     env = gym.make(args.env)
-    graph = load_graph(os.path.join(args.graph_dir, 'vi.gt'))
+    graph = load_graph(os.path.join(args.graph_dir, args.graph_name))
     if args.n_collects is None:
         args.n_collects = graph.num_vertices()
     if 'maze' in args.env:
@@ -42,6 +42,7 @@ def run(args):
             starts=starts,
             threshold_start_val=args.value_threshold,
             top_percent_starts=args.top_percent_starts,
+            return_threshold=args.return_threshold,
     )
     # Run AWR with the pre-trained qnets.
     behavior_clone(
@@ -80,10 +81,12 @@ def parse_args():
     parser.add_argument('--unique_edges', action='store_true')
     parser.add_argument('--value_threshold', type=float)
     parser.add_argument('--top_percent_starts', type=float)
+    parser.add_argument('--return_threshold', type=float)
     parser.add_argument('--use_any_start', action='store_true')
     parser.add_argument('--num_eval_eps', type=int, default=10)
     parser.add_argument('--add_entropy_bonus', action='store_true')
     parser.add_argument('--target_entropy', type=float, default=None)
+    parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()

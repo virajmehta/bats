@@ -50,6 +50,7 @@ for k, v in HALFCHEETAH_CONFIGS.items():
     config['num_stitching_iters'] = 25
     # For mixed dataset edge distance = 4.48265 +- 1.07
     # config['epsilon_neighbors'] = 1.3
+    config['bc_every_iter'] = False
     config['planning_quantile'] = 0.4
     config['epsilon_planning'] = 10
     config['load_model'] = ('/zfsauton/project/public/ichar/'

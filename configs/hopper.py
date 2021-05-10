@@ -43,7 +43,7 @@ for k, v in HOPPER_CONFIGS.items():
     # For mixed dataset edge distance = 0.726 +- 0.632
     # config['epsilon_neighbors'] = 0.3
     config['planning_quantile'] = 0.4
-    config['epsilon_planning'] = 10
+    config['epsilon_planning'] = 5
     config['load_model'] = ('/zfsauton/project/public/ichar/'
                             'd4rl_models/hopper/hp_%s' % task_type)
     config['verbose'] = True
