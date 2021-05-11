@@ -1,4 +1,5 @@
 import argparse
+import graph_tool
 import torch
 import pickle
 import numpy as np
@@ -97,6 +98,8 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
             p = 1 if bisim_model else 2
             model_obs, model_actions, model_rewards, model_terminals = model.model_unroll(start_states, samples)
             good_indices = np.nonzero(~model_terminals.any(axis=1))
+            if len(good_indices) == 0:
+                return None
             model_obs = model_obs[good_indices[0], ...]
             model_rewards = model_rewards[good_indices[0], ...]
             samples = samples[good_indices[0], ...]
@@ -107,7 +110,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
             if std is not None:
                 displacements /= std
             distances = np.linalg.norm(displacements, axis=-1, ord=p)
-            quantiles = np.quantile(distances, quantile, axis=0)
+            quantiles = np.quantile(distances, quantile, axis=1)
             min_qidx = quantiles.argmin()
             min_quantile = quantiles[min_qidx]
             if min_quantile < threshold:
@@ -118,7 +121,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
                     obs_history = model_obs[min_index, :, 1:-1, :].mean(axis=0)
                     rewards = np.quantile(model_rewards[min_index, ...], 0.3, axis=0)
                     actions = samples[min_index, ...]
-                    model_errs = distances[:, min_qidx]
+                    model_errs = distances[min_qidx, :]
                     best_found = (start_idx, end_idx, actions,
                             min_quantile, rewards, obs_history, model_errs)
                 if not use_all_iterations:
