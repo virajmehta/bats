@@ -65,12 +65,12 @@ class BATSTrainer:
         self.policy = None
         self.bc_params = {}
         self.bc_params['save_dir'] = str(output_dir)
-        self.bc_params['epochs'] = kwargs.get('bc_epochs', 50)
-        self.bc_params['od_wait'] = kwargs.get('od_wait', 15)
+        self.bc_params['epochs'] = kwargs.get('bc_epochs', 25)
+        self.bc_params['od_wait'] = kwargs.get('od_wait', None)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
         self.bc_params['batch_updates_per_epoch'] =\
-            kwargs.get('batch_updates_per_epoch', 50)
+            kwargs.get('batch_updates_per_epoch', None)
         self.bc_params['add_entropy_bonus'] =\
             kwargs.get('add_entropy_bonus', True)
         self.intermediate_bc_params = deepcopy(self.bc_params)
