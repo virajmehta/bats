@@ -37,9 +37,14 @@ class BATSTrainer:
         self.vi_tolerance = kwargs.get('vi_tolerance')
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
+        if 'full_state' in dataset:
+            self.full_state = dataset['extra_obs']
+        else:
+            self.full_state = None
         self.graph_size = self.unique_obs.shape[0]
         self.dataset_size = self.dataset['observations'].shape[0]
         self.verbose = kwargs['verbose']
+        self.cb_plan = kwargs.get('cb_plan', False)
 
         # set up the parameters for the dynamics model training
         self.bisim_model = None
@@ -113,6 +118,9 @@ class BATSTrainer:
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
         self.G.vp.obs = self.G.new_vertex_property('vector<float>')
         self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
+        if self.full_state is not None:
+            self.G.vp.full_state = self.G.new_vertex_property('vector<float>')
+            self.G.vp.full_state.set_2d_array(self.full_state.copy().T)
         self.G.vp.start_node = self.G.new_vertex_property('bool')
         self.G.vp.real_node = self.G.new_vertex_property('bool')
         self.G.vp.real_node.get_array()[:] = True
@@ -400,13 +408,26 @@ class BATSTrainer:
         processes = []
         for i in range(self.plan_cpus):
             cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize]
+            # If there is a true underlying state load that into cpu chunk
+            # instead.
+            if 'full_state' in self.G.vp:
+                new_chunk = []
+                for cc in cpu_chunk:
+                    new_chunk.append((
+                        cc[0],
+                        cc[1],
+                        self.G.vp.full_state[cc[0]],
+                        cc[3]
+                        cc[-1],
+                    ))
+                cpu_chunk = new_chunk
             fn = input_path / f"{i}.pkl"
             with fn.open('wb') as f:
                 pickle.dump(cpu_chunk, f)
             output_file = output_path / f"{i}.pkl"
             model_path = str(self.bisim_model_path) if self.use_bisimulation else str(self.dynamics_ensemble_path)
             args = ['python',
-                    'plan.py',
+                    'cb_plan.py' if self.cb_plan else 'plan.py',
                     str(fn),
                     str(output_file),
                     model_path,
@@ -544,7 +565,11 @@ class BATSTrainer:
             # This is hardcoded to assume there are 5 models.
             self.G.ep.model_errors[e] = [0 for _ in range(5)]
             self.G.ep.stitch_itr[e] = 0
-        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
+        if 'starts' in self.dataset:
+            start_nodes_dense = dataset['starts'].flatten()
+        else:
+            start_nodes_dense = get_starts_from_graph(
+                    self.G, self.env, self.env_name)
         self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 
     def find_nearest_neighbors(self):
@@ -747,7 +772,7 @@ class BATSTrainer:
         self.remove_neighbors(stitch_array)
         self.add_stat('Rollout Stitches', len(advantages))
         print(f'Choosing {len(indices)} edges from Boltzmann rollouts')
-        return stitches
+        return stitches, indicues
 
     def remove_neighbors(self, stitches_to_try):
         for stitch in stitches_to_try:
