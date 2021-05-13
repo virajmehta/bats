@@ -51,6 +51,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   starts=None,
                                   threshold_start_val=None,
                                   top_percent_starts=None,
+                                  return_threshold=None,
                                   silent=False):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
     Args:
@@ -70,6 +71,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             property "start".
         threshold_start_val: Value to threshold start states to pick.
         top_percent_starts: Percent of start states to take.
+        return_threshold: The threshold on return values to place on starts.
         silent: Whether to be silent.
     """
     data = defaultdict(list)
@@ -86,6 +88,10 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     if threshold_start_val is not None:
         starts = get_value_thresholded_starts(graph, threshold_start_val,
                                               starts=starts)
+    if return_threshold is not None:
+        starts = get_return_thresholded_starts(graph, return_threshold,
+                                               horizon=max_ep_len,
+                                               starts=starts)
     # Get separate into train and validation set starts.
     np.random.shuffle(starts)
     if len(starts) > 1 and val_start_prop > 0 and n_val_collects > 0:
@@ -315,3 +321,20 @@ def get_top_performing_starts(
     srtidxs = np.argsort(values)
     acceptable = srtidxs[-int(len(srtidxs) * top_percent):]
     return starts[acceptable]
+
+def get_return_thresholded_starts(
+    graph,
+    threshold,
+    horizon,
+    starts=None,
+):
+    if starts is None:
+        starts = np.argwhere(graph.get_vertices(
+            vprops=[graph.vp.start_node])[:, 1]).flatten()
+    best_pol = get_best_policy_returns(graph, starts, horizon=horizon)
+    returns = np.array([bp[0] for bp in best_pol])
+    valididxs = np.argwhere(returns >= threshold)
+    if len(valididxs) == 0:
+        print('No starts meet threshold requirement! Returning all starts!')
+        return starts
+    return starts[valididxs]
