@@ -30,6 +30,7 @@ def torch_to(torch_obj: Any) -> Any:
     """Put the torch object onto a device."""
     return torch_obj.float().to(torch_device)
 
+
 def torchify_to(obj: Any) -> torch.Tensor:
     if type(obj) is not torch.Tensor:
         obj = torch.Tensor(obj)
@@ -79,7 +80,6 @@ def unroll(env, policy, max_ep_len=float('inf'), replay_buffer=None):
     return ret
 
 
-
 def swish(x):
     return x * torch.sigmoid(x)
 
@@ -116,10 +116,12 @@ class ModelUnroller(object):
         self.is_bisim = not isinstance(model, list)
         if self.is_bisim:
             self.terminal_function = no_terminal
+            self.n_ensemble = model.num_dyn_nets
         else:
             self.terminal_function = get_terminal_function(env_name)
+            self.n_ensemble = len(model)
         self.model = model
-        self.mean_trainsitions = mean_transitions
+        self.mean_transitions = mean_transitions
 
     def model_unroll(self, start_states, actions):
         """Unroll for multiple trajectories at once.
@@ -129,23 +131,34 @@ class ModelUnroller(object):
             actions: The actions as (num_starts, horizon, action_dim)
         """
         horizon = actions.shape[1]
-        obs = np.zeros((start_states.shape[0], horizon + 1,
+        act_dim = actions.shape[-1]
+        obs_dim = start_states.shape[-1]
+
+        obs = np.zeros((start_states.shape[0], self.n_ensemble, horizon + 1,
                         start_states.shape[1]))
-        obs[:, 0] = start_states
-        rewards = np.zeros((start_states.shape[0], horizon))
-        terminals = np.full((start_states.shape[0], horizon), True)
-        is_running = np.full(start_states.shape[0], True)
+        obs[:, :, 0, :] = torch.unsqueeze(start_states, 1).repeat(1, self.n_ensemble, 1)
+        rewards = np.zeros((start_states.shape[0], self.n_ensemble, horizon))
+        terminals = np.full((start_states.shape[0], self.n_ensemble, horizon), True)
+        is_running = np.full((start_states.shape[0], self.n_ensemble), True)
         for hidx in range(horizon):
-            acts = actions[:, hidx]
+            acts = torch.unsqueeze(actions[:, hidx], 1).repeat(1, self.n_ensemble, 1)
+            flat_acts = acts.reshape(-1, act_dim)
+            flat_obs = obs[:, :, hidx, :].reshape(-1, obs_dim)
             # Roll all states forward.
-            nxt_info = self.get_next_transition(obs[:, hidx], acts)
-            obs[:, hidx+1] = obs[:, hidx] + nxt_info['deltas']
-            rewards[:, hidx] = nxt_info['rewards']
-            terminals[:, hidx] = self.terminal_function(obs[:, hidx+1])
-            is_running = np.logical_and(is_running, ~terminals[:, hidx])
+            nxt_info = self.get_next_transition(flat_obs, flat_acts)
+            # need to get the model predictions from the same model to the same model
+            deltas = nxt_info['deltas'].reshape(-1, self.n_ensemble, self.n_ensemble, obs_dim)[:,
+                                                    range(self.n_ensemble), range(self.n_ensemble), :]
+            obs[:, :, hidx+1, :] = obs[:, :, hidx, :] + deltas
+            new_rewards = nxt_info['rewards'].T.reshape(-1, self.n_ensemble, self.n_ensemble)[:,
+                                                    range(self.n_ensemble), range(self.n_ensemble)]
+            rewards[..., hidx] = new_rewards
+            terminal_inputs = obs[:, :, hidx + 1, :].reshape(-1, obs_dim)
+            terminals[..., hidx] = self.terminal_function(terminal_inputs).reshape(-1, self.n_ensemble)
+            is_running = np.logical_and(is_running, ~terminals[..., hidx])
             if np.sum(is_running) == 0:
                 break
-        return obs, actions, rewards, np.any(terminals, axis=1)
+        return obs, actions, rewards, np.any(terminals, axis=-1)
 
     def get_next_transition(self, obs, acts):
         net_ins = torch.cat([
@@ -165,20 +178,28 @@ class ModelUnroller(object):
                     means.append(ens_mean.cpu().numpy())
                     stds.append(np.exp(ens_logvar.cpu().numpy() / 2))
             means, stds = np.asarray(means), np.asarray(stds)
+        '''
+        Viraj: I want all the model outputs
         # Randomly select one of the models to get the next obs from.
-        if self.mean_trainsitions:
+        if self.mean_transitions:
             samples = means[0]
         else:
             samples = np.random.normal(means[0], stds[0])
-        rewards, deltas = samples[:, 0], samples[:, 1:]
+        '''
+        if self.mean_transitions:
+            samples = means
+        else:
+            samples = np.random.normal(means, stds)
         # Get penalty term.
+        rewards, deltas = samples[..., 0], samples[..., 1:]
         return {'deltas': deltas, 'rewards': rewards}
+
 
 class Standardizer(nn.Module):
 
     def __init__(
             self,
-            standardizers:Sequence[Tuple[torch.Tensor, torch.Tensor]],
+            standardizers: Sequence[Tuple[torch.Tensor, torch.Tensor]],
     ):
         """Constructor."""
         super(Standardizer, self).__init__()

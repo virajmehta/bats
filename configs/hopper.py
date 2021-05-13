@@ -7,8 +7,9 @@ from copy import deepcopy
 base_config = OrderedDict(
     epsilon_planning=0.07,
     epsilon_neighbors=0.3,
-    num_cpus=84,
+    num_cpus=60,
     stitching_chunk_size=50000,
+    normalize_obs=True,
 )
 
 # For any additional configurations, add them here.
@@ -40,10 +41,13 @@ for k, v in HOPPER_CONFIGS.items():
     config['continue_after_no_advantage'] = True
     config['num_stitching_iters'] = 25
     # For mixed dataset edge distance = 0.726 +- 0.632
-    config['epsilon_neighbors'] = 0.3
+    # config['epsilon_neighbors'] = 0.3
     config['planning_quantile'] = 0.4
-    config['epsilon_planning'] = 10
+    config['epsilon_planning'] = 5
     config['load_model'] = ('/zfsauton/project/public/ichar/'
                             'd4rl_models/hopper/hp_%s' % task_type)
+    config['verbose'] = True
+    config['k_neighbors'] = 25
+    config['max_stitch_length'] = 5
     to_add[k + '-tune'] = config
 HOPPER_CONFIGS.update(to_add)

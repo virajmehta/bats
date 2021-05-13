@@ -42,7 +42,10 @@ def make_output_dir(name, overwrite, args):
 
 
 def get_offline_env(name, dataset_fraction, data_path=None):
-    env = gym.make(name)
+    if name is None:
+        env = None
+    else:
+        env = gym.make(name)
     if data_path is None:
         dataset = d4rl.qlearning_dataset(env)
     else:
