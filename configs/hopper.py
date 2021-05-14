@@ -16,22 +16,22 @@ base_config = OrderedDict(
 HOPPER_CONFIGS = OrderedDict()
 
 HOPPER_CONFIGS['hopper-expert'] = deepcopy(base_config)
-HOPPER_CONFIGS['hopper-expert']['env_name'] = 'hopper-expert-v2'
+HOPPER_CONFIGS['hopper-expert']['env_name'] = 'hopper-expert-v0'
 
 HOPPER_CONFIGS['hopper-medexp'] = deepcopy(base_config)
 HOPPER_CONFIGS['hopper-medexp']['env_name'] =\
-    'hopper-medium-expert-v2'
+    'hopper-medium-expert-v0'
 
 HOPPER_CONFIGS['hopper-random'] = deepcopy(base_config)
-HOPPER_CONFIGS['hopper-random']['env_name'] = 'hopper-random-v2'
+HOPPER_CONFIGS['hopper-random']['env_name'] = 'hopper-random-v0'
 
 HOPPER_CONFIGS['hopper-mixed'] = deepcopy(base_config)
 HOPPER_CONFIGS['hopper-mixed']['env_name'] =\
-    'hopper-medium-replay-v2'
+    'hopper-medium-replay-v0'
 HOPPER_CONFIGS['hopper-mixed']['load_model'] = 'experiments/hopper_medium_replay_bolt'
 
 HOPPER_CONFIGS['hopper-medium'] = deepcopy(base_config)
-HOPPER_CONFIGS['hopper-medium']['env_name'] = 'hopper-medium-v2'
+HOPPER_CONFIGS['hopper-medium']['env_name'] = 'hopper-medium-v0'
 
 to_add = OrderedDict()
 for k, v in HOPPER_CONFIGS.items():
