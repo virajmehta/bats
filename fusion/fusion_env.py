@@ -334,16 +334,17 @@ class SingleActTargetFusionEnv(BaseFusionEnv):
 
     def _get_reward(self):
         """Calculate the current reward for after a step has been made."""
-        beta_loss = np.abs((self.beta_target
-            - self.state_log[self.beta_idx, -1]))
-        exp_term = np.exp(self.rew_coefs[1] * (self.stab_log[-1] - 0.5))
-        dis_loss = self.rew_coefs[0] * (exp_term / (1 + exp_term))
-        rew_info = {
-                'BetaLoss': beta_loss,
-                'TearPenalty': dis_loss,
-                'Tearability': self.stab_log[-1],
-        }
-        return -beta_loss - dis_loss, rew_info
+        return 3 - np.abs(self.state_log[self.beta_idx, -1] - self.beta_target), {}
+        # beta_loss = np.abs((self.beta_target
+        #     - self.state_log[self.beta_idx, -1]))
+        # exp_term = np.exp(self.rew_coefs[1] * (self.stab_log[-1] - 0.5))
+        # dis_loss = self.rew_coefs[0] * (exp_term / (1 + exp_term))
+        # rew_info = {
+        #         'BetaLoss': beta_loss,
+        #         'TearPenalty': dis_loss,
+        #         'Tearability': self.stab_log[-1],
+        # }
+        # return -beta_loss - dis_loss, rew_info
 
 class SISOTargetFusionEnv(BaseFusionEnv):
     def __init__(

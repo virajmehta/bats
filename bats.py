@@ -37,15 +37,13 @@ class BATSTrainer:
         self.vi_tolerance = kwargs.get('vi_tolerance')
         all_obs = np.concatenate((dataset['observations'], dataset['next_observations']))
         self.unique_obs = np.unique(all_obs, axis=0)
-        if 'full_states' in dataset:
-            self.full_states = dataset['full_states']
-        else:
-            self.full_states = None
         self.graph_size = self.unique_obs.shape[0]
         self.dataset_size = self.dataset['observations'].shape[0]
         self.verbose = kwargs['verbose']
         self.cb_plan = kwargs.get('cb_plan', False)
         self.dont_bc = kwargs.get('dont_bc', False)
+        if 'full_states' in dataset:
+            self.full_state_shape = dataset['full_states'].shape[1:]
 
         # set up the parameters for the dynamics model training
         self.bisim_model = None
@@ -119,9 +117,8 @@ class BATSTrainer:
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
         self.G.vp.obs = self.G.new_vertex_property('vector<float>')
         self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
-        if self.full_states is not None:
+        if 'full_states' in self.dataset:
             self.G.vp.full_states = self.G.new_vertex_property('vector<float>')
-            self.G.vp.full_states.set_2d_array(self.full_states.copy().T)
         self.G.vp.start_node = self.G.new_vertex_property('bool')
         self.G.vp.real_node = self.G.new_vertex_property('bool')
         self.G.vp.real_node.get_array()[:] = True
@@ -151,7 +148,7 @@ class BATSTrainer:
         self.epsilon_planning = kwargs['epsilon_planning']
         self.planning_quantile = kwargs.get('planning_quantile', 0.8)
         self.num_cpus = kwargs.get('num_cpus', 1)
-        self.plan_cpus = 2  # self.num_cpus //  10
+        self.plan_cpus = kwargs.get('plan_cpus', 2)
         self.stitching_chunk_size = kwargs['stitching_chunk_size']
         self.rollout_chunk_size = kwargs['stitching_chunk_size']
         self.max_stitches = kwargs['max_stitches']
@@ -419,7 +416,7 @@ class BATSTrainer:
                     new_chunk.append((
                         cc[0],
                         cc[1],
-                        self.G.vp.full_states[cc[0]],
+                        np.array(self.G.vp.full_states[cc[0]]).reshape(self.full_state_shape),
                         cc[3],
                         cc[-1],
                     ))
@@ -557,6 +554,8 @@ class BATSTrainer:
             next_obs = self.dataset['next_observations'][i, :]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
+            self.G.vp.full_states[v_from] = self.dataset['full_states'][i].flatten()
+            self.G.vp.full_states[v_to] = self.dataset['next_full_states'][i].flatten()
             if (self.G.vertex_index[v_from], self.G.vertex_index[v_to]) in self.stitches_tried:  # NOQA
                 continue
             action = self.dataset['actions'][i, :]
