@@ -4,4 +4,4 @@
 #SBATCH -t 24:00:00
 # #SBATCH --EGRESS
 
-singularity exec --nv batcave_latest.sif python run.py %*
+singularity exec --overlay overlay2.img --nv batcave_latest.sif python run.py $@

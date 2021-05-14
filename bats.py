@@ -403,7 +403,7 @@ class BATSTrainer:
                     str(self.max_stitch_length),
                     str(self.env_name)]
             if self.std_file:
-                args += [self.mean_file, self.std_file]
+                args += [str(self.mean_file), str(self.std_file)]
             if self.use_bisimulation:
                 args.append('-ub')
             if self.verbose and i == 0:
