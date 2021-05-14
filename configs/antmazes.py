@@ -5,9 +5,9 @@ from collections import OrderedDict
 from copy import deepcopy
 
 base_config = OrderedDict(
-    epsilon_planning=0.1,
-    epsilon_neighbors=0.225,
-    num_cpus=60,
+    epsilon_planning=10,
+    k_neighbors=25,
+    num_cpus=30,
     stitching_chunk_size=20000,
     bc_epochs=25,
     od_wait=-1,
@@ -18,8 +18,8 @@ base_config = OrderedDict(
 # For any additional configurations, add them here.
 MAZE_CONFIGS = OrderedDict()
 
-MAZE_CONFIGS['maze-umaze'] = deepcopy(base_config)
-MAZE_CONFIGS['maze-umaze']['env_name'] = 'maze2d-umaze-v1'
+MAZE_CONFIGS['antmaze-umaze'] = deepcopy(base_config)
+MAZE_CONFIGS['antmaze-umaze']['env_name'] = 'maze2d-umaze-v1'
 
 MAZE_CONFIGS['maze-medium'] = deepcopy(base_config)
 MAZE_CONFIGS['maze-medium']['env_name'] = 'maze2d-medium-v1'

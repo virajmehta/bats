@@ -1,4 +1,5 @@
 import argparse
+import graph_tool
 import torch
 import pickle
 import numpy as np
@@ -23,6 +24,8 @@ def parse_arguments():
     parser.add_argument('mean_file', nargs='?', default=None)
     parser.add_argument('std_file', nargs='?', default=None)
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
+    parser.add_argument('-uapi', '--use_all_planning_itrs',
+                        action='store_true')
     return parser.parse_args()
 
 
@@ -43,8 +46,9 @@ def make_init_action(actions, horizon):
         return torch.cat((action, padding))
 
 
-def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, max_stitch_length, quantile, mean, std,
-        env_name, device=None, **kwargs):
+def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
+        max_stitch_length, quantile, mean, std, env_name, device=None,
+        use_all_iterations=False, **kwargs):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
     initializes the mean with the init action.
@@ -81,6 +85,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
         mean = init_action
         var = torch.ones_like(mean) * ((action_upper_bound - action_lower_bound) / initial_variance_divisor) ** 2
         # X = stats.truncnorm(-2, 2, loc=np.zeros_like(mean), scale=np.ones_like(var))
+        best_found, best_qscore = None, float('inf')
         for i in range(max_iters):
             # lb_dist, ub_dist = mean - action_lower_bound, action_upper_bound - mean
             # constrained_var = np.minimum(np.minimum(np.square(lb_dist / 2), np.square(ub_dist / 2)), var)
@@ -93,6 +98,8 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
             p = 1 if bisim_model else 2
             model_obs, model_actions, model_rewards, model_terminals = model.model_unroll(start_states, samples)
             good_indices = np.nonzero(~model_terminals.any(axis=1))
+            if len(good_indices) == 0:
+                return None
             model_obs = model_obs[good_indices[0], ...]
             model_rewards = model_rewards[good_indices[0], ...]
             samples = samples[good_indices[0], ...]
@@ -103,17 +110,22 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon, ma
             if std is not None:
                 displacements /= std
             distances = np.linalg.norm(displacements, axis=-1, ord=p)
-            quantiles = np.quantile(distances, quantile, axis=0)
-            min_quantile = quantiles.min()
+            quantiles = np.quantile(distances, quantile, axis=1)
+            min_qidx = quantiles.argmin()
+            min_quantile = quantiles[min_qidx]
             if min_quantile < threshold:
                 threshold = min_quantile
                 # success!
                 min_index = quantiles.argmin()
-                obs_history = model_obs[min_index, :, 1:-1, :].mean(axis=0)
-                rewards = np.quantile(model_rewards[min_index, ...], 0.3, axis=0)
-                actions = samples[min_index, ...]
-                outputs = (start_idx, end_idx, actions, min_quantile, rewards, obs_history)
-                return outputs
+                if min_quantile < best_qscore:
+                    obs_history = model_obs[min_index, :, 1:-1, :].mean(axis=0)
+                    rewards = np.quantile(model_rewards[min_index, ...], 0.3, axis=0)
+                    actions = samples[min_index, ...]
+                    model_errs = distances[min_qidx, :]
+                    best_found = (start_idx, end_idx, actions,
+                            min_quantile, rewards, obs_history, model_errs)
+                if not use_all_iterations:
+                    return best_found
                 # return np.array([row[0], row[1], *samples[min_index, :].tolist(), min_quantile, reward])
             elites = samples[np.argsort(quantiles)[:num_elites], ...]
             new_mean = torch.mean(elites, dim=0)
@@ -144,8 +156,10 @@ def main(args):
     # input_data = torch.Tensor(input_data)
     # input_data = input_data.to(device)
     for row in input_data:
-        data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim, ensemble, bisim_model, args.epsilon,
-                   args.max_stitch_length, args.quantile, mean, std, args.env_name, device=device)
+        data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim,
+                   ensemble, bisim_model, args.epsilon, args.max_stitch_length,
+                   args.quantile, mean, std, args.env_name, device=device,
+                   use_all_planning_itrs=args.use_all_planning_itrs)
         if data is not None:
             outputs.append(data)
     with args.output_file.open('wb') as f:

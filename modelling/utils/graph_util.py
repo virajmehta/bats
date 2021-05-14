@@ -51,6 +51,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   starts=None,
                                   threshold_start_val=None,
                                   top_percent_starts=None,
+                                  return_threshold=None,
                                   silent=False):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
     Args:
@@ -70,6 +71,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             property "start".
         threshold_start_val: Value to threshold start states to pick.
         top_percent_starts: Percent of start states to take.
+        return_threshold: The threshold on return values to place on starts.
         silent: Whether to be silent.
     """
     data = defaultdict(list)
@@ -86,6 +88,10 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     if threshold_start_val is not None:
         starts = get_value_thresholded_starts(graph, threshold_start_val,
                                               starts=starts)
+    if return_threshold is not None:
+        starts = get_return_thresholded_starts(graph, return_threshold,
+                                               horizon=max_ep_len,
+                                               starts=starts)
     # Get separate into train and validation set starts.
     np.random.shuffle(starts)
     if len(starts) > 1 and val_start_prop > 0 and n_val_collects > 0:
@@ -190,6 +196,38 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     return data, val_data, stats
 
 
+def make_graph_consistent(
+    graph,
+    planning_quantile,
+    epsilon_planning,
+    silent=False,
+):
+    """Go through the graph and remove any edges that are not consistent with
+    the given hyperparameters.
+    """
+    stats = OrderedDict(EdgesRemoved=0, EdgesKept=0)
+    # Loop through all of the edges in the graph.
+    if not silent:
+        pbar = tqdm(total=graph.num_edges())
+    for inv, outv, eidx, im in graph.get_edges([graph.edge_index,
+                                                graph.ep.imagined]):
+        if not im:
+            stats['EdgesKept'] += 1
+        else:
+            errs = graph.ep.model_errors[eidx]
+            if np.quantile(errs, planning_quantile) < epsilon_planning:
+                stats['EdgesKept'] += 1
+            else:
+                stats['EdgesRemoved'] += 1
+                graph.remove_edge(eidx)
+        if not silent:
+            pbar.update(1)
+            pbar.set_postfix(stats)
+    if not silent:
+        pbar.close()
+    return stats
+
+
 def get_best_policy_returns(
         graph,
         starts=None,
@@ -283,3 +321,20 @@ def get_top_performing_starts(
     srtidxs = np.argsort(values)
     acceptable = srtidxs[-int(len(srtidxs) * top_percent):]
     return starts[acceptable]
+
+def get_return_thresholded_starts(
+    graph,
+    threshold,
+    horizon,
+    starts=None,
+):
+    if starts is None:
+        starts = np.argwhere(graph.get_vertices(
+            vprops=[graph.vp.start_node])[:, 1]).flatten()
+    best_pol = get_best_policy_returns(graph, starts, horizon=horizon)
+    returns = np.array([bp[0] for bp in best_pol])
+    valididxs = np.argwhere(returns >= threshold)
+    if len(valididxs) == 0:
+        print('No starts meet threshold requirement! Returning all starts!')
+        return starts
+    return starts[valididxs]
