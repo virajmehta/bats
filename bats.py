@@ -457,7 +457,7 @@ class BATSTrainer:
             self.neighbor_obs = np.concatenate((self.neighbor_obs, bisim_obs[None, ...]))
         elif self.normalize_obs:
             norm_obs = (obs - self.mean) / self.std
-            self.neighbor_obs = np.concatenate((self.neighbor_obs, norm_obs[None, ...]))
+            self.neighbor_obs = np.concatenate((self.neighbor_obs, norm_obs))
         else:
             self.neighbor_obs = np.concatenate((self.neighbor_obs, obs[None, ...]))
 
