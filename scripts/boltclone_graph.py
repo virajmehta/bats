@@ -102,7 +102,7 @@ def parse_args():
     parser.add_argument('--save_dir')
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--batch_updates_per_epoch', type=int)
-    parser.add_argument('--od_wait', type=int)
+    parser.add_argument('--od_wait', type=int, default=10)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
     parser.add_argument('--all_starts_once', action='store_true')
@@ -127,6 +127,7 @@ def parse_args():
     parser.add_argument('--stitch_itr', type=int)
     parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--cuda_device', type=str, default='')
+    parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 

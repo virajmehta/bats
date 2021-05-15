@@ -44,7 +44,8 @@ def clip_possible_stitches(max_node_stitches, *args, **kwargs):
         unique_stitches.append(possible_stitches[idx])
     if len(unique_advantages) < max_node_stitches:
         return unique_stitches, unique_advantages
-    indices = np.argpartition(unique_advantages, len(unique_advantages) - max_node_stitches)[-max_node_stitches:]
+    indices = np.argpartition(unique_advantages,
+            len(unique_advantages) - max_node_stitches)[-max_node_stitches:]
     best_stitches = []
     for idx in indices:
         best_stitches.append(unique_stitches[idx])

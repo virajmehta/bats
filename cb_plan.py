@@ -1,12 +1,20 @@
 import argparse
+from collections import deque
+import os
+from pathlib import Path
+
 import graph_tool
-import torch
 import pickle
 import numpy as np
-from pathlib import Path
-from modelling.dynamics_construction import load_ensemble
+from fusion.env_creator import create_single_act_target_env
 from modelling.bisim_construction import load_bisim
-from modelling.utils.torch_utils import set_cuda_device, ModelUnroller
+
+
+MODEL_PARAMS = dict(
+    state_model_dir='/zfsauton/project/public/ysc/trained_models/200_200',
+    disrupt_model_dir='/zfsauton/project/public/ichar/FusionModels/tearing',
+    shot_dir='/zfsauton/project/public/ichar/FusionModels/single_start',
+)
 
 
 def parse_arguments():
@@ -26,28 +34,25 @@ def parse_arguments():
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     parser.add_argument('-uapi', '--use_all_planning_itrs',
                         action='store_true')
+    parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
-
-
-def prepare_model_inputs_torch(obs, actions):
-    return torch.cat([obs, actions], dim=-1)
 
 
 def make_init_action(actions, horizon):
     action_horizon = len(actions)
     action_dim = len(actions[0])
-    action = torch.Tensor(actions)
+    action = np.array(actions)
     if horizon == action_horizon:
         return action
     elif horizon < action_horizon:
         return action[:horizon, ...]
     else:
-        padding = torch.zeros((horizon - action_horizon, action_dim))
-        return torch.cat((action, padding))
+        padding = np.zeros((horizon - action_horizon, action_dim))
+        return np.append(action, padding)
 
 
-def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
-        max_stitch_length, quantile, mean, std, env_name, device=None,
+def CEM(row, obs_dim, action_dim, latent_dim, env, epsilon,
+        max_stitch_length, quantile, mean, std, env_name,
         use_all_iterations=False, **kwargs):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
@@ -67,11 +72,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
     for now we assume that the actions are bounded in [-1, 1]
     '''
     # TODO: figure out what the row is, adjust planning for max_stitches
-    assert (bisim_model is None) != (ensemble is None), "Can't pass both an ensemble and a bisim model"
-    model = ModelUnroller(env_name, bisim_model if ensemble is None else ensemble)
-    start_idx, end_idx, start_state, end_state, actions = row
-    start_state = torch.Tensor(start_state).to(device)
-    end_state = torch.Tensor(end_state).to(device)
+    start_idx, end_idx, start_state, end_obs, actions = row
     action_upper_bound = kwargs.get('action_upper_bound', 1.)
     action_lower_bound = kwargs.get('action_lower_bound', -1.)
     threshold = epsilon
@@ -83,20 +84,33 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
         num_elites = kwargs.get('num_elites', 64)
         alpha = kwargs.get('alpha', 0.25)
         mean = init_action
-        var = torch.ones_like(mean) * ((action_upper_bound - action_lower_bound) / initial_variance_divisor) ** 2
-        # X = stats.truncnorm(-2, 2, loc=np.zeros_like(mean), scale=np.ones_like(var))
+        var = np.ones_like(mean) * ((action_upper_bound - action_lower_bound) / initial_variance_divisor) ** 2
         best_found, best_qscore = None, float('inf')
         for i in range(max_iters):
-            # lb_dist, ub_dist = mean - action_lower_bound, action_upper_bound - mean
-            # constrained_var = np.minimum(np.minimum(np.square(lb_dist / 2), np.square(ub_dist / 2)), var)
-
-            # samples = X.rvs(size=[popsize, action_dim]) * np.sqrt(var) + mean
-            samples = torch.fmod(torch.randn(size=(popsize, horizon, action_dim), device=device),
-                                 2) * torch.sqrt(var) + mean
-            samples = torch.clip(samples, action_lower_bound, action_upper_bound)
-            start_states = start_state.repeat(popsize, 1)
-            p = 1 if bisim_model else 2
-            model_obs, model_actions, model_rewards, model_terminals = model.model_unroll(start_states, samples)
+            samples = np.random.normal(size=(popsize, horizon, action_dim))
+            samples = np.clip(samples * np.sqrt(var) + mean,
+                              action_lower_bound,
+                              action_upper_bound)
+            model_obs, model_rewards, model_terminals =\
+                    [[] for _ in range(3)]
+            for acts in samples:
+                trajobs, trajrews, trajterms = [[] for _ in range(3)]
+                env.reset()
+                env.state_log[:, -start_state.shape[1]:] =\
+                        start_state[:env.num_signals]
+                env.act_log[:, -start_state.shape[1]:] =\
+                        start_state[env.num_signals:]
+                for act in acts:
+                    nxt, rew, done, _ = env.step(act)
+                    trajobs.append(nxt[:len(end_obs)])
+                    trajrews.append(rew)
+                    trajterms.append(done)
+                model_obs.append(np.array(trajobs))
+                model_rewards.append(np.array(trajrews))
+                model_terminals.append(np.array(trajterms))
+            model_obs = np.array(model_obs)
+            model_rewards = np.array(model_rewards)
+            model_terminals = np.array(model_terminals)
             good_indices = np.nonzero(~model_terminals.any(axis=1))
             if len(good_indices) == 0:
                 return None
@@ -106,30 +120,28 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
 
             # this is because the dynamics models are written to predict the reward in the first component of the output
             # and the next state in all the following components
-            displacements = model_obs[:, :, -1, :] - end_state[None, None, :].cpu().numpy()
+            displacements = model_obs[:, -1, :] - end_obs[None, None, :]
             if std is not None:
                 displacements /= std
-            distances = np.linalg.norm(displacements, axis=-1, ord=p)
-            quantiles = np.quantile(distances, quantile, axis=1)
-            min_qidx = quantiles.argmin()
-            min_quantile = quantiles[min_qidx]
-            if min_quantile < threshold:
-                threshold = min_quantile
+            distances = np.linalg.norm(displacements, axis=-1)
+            min_idx = np.argmin(distances[-1])
+            min_dist = distances[-1, min_idx]
+            if min_dist < threshold:
+                threshold = min_dist
                 # success!
-                min_index = quantiles.argmin()
-                if min_quantile < best_qscore:
-                    obs_history = model_obs[min_index, :, 1:-1, :].mean(axis=0)
-                    rewards = np.quantile(model_rewards[min_index, ...], 0.3, axis=0)
-                    actions = samples[min_index, ...]
-                    model_errs = distances[min_qidx, :]
+                if min_dist < best_qscore:
+                    obs_history = model_obs[min_idx, 1:-1, :]
+                    rewards = model_rewards[min_idx, ...]
+                    actions = samples[min_idx, ...]
+                    model_errs = np.array([min_dist])
                     best_found = (start_idx, end_idx, actions,
-                            min_quantile, rewards, obs_history, model_errs)
+                                  min_dist, rewards, obs_history, model_errs)
+                    best_qscore = min_dist
                 if not use_all_iterations:
                     return best_found
-                # return np.array([row[0], row[1], *samples[min_index, :].tolist(), min_quantile, reward])
-            elites = samples[np.argsort(quantiles)[:num_elites], ...]
-            new_mean = torch.mean(elites, dim=0)
-            new_var = torch.var(elites, dim=0)
+            elites = samples[np.argsort(distances[-1])[:num_elites], ...]
+            new_mean = np.mean(elites, axis=0)
+            new_var = np.var(elites, axis=0)
             mean = alpha * mean + (1 - alpha) * new_mean
             var = alpha * var + (1 - alpha) * new_var
     return None
@@ -137,28 +149,26 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
 
 def main(args):
     device_num = ''
-    set_cuda_device(device_num)
-    device = torch.device('cpu' if device_num == '' else 'cuda:' + device_num)
     with args.input_file.open('rb') as f:
         input_data = pickle.load(f)
     mean = np.load(args.mean_file) if args.mean_file else None
     std = np.load(args.std_file) if args.std_file else None
-    if args.use_bisimulation:
-        bisim_model = load_bisim(Path(args.ensemble_path))
-        bisim_model.to(device)
-        ensemble = None
-    else:
-        ensemble = load_ensemble(args.ensemble_path, args.obs_dim, args.action_dim, cuda_device=device_num)
-        bisim_model = None
-        for model in ensemble:
-            model.to(device)
+    env = create_single_act_target_env(
+        horizon=5,
+        init_at_start_only=True,
+        num_cached_starts=False,
+        preloaded_inits=deque([(np.zeros((10, 400)), np.zeros((8, 400)))]),
+        beta_target=2,
+        rew_coefs=(0, 0),
+        standardize_observations=False,
+        **MODEL_PARAMS,
+    )
+    bisim_model = None
     outputs = []
-    # input_data = torch.Tensor(input_data)
-    # input_data = input_data.to(device)
     for row in input_data:
         data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim,
-                   ensemble, bisim_model, args.epsilon, args.max_stitch_length,
-                   args.quantile, mean, std, args.env_name, device=device,
+                   env, args.epsilon, args.max_stitch_length,
+                   args.quantile, mean, std, args.env_name,
                    use_all_planning_itrs=args.use_all_planning_itrs)
         if data is not None:
             outputs.append(data)
@@ -168,4 +178,6 @@ def main(args):
 
 if __name__ == '__main__':
     args = parse_arguments()
+    if args.pudb:
+        import pudb; pudb.set_trace()
     main(args)
