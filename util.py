@@ -18,8 +18,9 @@ def get_output_dir(name):
     return Path(DATA_DIR) / name
 
 
-def make_output_dir(name, overwrite, args):
-    dir_path = get_output_dir(name)
+def make_output_dir(name, overwrite, args, dir_path=None):
+    if dir_path is None:
+        dir_path = get_output_dir(name)
     if dir_path.exists():
         if overwrite:
             rmtree(dir_path)
@@ -31,7 +32,8 @@ def make_output_dir(name, overwrite, args):
     output_path = dir_path / 'output'
     output_path.mkdir()
     args_path = dir_path / 'args.json'
-    args = vars(args)
+    if not isinstance(args, dict):
+        args = vars(args)
     print(args)
     for k, v in args.items():
         if type(v) is PosixPath:
@@ -159,6 +161,16 @@ def s2i(string):
         else:
             return []
     return [int(s) for s in string.split(',')]
+
+
+def s2f(string):
+    """Make a comma separated string of ints into a list of ints."""
+    if ',' not in string:
+        if len(string) > 0:
+            return [float(string)]
+        else:
+            return []
+    return [float(s) for s in string.split(',')]
 
 
 def prepare_model_inputs(obs, actions):

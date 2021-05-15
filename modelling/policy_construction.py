@@ -135,7 +135,7 @@ def behavior_clone(
     val_size=0,
     val_dataset=None, # Dataset w same structure as dataset but for validation.
     batch_size=256,
-    batch_updates_per_epoch=50, # If None then epoch is going through dataset.
+    batch_updates_per_epoch=None, # If None then epoch is going through dataset.
     shuffle_dataset=True,
     learning_rate=1e-3,
     weight_decay=0,
@@ -201,7 +201,7 @@ def behavior_clone(
             num_eval_eps=num_eval_eps,
             train_loops_per_epoch=train_loops_per_epoch,
             validation_tune_metric='MSE',
-            save_best_model=False,
+            save_best_model=True,
     )
     trainer.fit(tr_data, epochs, val_data, od_wait,
                 batch_updates_per_epoch=batch_updates_per_epoch,
