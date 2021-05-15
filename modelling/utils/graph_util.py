@@ -197,14 +197,14 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                         np.array(graph.vp.obs[currv]),
                         np.mean(currfull[:10, -50:], axis=1)
                             - np.mean(currfull[:10, :50], axis=1)
-                    )
+                    ))
                     if include_reward_next_obs:
                         nxtfull = np.array(graph.vp.full_states[nxtv]).reshape(18, 200)
                         toadd['next_observations'].append(np.append(
                             np.array(graph.vp.obs[nxtv]),
                             np.mean(currfull[:10, -50:], axis=1)
                                 - np.mean(currfull[:10, :50], axis=1)
-                        )
+                        ))
                         data['next_observations'].append(np.array(graph.vp.obs[nxtv]))
                 else:
                     toadd['observations'].append(np.array(graph.vp.obs[currv]))

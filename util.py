@@ -210,7 +210,7 @@ def get_starts_from_graph(graph, env, env_name):
                         for st in env.empty_and_goal_locations])
         start_conditions = np.all(np.abs(diffs) < 0.1, axis=-1)
         no_start_rows = np.argwhere(np.sum(start_conditions, axis=1) == 0)
-        loose_conditions = np.all(np.abs(diffs[.., :2]) < 0.1, axis=-1)
+        loose_conditions = np.all(np.abs(diffs[..., :2]) < 0.1, axis=-1)
         start_conditions[no_start_rows] = loose_conditions[no_start_rows]
         is_starts = np.any(start_conditions, 0)
         return np.argwhere(is_starts).flatten()

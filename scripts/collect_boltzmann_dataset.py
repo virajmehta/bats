@@ -51,6 +51,7 @@ def run(args):
             return_threshold=args.return_threshold,
             include_reward_next_obs=True,
             all_starts_once=args.all_starts_once,
+            get_fusion_slope_obs=args.fusion,
     )
     with h5py.File(args.save_path, 'w') as wd:
         for k, v in data.items():
@@ -85,6 +86,7 @@ def parse_args():
     parser.add_argument('--top_percent_starts', type=float)
     parser.add_argument('--return_threshold', type=float)
     parser.add_argument('--graph_name', default='vi.gt')
+    parser.add_argument('--fusion', action='store_true')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
