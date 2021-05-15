@@ -34,6 +34,7 @@ def create_single_act_qset(options):
         next_observations=[],
         terminals=[],
         full_states=[],
+        next_full_states=[],
         shot_ids=[],
         starts=[],
     )
@@ -67,6 +68,7 @@ def create_single_act_qset(options):
                                - options.beta_target))
             qset['terminals'].append(False)
             qset['full_states'].append(shot[:, idx:idx+ssize])
+            qset['next_full_states'].append(shot[:, idx+sstride:idx+sstride+ssize])
             qset['shot_ids'].append(shot_id)
             qset['starts'].append(idx == 0)
             idx += sstride

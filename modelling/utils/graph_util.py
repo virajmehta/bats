@@ -52,7 +52,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   threshold_start_val=None,
                                   top_percent_starts=None,
                                   return_threshold=None,
-                                  silent=False):
+                                  silent=False,
+                                  get_fusion_slope_obs=False):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
     Args:
         graph: The graph object.
@@ -149,10 +150,27 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             n_edges += 1
             if not only_add_real or not graph.ep.imagined[edge]:
                 if not get_unique_edges or (currv, nxtv) not in edge_set:
-                    data['observations'].append(np.array(graph.vp.obs[currv]))
+                    if get_fusion_slope_obs:
+                        currfull = np.array(graph.vp.full_states[currv]).reshape(18, 200)
+                        data['observations'].append(np.append(
+                            np.array(graph.vp.obs[currv]),
+                            np.mean(currfull[:10, -50:], axis=1)
+                                - np.mean(currfull[:10, :50], axis=1)
+                        )
+                        if include_reward_next_obs:
+                            nxtfull = np.array(graph.vp.full_states[nxtv]).reshape(18, 200)
+                            data['observations'].append(np.append(
+                                np.array(graph.vp.obs[nxtv]),
+                                np.mean(currfull[:10, -50:], axis=1)
+                                    - np.mean(currfull[:10, :50], axis=1)
+                            )
+                            data['next_observations'].append(np.array(graph.vp.obs[nxtv]))
+                    else:
+                        data['observations'].append(np.array(graph.vp.obs[currv]))
+                        if include_reward_next_obs:
+                            data['next_observations'].append(np.array(graph.vp.obs[nxtv]))
                     data['actions'].append(np.array(graph.ep.action[edge]))
                     if include_reward_next_obs:
-                        data['next_observations'].append(np.array(graph.vp.obs[nxtv]))
                         data['rewards'].append(graph.ep.reward[edge])
 
                 edge_set.add((currv, nxtv))
