@@ -270,6 +270,8 @@ class BATSTrainer:
             self.block_add_edges(processes, i + 1)
             size = self.G.num_vertices()
             self.neighbors.resize((size, size))
+            save_npz(self.output_dir / self.neighbor_name, self.neighbors)
+            print(f"Num vertices: {size}, nn shape: {self.neighbors.shape}")
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
             vi_start_time = time.time()
             self.value_iteration()
@@ -451,7 +453,8 @@ class BATSTrainer:
         self.G.vp.real_node[v] = False
         self.G.vp.terminal[v] = False
         self.G.vp.obs[v] = obs
-        self.vertices[obs.tobytes()] = self.unique_obs.shape[0]
+        idx = self.G.vertex_index[v]
+        self.vertices[obs.tobytes()] = 
         self.unique_obs = np.concatenate((self.unique_obs, obs[None, ...]))
         if self.use_bisimulation:
             self.neighbor_obs = np.concatenate((self.neighbor_obs, bisim_obs[None, ...]))
@@ -461,7 +464,7 @@ class BATSTrainer:
         else:
             self.neighbor_obs = np.concatenate((self.neighbor_obs, obs[None, ...]))
 
-        return self.G.vertex_index[v]
+        return idx
 
     def get_middle_obs(self, start_obs, actions):
         start_obs = torch.Tensor(start_obs)[None, ...]
