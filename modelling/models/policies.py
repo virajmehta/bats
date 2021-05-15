@@ -123,7 +123,7 @@ class StochasticPolicy(Policy):
         logvar_hidden_sizes: Sequence[int],
         tanh_transform: bool = True,
         add_entropy_bonus: bool = False,
-        train_alpha_entropy: bool = True,
+        train_alpha_entropy: bool = False,
         log_alpha_entropy: float = 0,
         target_entropy: Optional[float] = None,
         hidden_activation=torch.nn.functional.relu,
@@ -162,7 +162,7 @@ class StochasticPolicy(Policy):
         self._tanh_transform = tanh_transform
         self._standardize_targets = standardize_targets
         self._add_entropy_bonus = add_entropy_bonus
-        self._train_alpha_entropy = train_alpha_entropy
+        self._train_alpha_entropy = train_alpha_entropy and add_entropy_bonus
         self.log_alpha = torch.nn.Parameter(
                 torch.Tensor([log_alpha_entropy]),
                 requires_grad=train_alpha_entropy,

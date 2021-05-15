@@ -201,7 +201,7 @@ def behavior_clone(
             num_eval_eps=num_eval_eps,
             train_loops_per_epoch=train_loops_per_epoch,
             validation_tune_metric='MSE',
-            save_best_model=False,
+            save_best_model=True,
     )
     trainer.fit(tr_data, epochs, val_data, od_wait,
                 batch_updates_per_epoch=batch_updates_per_epoch,

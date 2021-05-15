@@ -7,6 +7,7 @@ from copy import deepcopy
 import json
 import os
 from pathlib import Path
+import pickle as pkl
 
 import d4rl
 from graph_tool import load_graph
@@ -47,7 +48,10 @@ def run(args):
         trainer.value_iteration()
         trainer.G.save(os.path.join(args.save_dir, 'trimmed.gt'))
     if args.n_collects is None:
-        args.n_collects = graph.num_vertices()
+        if args.all_starts_once:
+            args.n_collects = float('inf')
+        else:
+            args.n_collects = graph.num_vertices()
     if args.use_graphs_starts:
         starts = None
     else:
@@ -59,12 +63,16 @@ def run(args):
             max_ep_len=env._max_episode_steps,
             n_val_collects=args.n_val_collects,
             val_start_prop=args.val_start_prop,
+            val_selection_prob=args.val_selection_prob,
             any_state_is_start=args.use_any_start,
             only_add_real=args.real_edges_only,
+            val_only_add_real=args.val_real_edges_only,
             get_unique_edges=args.unique_edges,
             starts=starts,
             threshold_start_val=args.value_threshold,
             top_percent_starts=args.top_percent_starts,
+            return_threshold=args.return_threshold,
+            all_starts_once=args.all_starts_once,
     )
     # Run AWR with the pre-trained qnets.
     behavior_clone(
@@ -83,6 +91,8 @@ def run(args):
         batch_updates_per_epoch=args.batch_updates_per_epoch,
         target_entropy=args.target_entropy,
     )
+    with open(os.path.join(args.save_dir, 'args.pkl'), 'wb') as f:
+        pkl.dump(args, f)
 
 
 def parse_args():
@@ -92,17 +102,21 @@ def parse_args():
     parser.add_argument('--save_dir')
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--batch_updates_per_epoch', type=int)
-    parser.add_argument('--od_wait', type=int, default=10)
+    parser.add_argument('--od_wait', type=int)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
-    parser.add_argument('--n_val_collects', type=int, default=10000)
-    parser.add_argument('--val_start_prop', type=float, default=0.1)
+    parser.add_argument('--all_starts_once', action='store_true')
+    parser.add_argument('--n_val_collects', type=int, default=0)
+    parser.add_argument('--val_start_prop', type=float, default=0)
+    parser.add_argument('--val_selection_prob', type=float, default=0.1)
     parser.add_argument('--temperature', type=float, default=0)
     parser.add_argument('--pi_architecture', default='256,256')
     parser.add_argument('--real_edges_only', action='store_true')
+    parser.add_argument('--val_real_edges_only', action='store_true')
     parser.add_argument('--unique_edges', action='store_true')
     parser.add_argument('--value_threshold', type=float)
     parser.add_argument('--top_percent_starts', type=float)
+    parser.add_argument('--return_threshold', type=float)
     parser.add_argument('--use_any_start', action='store_true')
     parser.add_argument('--num_eval_eps', type=int, default=10)
     parser.add_argument('--add_entropy_bonus', action='store_true')

@@ -73,12 +73,12 @@ class BATSTrainer:
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
         self.bc_params['batch_updates_per_epoch'] =\
-            kwargs.get('batch_updates_per_epoch', 50)
+            kwargs.get('batch_updates_per_epoch', None)
         self.bc_params['add_entropy_bonus'] =\
             kwargs.get('add_entropy_bonus', True)
         self.intermediate_bc_params = deepcopy(self.bc_params)
         self.intermediate_bc_params['epochs'] = 30
-        self.temperature = kwargs.get('temperature', 0.25)
+        self.temperature = kwargs.get('temperature', 0.0)
         self.bolt_gather_params = {}
         self.bolt_gather_params['top_percent_starts'] =\
             kwargs.get('top_percent_starts', 0.8)
@@ -132,6 +132,7 @@ class BATSTrainer:
         self.G.ep.model_errors = self.G.new_edge_property('vector<float>')
         # Iteration that the model was stitched at.
         self.G.ep.stitch_itr = self.G.new_edge_property('int')
+        self.G.ep.stitch_length = self.G.new_edge_property('int')
 
         self.action_props = ungroup_vector_property(self.G.ep.action, range(self.action_dim))
         self.state_props = ungroup_vector_property(self.G.vp.obs, range(self.obs_dim))
@@ -264,7 +265,7 @@ class BATSTrainer:
                 else:
                     break
             plan_start_time = time.time()
-            processes = self.test_neighbor_edges(stitches_to_try)
+            processes = self.test_possible_stitches(stitches_to_try)
             self.block_add_edges(processes, i + 1)
             size = self.G.num_vertices()
             self.neighbors.resize((size, size))
@@ -320,9 +321,9 @@ class BATSTrainer:
                 self.bisim_model, self.bisim_trainer = train_bisim(**self.bisim_train_params)
                 self.bisim_model_path = str(self.output_dir)
             self.compute_embeddings()
-            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
-                                              cuda_device='')
-            self.dynamics_unroller = ModelUnroller(self.env_name, dynamics_ensemble)
+        dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
+                                          cuda_device='')
+        self.dynamics_unroller = ModelUnroller(self.env_name, dynamics_ensemble)
         nnz = self.find_nearest_neighbors()
         return nnz
 
@@ -416,7 +417,7 @@ class BATSTrainer:
                     str(self.max_stitch_length),
                     str(self.env_name)]
             if self.std_file:
-                args += [self.mean_file, self.std_file]
+                args += [str(self.mean_file), str(self.std_file)]
             if self.use_bisimulation:
                 args.append('-ub')
             if self.use_all_planning_itrs:
@@ -604,7 +605,7 @@ class BATSTrainer:
                     # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
             old_values = self.G.vp.value.get_array()
-            lower_bellman_error = bellman_error = np.max(np.square(values - old_values))
+            lower_bellman_error = bellman_error = np.max(np.abs(values - old_values))
             if self.penalize_stitches:
                 upper_target_val = diags(
                         (self.gamma * self.G.vp.upper_value.get_array()
