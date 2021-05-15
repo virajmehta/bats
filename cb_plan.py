@@ -96,13 +96,13 @@ def CEM(row, obs_dim, action_dim, latent_dim, env, epsilon,
             for acts in samples:
                 trajobs, trajrews, trajterms = [[] for _ in range(3)]
                 env.reset()
-                env.state_log[:, -start_state.shape[1]] =\
+                env.state_log[:, -start_state.shape[1]:] =\
                         start_state[:env.num_signals]
-                env.act_log[:, -start_state.shape[1]] =\
+                env.act_log[:, -start_state.shape[1]:] =\
                         start_state[env.num_signals:]
                 for act in acts:
                     nxt, rew, done, _ = env.step(act)
-                    trajobs.append(nxt)
+                    trajobs.append(nxt[:len(end_obs)])
                     trajrews.append(rew)
                     trajterms.append(done)
                 model_obs.append(np.array(trajobs))
@@ -124,21 +124,22 @@ def CEM(row, obs_dim, action_dim, latent_dim, env, epsilon,
             if std is not None:
                 displacements /= std
             distances = np.linalg.norm(displacements, axis=-1)
-            min_idx = np.argmin(distances)
-            min_dist = distances[min_idx]
+            min_idx = np.argmin(distances[-1])
+            min_dist = distances[-1, min_idx]
             if min_dist < threshold:
                 threshold = min_dist
                 # success!
                 if min_dist < best_qscore:
-                    obs_history = model_obs[min_index, 1:-1, :]
+                    obs_history = model_obs[min_idx, 1:-1, :]
                     rewards = model_rewards[min_idx, ...]
                     actions = samples[min_idx, ...]
                     model_errs = np.array([min_dist])
                     best_found = (start_idx, end_idx, actions,
-                            min_quantile, rewards, obs_history, model_errs)
+                                  min_dist, rewards, obs_history, model_errs)
+                    best_qscore = min_dist
                 if not use_all_iterations:
                     return best_found
-            elites = samples[np.argsort(distances)[:num_elites], ...]
+            elites = samples[np.argsort(distances[-1])[:num_elites], ...]
             new_mean = np.mean(elites, axis=0)
             new_var = np.var(elites, axis=0)
             mean = alpha * mean + (1 - alpha) * new_mean
@@ -157,6 +158,9 @@ def main(args):
         init_at_start_only=True,
         num_cached_starts=False,
         preloaded_inits=deque([(np.zeros((10, 400)), np.zeros((8, 400)))]),
+        beta_target=2,
+        rew_coefs=(0, 0),
+        standardize_observations=False,
         **MODEL_PARAMS,
     )
     bisim_model = None

@@ -10,8 +10,12 @@ base_config = OrderedDict(
     epsilon_neighbors=0.225,
     num_cpus=60,
     stitching_chunk_size=50000,
+    batch_updates_per_epoch=None,
+    od_wait=None,
+    epochs=25,
     use_all_planning_itrs=True,
     bc_every_iter=False,
+    num_stitching_iters=10,
 )
 
 # For any additional configurations, add them here.
@@ -19,6 +23,8 @@ MAZE_CONFIGS = OrderedDict()
 
 MAZE_CONFIGS['maze-umaze'] = deepcopy(base_config)
 MAZE_CONFIGS['maze-umaze']['env_name'] = 'maze2d-umaze-v1'
+MAZE_CONFIGS['maze-umaze']['load_model'] =\
+        '/zfsauton/project/public/ichar/d4rl_models/mazes/umaze1'
 
 MAZE_CONFIGS['maze-medium'] = deepcopy(base_config)
 MAZE_CONFIGS['maze-medium']['env_name'] = 'maze2d-medium-v1'
