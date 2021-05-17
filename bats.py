@@ -161,7 +161,7 @@ class BATSTrainer:
         # Whether to keep making suboptimal stitches after no positive
         # advantage stitches can be made. This is good for hyper parameter opt.
         self.continue_after_no_advantage =\
-                kwargs.get('continue_after_no_advantage', False)
+            kwargs.get('continue_after_no_advantage', False)
         self.pick_positive_adv = True  # Set to False after no positive adv.
 
         # printing parameters
@@ -237,6 +237,14 @@ class BATSTrainer:
             return trange(n)
         else:
             return range(n)
+
+    def label_bisimulation(self):
+        # assumes there's already a graph loaded and a bisimulation dynamics model
+        self.bisim_model = load_bisim(self.bisim_model_path)
+        self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+        self.penalize_stitches = True
+        self.fine_tune_dynamics()
+        self.G.save(str(self.output_dir / 'penalized.gt'))
 
     def train(self):
         # add the original dataset into the graph
@@ -360,29 +368,62 @@ class BATSTrainer:
     def recompute_edge_values(self):
         if len(self.edges_added) == 0:
             return
-        edges_added = np.array(self.edges_added)
-        start_obs = self.neighbor_obs[edges_added[:, 0], :]
-        end_obs = self.neighbor_obs[edges_added[:, 1], :]
-        actions = []
+        stitches1step = []
+        actions1step = []
+        other_starts = []
         for start, end in self.edges_added:
-            edge = self.G.edge(start, end)
-            action = self.G.ep.action[edge]
-            actions.append(action)
-        actions = np.array(actions)
-        conditions = np.concatenate([start_obs, actions], axis=1)
+            if self.G.vp.real_node[start] and self.G.vp.real_node[end]:
+                stitches1step.append((start, end))
+                edge = self.G.edge(start, end)
+                actions1step.append(self.G.ep.action[edge])
+            elif self.G.vp.real_node[start]:
+                other_starts.append((start, end))
+            else:
+                # if the start node isn't real we will find it later in the planning process
+                pass
+        actions1step = np.array(actions1step)
+        stitches1step = np.array(stitches1step)
+        start_obs1step = stitches1step[:, 0]
+        end_obs1step = self.G.vp.z[stitches1step[:, 1]]
+        conditions = np.concatenate([start_obs1step, actions1step], axis=1)
         model_outputs = self.bisim_model.get_mean_logvar(conditions)[0]
         state_outputs = model_outputs[:, :, 1:]
         reward_outputs = model_outputs[:, :, 0]
-        displacements = state_outputs + start_obs - end_obs
+        displacements = state_outputs + start_obs1step - end_obs1step
         distances = torch.linalg.norm(displacements, dim=-1, ord=1)
         quantiles = np.quantile(distances, self.planning_quantile, axis=0)
         reward = np.quantile(reward_outputs, 0.3, axis=0)
         low_reward = reward - quantiles * self.gamma
         high_reward = reward + quantiles * self.gamma
-        for i, (start, end) in enumerate(self.edges_added):
+        for i, (start, end) in enumerate(stitches1step):
             edge = self.G.edge(start, end)
             self.G.ep.reward[edge] = low_reward[i]
             self.G.ep.upper_reward[edge] = high_reward[i]
+        # TODO: handle all the non 1 step stitches
+        if len(other_starts) == 0:
+            return
+        bisim_unroller = ModelUnroller(self.env_name, self.bisim_model)
+        for start, end in other_starts:
+            start_obs = self.G.vp.z[start]
+            edge = self.G.edge(start, end)
+            first_edge = edge
+            actions = [self.G.ep.action[edge]]
+            while not self.G.vp.real_node[end]:
+                # assuming there's only one outgoing stitch from a fake vertex
+                next_state = self.G.get_out_neighbors(end)[0]
+                edge = self.G.edge(end, next_state)
+                actions.append(self.G.ep.action[edge])
+                end = next_state
+            end_obs = self.G.vp.z[end]
+            model_obs, model_actions, model_rewards, model_terminals = bisim_unroller(start_obs, actions)
+            displacements = model_obs[:, :. -1, :] - end_obs
+            distances = np.linalg.norm(displacements, axis=-1, ord=1)
+            quantile = np.quantile(distances, self.planning_quantile, axis=-1)
+            og_reward = self.G.reward[first_edge]
+            self.G.reward[first_edge] = og_reward - self.gamma * quantile
+            self.G.upper_reward[first_edge] = og_reward + self.gamma * quantile
+        # Viraj: I think this works but probably has bugs, will test when we need to run it
+
 
     def test_possible_stitches(self, possible_stitches):
         '''
@@ -454,7 +495,6 @@ class BATSTrainer:
         self.G.vp.terminal[v] = False
         self.G.vp.obs[v] = obs
         idx = self.G.vertex_index[v]
-        self.vertices[obs.tobytes()] = 
         self.unique_obs = np.concatenate((self.unique_obs, obs[None, ...]))
         if self.use_bisimulation:
             self.neighbor_obs = np.concatenate((self.neighbor_obs, bisim_obs[None, ...]))
@@ -606,7 +646,6 @@ class BATSTrainer:
             #                  the non-zero entries.
             bst_childs = np.asarray((qs + adjmat * 1e4).argmax(axis=0)).flatten()
             values = np.asarray(
-                    # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
             old_values = self.G.vp.value.get_array()
             lower_bellman_error = bellman_error = np.max(np.abs(values - old_values))
@@ -667,8 +706,7 @@ class BATSTrainer:
                 graph=self.G,
                 n_collects=self.G.num_vertices(),
                 max_ep_len=self.env._max_episode_steps,
-                n_val_collects=self.bolt_gather_params['val_start_prop']
-                               * self.G.num_vertices(),
+                n_val_collects=self.bolt_gather_params['val_start_prop'] * self.G.num_vertices(),
                 starts=self.start_states,
                 **self.bolt_gather_params)
         for k, v in stats.items():

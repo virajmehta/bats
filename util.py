@@ -8,7 +8,6 @@ import d4rl
 import gym
 import h5py
 import torch
-from ipdb import set_trace as db
 
 DATA_DIR = 'experiments'
 ENSEMBLE = None
@@ -18,8 +17,10 @@ def get_output_dir(name):
     return Path(DATA_DIR) / name
 
 
-def make_output_dir(name, overwrite, args):
+def make_output_dir(name, overwrite, args, ignore_exists=False):
     dir_path = get_output_dir(name)
+    if ignore_exists:
+        return dir_path
     if dir_path.exists():
         if overwrite:
             rmtree(dir_path)
@@ -177,6 +178,7 @@ def make_mujoco_resetter(env, task):
         midpt = 9
     else:
         NotImplementedError('No resetter implemented for %s.' % task)
+
     def resetter(obs):
         env.reset()
         if append_zero:
@@ -192,7 +194,7 @@ def get_starts_from_graph(graph, env, env_name):
         obs = graph.vp.obs.get_2d_array(np.arange(env.observation_space.low.size))
         obs = obs.T
         diffs = np.array([obs - np.array([st[0], st[1], 0, 0])
-                        for st in env.empty_and_goal_locations])
+                          for st in env.empty_and_goal_locations])
         is_starts = np.any(np.all(np.abs(diffs) < 0.1, axis=-1), 0)
         return np.argwhere(is_starts).flatten()
     elif env_name.startswith('halfcheetah') or env_name.startswith('walker') or env_name.startswith('hopper'):
@@ -205,4 +207,3 @@ def get_starts_from_graph(graph, env, env_name):
         return start_states
     else:
         raise NotImplementedError('env {env_name} not supported for start state detection')
-
