@@ -3,6 +3,7 @@ from pathlib import Path, PosixPath
 from shutil import rmtree
 from tqdm import trange
 import numpy as np
+from collections import defaultdict
 # from scipy import stats
 import d4rl
 import gym
@@ -41,6 +42,33 @@ def make_output_dir(name, overwrite, args):
     return dir_path
 
 
+def get_trajectory_dataset(dataset):
+    nelem = len(dataset['rewards'])
+    last_start = 0
+    last_obs = None
+    trajectory_dataset = defaultdict(list)
+    for i in nelem:
+        obs = dataset['observations'][i, ...]
+        next_obs = dataset['next_observations'][i, ...]
+        if obs != last_obs and last_obs is not None:
+            for name in dataset:
+                traj = dataset[name][last_start:i, ...]
+                trajectory_dataset[name].append(traj)
+                last_start = i
+        last_obs = next_obs
+    for name in dataset:
+        traj = dataset[name][last_start:, ...]
+        trajectory_dataset[name].append(traj)
+    return trajectory_dataset
+
+
+def roll_traj_dataset(dataset):
+    new_dataset = {}
+    for name in dataset:
+        new_dataset[name] = np.concatenate(dataset[name], axis=0)
+    return new_dataset
+
+
 def get_offline_env(name, dataset_fraction, data_path=None):
     env = gym.make(name)
     if data_path is None:
@@ -50,11 +78,17 @@ def get_offline_env(name, dataset_fraction, data_path=None):
         with h5py.File(str(data_path), 'r') as hdata:
             for k, v in hdata.items():
                 dataset[k] = v[()]
-    for name in dataset:
+    trajectory_dataset = get_trajectory_dataset(dataset)
+    num_trajectories = len(trajectory_dataset['actions'])
+    num_traj_sample = int(dataset_fraction * num_trajectories)
+    trajs = np.random.choice(num_trajectories, num_traj_sample)
+    for name in trajectory_dataset:
         item = dataset[name]
-        size = item.shape[0]
-        keep = int(size * dataset_fraction)
-        dataset[name] = item[:keep, ...]
+        new_item = []
+        for trajn in trajs:
+            new_item.append(item[trajn[)
+        dataset[name] = new_item
+    dataset = roll_traj_dataset(dataset)
     return env, dataset
 
 
@@ -205,4 +239,3 @@ def get_starts_from_graph(graph, env, env_name):
         return start_states
     else:
         raise NotImplementedError('env {env_name} not supported for start state detection')
-
