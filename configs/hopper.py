@@ -7,7 +7,7 @@ from copy import deepcopy
 base_config = OrderedDict(
     epsilon_planning=0.07,
     epsilon_neighbors=0.3,
-    num_cpus=60,
+    num_cpus=40,
     stitching_chunk_size=50000,
     normalize_obs=True,
 )
@@ -40,6 +40,7 @@ for k, v in HOPPER_CONFIGS.items():
     config['use_all_planning_itrs'] = True
     config['continue_after_no_advantage'] = True
     config['num_stitching_iters'] = 25
+    config['stitching_chunk_size'] = 5000
     # For mixed dataset edge distance = 0.726 +- 0.632
     # config['epsilon_neighbors'] = 0.3
     config['planning_quantile'] = 0.4
