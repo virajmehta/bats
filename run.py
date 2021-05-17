@@ -12,10 +12,14 @@ from configs import CONFIGS
 def parse_arguments():
     config_parser = argparse.ArgumentParser()
     config_parser.add_argument('--config')
+    config_parser.add_argument('--runseed', type=int, default=None)
     config_arg, remaining = config_parser.parse_known_args()
     defaults = None
     if config_arg.config is not None:
-        defaults = CONFIGS[config_arg.config]
+        config = config_arg.config
+        if config_arg.runseed is not None:
+            config += f'_s{config_arg.runseed}'
+        defaults = CONFIGS[config]
     parser = argparse.ArgumentParser()
     parser.add_argument('name', help="The name of the experiment and output directory.")
     parser.add_argument('--env', dest='env_name', default="halfcheetah-medium-v1", help="The name of the environment (will be checked at runtime for correctness).")  # NOQA

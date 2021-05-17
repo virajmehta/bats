@@ -454,7 +454,7 @@ class BATSTrainer:
         self.G.vp.terminal[v] = False
         self.G.vp.obs[v] = obs
         idx = self.G.vertex_index[v]
-        self.vertices[obs.tobytes()] = 
+        self.vertices[obs.tobytes()] = idx
         self.unique_obs = np.concatenate((self.unique_obs, obs[None, ...]))
         if self.use_bisimulation:
             self.neighbor_obs = np.concatenate((self.neighbor_obs, bisim_obs[None, ...]))
