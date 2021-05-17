@@ -3,6 +3,7 @@ Configs for walker experiments.
 """
 from collections import OrderedDict
 from copy import deepcopy
+from pathlib import Path
 
 base_config = OrderedDict(
     epsilon_planning=0.2,
@@ -28,7 +29,8 @@ WALKER_CONFIGS['walker-random']['env_name'] = 'walker2d-random-v2'
 
 WALKER_CONFIGS['walker-mixed'] = deepcopy(base_config)
 WALKER_CONFIGS['walker-mixed']['env_name'] =\
-    'walker2d-medium-replay-v2'
+    'walker2d-medium-replay-v0'
+WALKER_CONFIGS['walker-mixed']['load_model'] = Path('~/base/shared/models/wkv0-mixed')
 
 WALKER_CONFIGS['walker-medium'] = deepcopy(base_config)
 WALKER_CONFIGS['walker-medium']['env_name'] = 'walker2d-medium-v2'
@@ -45,10 +47,8 @@ for k, v in WALKER_CONFIGS.items():
     # config['epsilon_neighbors'] = 0.2
     config['planning_quantile'] = 0.4
     config['epsilon_planning'] = 10
-    config['load_model'] = ('/zfsauton/project/public/ichar/'
-                            'd4rl_models/walker/wk_%s' % task_type)
     config['verbose'] = True
     config['k_neighbors'] = 25
-    config['max_stitch_length'] = 5
+    config['max_stitch_length'] = 1
     to_add[k + '-tune'] = config
 WALKER_CONFIGS.update(to_add)

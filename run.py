@@ -17,8 +17,6 @@ def parse_arguments():
     defaults = None
     if config_arg.config is not None:
         config = config_arg.config
-        if config_arg.runseed is not None:
-            config += f'_s{config_arg.runseed}'
         defaults = CONFIGS[config]
     parser = argparse.ArgumentParser()
     parser.add_argument('name', help="The name of the experiment and output directory.")
@@ -58,7 +56,11 @@ def parse_arguments():
     parser.add_argument('-msl', '--max_stitch_length', type=int, default=1)
     if defaults is not None:
         parser.set_defaults(**defaults)
-    return parser.parse_args(remaining)
+    args = parser.parse_args(remaining)
+    if config_arg.runseed is not None:
+        assert args.load_model is not None
+        args.load_model = args.load_model / args.load_model.iterdir()[config_arg.runseed]
+    return args
 
 
 def main(args):

@@ -18,26 +18,27 @@ base_config = OrderedDict(
 HALFCHEETAH_CONFIGS = OrderedDict()
 
 HALFCHEETAH_CONFIGS['halfcheetah-expert'] = deepcopy(base_config)
-HALFCHEETAH_CONFIGS['halfcheetah-expert']['env_name'] = 'halfcheetah-expert-v2'
+HALFCHEETAH_CONFIGS['halfcheetah-expert']['env_name'] = 'halfcheetah-expert-v0'
 
 HALFCHEETAH_CONFIGS['halfcheetah-medexp'] = deepcopy(base_config)
 HALFCHEETAH_CONFIGS['halfcheetah-medexp']['env_name'] =\
-    'halfcheetah-medium-expert-v2'
+    'halfcheetah-medium-expert-v0'
 
 HALFCHEETAH_CONFIGS['halfcheetah-random'] = deepcopy(base_config)
-HALFCHEETAH_CONFIGS['halfcheetah-random']['env_name'] = 'halfcheetah-random-v2'
+HALFCHEETAH_CONFIGS['halfcheetah-random']['env_name'] = 'halfcheetah-random-v0'
 
 HALFCHEETAH_CONFIGS['halfcheetah-mixed'] = deepcopy(base_config)
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['env_name'] =\
-    'halfcheetah-medium-replay-v2'
+    'halfcheetah-medium-replay-v0'
 # HALFCHEETAH_CONFIGS['halfcheetah-mixed']['load_bisim_model'] = Path("/zfsauton/project/public/ichar/models/bisimulation/halfcheetah")  # NOQA
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['use_bisimulation'] = False
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['penalize_stitches'] = False
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['bc_every_iter'] = False
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['epsilon_neighbors'] = 0.25
+HALFCHEETAH_CONFIGS['halfcheetah-mixed']['load_model'] = Path('~/base/shared/models/hcv0-mixed')
 
 HALFCHEETAH_CONFIGS['halfcheetah-medium'] = deepcopy(base_config)
-HALFCHEETAH_CONFIGS['halfcheetah-medium']['env_name'] = 'halfcheetah-medium-v2'
+HALFCHEETAH_CONFIGS['halfcheetah-medium']['env_name'] = 'halfcheetah-medium-v0'
 
 
 to_add = OrderedDict()
@@ -53,8 +54,6 @@ for k, v in HALFCHEETAH_CONFIGS.items():
     config['bc_every_iter'] = False
     config['planning_quantile'] = 0.4
     config['epsilon_planning'] = 10
-    config['load_model'] = ('/zfsauton/project/public/ichar/'
-                            'd4rl_models/halfcheetah/hc_%s' % task_type)
     config['verbose'] = True
     config['k_neighbors'] = 25
     config['max_stitch_length'] = 5
