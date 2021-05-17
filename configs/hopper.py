@@ -29,7 +29,7 @@ HOPPER_CONFIGS['hopper-random']['env_name'] = 'hopper-random-v0'
 HOPPER_CONFIGS['hopper-mixed'] = deepcopy(base_config)
 HOPPER_CONFIGS['hopper-mixed']['env_name'] =\
     'hopper-medium-replay-v0'
-HOPPER_CONFIGS['hopper-mixed']['load_model'] = Path('~/base/shared/models/hpv0-mixed')
+HOPPER_CONFIGS['hopper-mixed']['load_model'] = Path('~/base/shared/models/hpv0-mixed').expanduser()
 
 HOPPER_CONFIGS['hopper-medium'] = deepcopy(base_config)
 HOPPER_CONFIGS['hopper-medium']['env_name'] = 'hopper-medium-v0'

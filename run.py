@@ -59,7 +59,7 @@ def parse_arguments():
     args = parser.parse_args(remaining)
     if config_arg.runseed is not None:
         assert args.load_model is not None
-        args.load_model = args.load_model / args.load_model.iterdir()[config_arg.runseed]
+        args.load_model = args.load_model / list(args.load_model.iterdir())[config_arg.runseed]
     return args
 
 

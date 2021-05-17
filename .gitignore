@@ -1,4 +1,7 @@
 *.swp
+*.sif
+*.img
+slurm*.out
 *mjkey.txt
 # Byte-compiled / optimized / DLL files
 __pycache__/
