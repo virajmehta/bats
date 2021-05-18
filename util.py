@@ -2,6 +2,7 @@ import json
 from pathlib import Path, PosixPath
 from shutil import rmtree
 from tqdm import trange
+from math import ceil
 import numpy as np
 from collections import defaultdict
 # from scipy import stats
@@ -47,10 +48,12 @@ def get_trajectory_dataset(dataset):
     last_start = 0
     last_obs = None
     trajectory_dataset = defaultdict(list)
-    for i in nelem:
+    ntraj = 1
+    for i in range(nelem):
         obs = dataset['observations'][i, ...]
         next_obs = dataset['next_observations'][i, ...]
-        if obs != last_obs and last_obs is not None:
+        if (obs != last_obs).any() and last_obs is not None:
+            ntraj += 1
             for name in dataset:
                 traj = dataset[name][last_start:i, ...]
                 trajectory_dataset[name].append(traj)
@@ -59,6 +62,7 @@ def get_trajectory_dataset(dataset):
     for name in dataset:
         traj = dataset[name][last_start:, ...]
         trajectory_dataset[name].append(traj)
+    print(f"Dataset size {nelem}, {ntraj} trajectories")
     return trajectory_dataset
 
 
@@ -80,14 +84,15 @@ def get_offline_env(name, dataset_fraction, data_path=None):
                 dataset[k] = v[()]
     trajectory_dataset = get_trajectory_dataset(dataset)
     num_trajectories = len(trajectory_dataset['actions'])
-    num_traj_sample = int(dataset_fraction * num_trajectories)
+    num_traj_sample = ceil(dataset_fraction * num_trajectories)
     trajs = np.random.choice(num_trajectories, num_traj_sample)
     for name in trajectory_dataset:
-        item = dataset[name]
+        item = trajectory_dataset[name]
         new_item = []
         for trajn in trajs:
-            new_item.append(item[trajn[)
+            new_item.append(item[trajn])
         dataset[name] = new_item
+    print(f"Keeping {num_traj_sample} trajectories")
     dataset = roll_traj_dataset(dataset)
     return env, dataset
 
