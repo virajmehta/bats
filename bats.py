@@ -66,20 +66,27 @@ class BATSTrainer:
         self.policy = None
         self.bc_params = {}
         self.bc_params['save_dir'] = str(output_dir)
-        self.bc_params['epochs'] = kwargs.get('bc_epochs', 50)
+        self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
         self.bc_params['od_wait'] = kwargs.get('od_wait', 15)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
         self.bc_params['batch_updates_per_epoch'] =\
-            kwargs.get('batch_updates_per_epoch', 50)
+            kwargs.get('batch_updates_per_epoch', None)
         self.bc_params['add_entropy_bonus'] =\
-            kwargs.get('add_entropy_bonus', True)
+            kwargs.get('add_entropy_bonus', False)
         self.intermediate_bc_params = deepcopy(self.bc_params)
-        self.intermediate_bc_params['epochs'] = 30
+        self.intermediate_bc_params['epochs'] = 5
         self.temperature = kwargs.get('temperature', 0.25)
         self.bolt_gather_params = {}
-        self.bolt_gather_params['top_percent_starts'] =\
-                kwargs.get('top_percent_starts', 0.8)
+        self.bolt_gather_params['return_threshold'] =\
+                kwargs.get('return_threshold', 450)
+        self.bolt_gather_params['n_collects'] =\
+                kwargs.get('n_collects', 1000)
+                # kwargs.get('n_collects', 1000000)
+        self.bolt_gather_params['val_selection_prob'] =\
+                kwargs.get('val_selection_prob', 0.2)
+        self.bolt_gather_params['temperature'] =\
+                kwargs.get('bc_temperature', 0.1)
         self.bolt_gather_params['silent'] =\
                 kwargs.get('silent', False)
         self.bolt_gather_params['get_unique_edges'] =\
@@ -188,6 +195,20 @@ class BATSTrainer:
         self.stats = defaultdict(list)
         self.stats_path = self.output_dir / 'graph_stats.npz'
         # check for all loads
+        self.neighbor_name = 'neighbors.npz'
+        if kwargs['continue_maze'] is not None:
+            for prevf in ['vi.gt', 'mdp.gt', 'neighbors.npz', 'starts.npy',
+                          'stitches_tried.pkl', 'graph_stats.npz']:
+                os.system('cp %s %s' % (
+                    os.path.join(kwargs['continue_maze'], prevf),
+                    str(self.output_dir)))
+            graph_path = self.output_dir / 'vi.gt'
+            self.G = load_graph(str(graph_path))
+            neighbors_path = self.output_dir / self.neighbor_name
+            self.neighbors = load_npz(neighbors_path)
+            self.continuing_previous = True
+        else:
+            self.continuing_previous = False
         if kwargs['load_policy'] is not None:
             self.policy = load_policy(str(kwargs['load_policy']), self.obs_dim, self.action_dim,
                                       cuda_device=self.bc_params['cuda_device'])
@@ -203,7 +224,6 @@ class BATSTrainer:
             self.G = load_graph(str(graph_path))
             self.graph_stitching_done = True
             return
-        self.neighbor_name = 'neighbors.npz'
         if kwargs['load_neighbors'] is not None:
             neighbors_path = kwargs['load_neighbors'] / self.neighbor_name
             self.neighbors = load_npz(neighbors_path)
@@ -231,19 +251,21 @@ class BATSTrainer:
     def train(self):
         if self.graph_stitching_done:
             self.train_bc()
-        # if this order is changed loading behavior might break
-        self.add_dataset_edges()
-        # get a list of the start states for the graph
-        self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
-        print(f"Found {len(self.start_states)} start nodes")
-        np.save(self.start_state_path, self.start_states)
-        nnz = self.train_dynamics()
-        if nnz > self.neighbor_limit:
-            return None
-        self.G.save(str(self.output_dir / 'dataset.gt'))
-        self.G.save(str(self.output_dir / 'mdp.gt'))
-        processes = None
-        self.value_iteration()
+        if not self.continuing_previous:
+            # if this order is changed loading behavior might break
+            self.add_dataset_edges()
+            # get a list of the start states for the graph
+            self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+            print(f"Found {len(self.start_states)} start nodes")
+            np.save(self.start_state_path, self.start_states)
+            nnz = self.train_dynamics()
+            if nnz > self.neighbor_limit:
+                return None
+            self.G.save(str(self.output_dir / 'dataset.gt'))
+            self.G.save(str(self.output_dir / 'mdp.gt'))
+            processes = None
+            self.value_iteration()
+        self.train_bc(dir_name='test', intermediate=True)
         for i in trange(self.num_stitching_iters):
             stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()
@@ -613,10 +635,7 @@ class BATSTrainer:
         print("cloning a policy")
         data, val_data, stats = make_boltzmann_policy_dataset(
                 graph=self.G,
-                n_collects=self.G.num_vertices(),
                 max_ep_len=self.env._max_episode_steps,
-                n_val_collects=self.bolt_gather_params['val_start_prop']
-                               * self.G.num_vertices(),
                 starts=self.start_states,
                 **self.bolt_gather_params)
         for k, v in stats.items():

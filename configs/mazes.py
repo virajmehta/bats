@@ -14,6 +14,7 @@ base_config = OrderedDict(
     od_wait=None,
     epochs=25,
     use_all_planning_itrs=True,
+    continue_after_no_advantage=True,
     bc_every_iter=True,
     num_stitching_iters=10,
 )
