@@ -52,8 +52,15 @@ def create_single_act_qset(options):
         while idx + ssize + sstride < shot.shape[1]:
             obend = idx + ssize
             obstrt = obend - obsmooth
-            qset['observations'].append(
-                    np.mean(shot[:10, obstrt:obend], axis=1))
+            if options.add_slope_to_obs:
+                qset['observations'].append(np.append(
+                    np.mean(shot[:10, obstrt:obend], axis=1),
+                    np.mean(shot[:10, obstrt:obend], axis=1)
+                        - np.mean(shot[:10, idx:idx+obsmooth], axis=1)
+                ))
+            else:
+                qset['observations'].append(
+                        np.mean(shot[:10, obstrt:obend], axis=1))
             nxtend = idx + ssize + sstride
             nxtstrt = idx + sstride
             if options.raw_actions:
@@ -61,8 +68,15 @@ def create_single_act_qset(options):
             else:
                 qset['actions'].append(np.mean(
                     shot[10:, nxtstrt:nxtend] / ACTION_MAX * 2 - 1))
-            qset['next_observations'].append(
-                    np.mean(shot[:10, nxtend - obsmooth:nxtend], axis=1))
+            if options.add_slope_to_obs:
+                qset['next_observations'].append(np.append(
+                    np.mean(shot[:10, nxtend - obsmooth:nxtend], axis=1),
+                    np.mean(shot[:10, nxtend - obsmooth:nxtend], axis=1)
+                    - np.mean(shot[:10, nxtstrt:nxtstrt+obsmooth], axis=1)
+                ))
+            else:
+                qset['next_observations'].append(
+                        np.mean(shot[:10, nxtend - obsmooth:nxtend], axis=1))
             qset['rewards'].append(
                     3 - np.abs(qset['next_observations'][-1][beta_idx]
                                - options.beta_target))
@@ -93,6 +107,7 @@ def load_options():
     parser.add_argument('--beta_target', type=float, default=2)
     parser.add_argument('--dont_filter_tests', action='store_true')
     parser.add_argument('--raw_actions', action='store_true')
+    parser.add_argument('--add_slope_to_obs', action='store_true')
     parser.add_argument('--pudb', action='store_true')
     parser.add_argument('--seed', type=int, default=0)
     return parser.parse_args()

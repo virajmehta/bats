@@ -53,7 +53,7 @@ class BATSTrainer:
         self.dynamics_train_params['n_members'] = kwargs.get('dynamics_n_members', 7)
         self.dynamics_train_params['n_elites'] = kwargs.get('dynamics_n_elites', 5)
         self.dynamics_train_params['save_dir'] = str(output_dir)
-        self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 100)
+        self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 250)
         self.dynamics_train_params['cuda_device'] = kwargs.get('cuda_device', '')
 
         # set up the parameters for the bisimulation metric space

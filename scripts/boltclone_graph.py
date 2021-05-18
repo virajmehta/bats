@@ -125,7 +125,6 @@ def parse_args():
     parser.add_argument('--planning_quantile', type=float)
     parser.add_argument('--epsilon_planning', type=float)
     parser.add_argument('--stitch_itr', type=int)
-    parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--pudb', action='store_true')
