@@ -75,14 +75,13 @@ class BATSTrainer:
         self.bc_params['add_entropy_bonus'] =\
             kwargs.get('add_entropy_bonus', False)
         self.intermediate_bc_params = deepcopy(self.bc_params)
-        self.intermediate_bc_params['epochs'] = 5
+        # self.intermediate_bc_params['epochs'] = 5
         self.temperature = kwargs.get('temperature', 0.25)
         self.bolt_gather_params = {}
         self.bolt_gather_params['return_threshold'] =\
                 kwargs.get('return_threshold', 450)
         self.bolt_gather_params['n_collects'] =\
-                kwargs.get('n_collects', 1000)
-                # kwargs.get('n_collects', 1000000)
+                kwargs.get('n_collects', 1000000)
         self.bolt_gather_params['val_selection_prob'] =\
                 kwargs.get('val_selection_prob', 0.2)
         self.bolt_gather_params['temperature'] =\
@@ -265,7 +264,6 @@ class BATSTrainer:
             self.G.save(str(self.output_dir / 'mdp.gt'))
             processes = None
             self.value_iteration()
-        self.train_bc(dir_name='test', intermediate=True)
         for i in trange(self.num_stitching_iters):
             stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()

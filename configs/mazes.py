@@ -12,11 +12,10 @@ base_config = OrderedDict(
     stitching_chunk_size=50000,
     batch_updates_per_epoch=None,
     od_wait=None,
-    epochs=25,
     use_all_planning_itrs=True,
     continue_after_no_advantage=True,
     bc_every_iter=True,
-    num_stitching_iters=10,
+    num_stitching_iters=15,
 )
 
 # For any additional configurations, add them here.
