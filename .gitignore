@@ -12,6 +12,7 @@ __pycache__/
 experiments/
 overlays/
 models/
+models
 get_data.sh
 
 # C extensions
