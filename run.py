@@ -12,10 +12,12 @@ from configs import CONFIGS
 def parse_arguments():
     config_parser = argparse.ArgumentParser()
     config_parser.add_argument('--config')
+    config_parser.add_argument('--runseed', type=int, default=None)
     config_arg, remaining = config_parser.parse_known_args()
     defaults = None
     if config_arg.config is not None:
-        defaults = CONFIGS[config_arg.config]
+        config = config_arg.config
+        defaults = CONFIGS[config]
     parser = argparse.ArgumentParser()
     parser.add_argument('name', help="The name of the experiment and output directory.")
     parser.add_argument('--env', dest='env_name', default="halfcheetah-medium-v1", help="The name of the environment (will be checked at runtime for correctness).")  # NOQA
@@ -46,13 +48,19 @@ def parse_arguments():
     parser.add_argument('--pudb', action='store_true')
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     parser.add_argument('--bisim_latent_dim', type=int, default=6, help="How many dimensions for the latent space of the bisimulation metric")
+    parser.add_argument('--use_all_planning_itrs', action='store_true')
+    parser.add_argument('--continue_after_no_advantage', action='store_true')
     parser.add_argument('-p', '--penalize_stitches', action='store_true')
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('-pc', '--penalty_coefficient', type=float, default=1.0)
     parser.add_argument('-msl', '--max_stitch_length', type=int, default=1)
     if defaults is not None:
         parser.set_defaults(**defaults)
-    return parser.parse_args(remaining)
+    args = parser.parse_args(remaining)
+    if config_arg.runseed is not None:
+        assert args.load_model is not None
+        args.load_model = args.load_model / list(args.load_model.iterdir())[config_arg.runseed]
+    return args
 
 
 def main(args):
