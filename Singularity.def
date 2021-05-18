@@ -4,9 +4,7 @@ Stage: spython-base
 
 %files
 container/mujoco-py mujoco-py
-container/mjkey.txt .
 container/d4rl d4rl
-. /bats
 %post
 pacman -Syu && pacman -S --noconfirm libxi \
 libxcursor \
@@ -23,37 +21,16 @@ patchelf \
 python-pip \
 wget
 pip install pandas scipy scikit-learn tqdm ipdb gym torch==1.8.1+cu111 -f https://download.pytorch.org/whl/torch_stable.html tensorboard
-mkdir mujoco
-wget https://www.roboti.us/download/mujoco200_linux.zip
-unzip mujoco200_linux.zip
-mv mujoco200_linux /mujoco/mujoco200
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/mujoco/mujoco200/bin
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/mujoco/mujoco200/bin:/mujoco/bin
 pip install -e mujoco-py
-mv mjkey.txt mujoco/
-mkdir ~/.mujoco
-# cp -r /mujoco/mujoco200 ~/.mujoco/mujoco200_linux
-ln -s mujoco/mujoco200/ ~/.mujoco/mujoco200
-ln -s mujoco/mujoco200/ ~/.mujoco/mujoco200_linux
-echo $MJLIB_PATH
 pip install -e d4rl
 # pip install git+https://github.com/rail-berkeley/d4rl@master#egg=d4rl
 mkdir -p /bats/experiments
 rm /mujoco-py/mujoco_py/generated/mujocopy-buildlock
 chmod 777 -R /mujoco-py
-export MUJOCO_PY_MUJOCO_PATH=/mujoco/mujoco200/
-export MUJOCO_PY_MJKEY_PATH=/mujoco/mjkey.txt
-export MJLIB_PATH=/mujoco/mujoco200_linux/bin/
-export MJKEY_PATH=/mujoco/mjkey.txt
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/mujoco/mujoco200/bin:/mujoco/bin
-cd /bats
 # python run.py -h
 %environment
-export MUJOCO_PY_MUJOCO_PATH=/mujoco/mujoco200/
-export MUJOCO_PY_MJKEY_PATH=/mujoco/mjkey.txt
-export MJLIB_PATH=/mujoco/mujoco200_linux/bin/
-export MJLIB_PATH=/mujoco/mujoco200_linux/bin/
-export MJKEY_PATH=/mujoco/mjkey.txt
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/mujoco/mujoco200/bin:/mujoco/bin
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco200/bin
 export MJLIB_PATH=/mujoco/mujoco200_linux/bin/
 export MJKEY_PATH=/mujoco/mjkey.txt
 %runscript
