@@ -254,9 +254,6 @@ class BATSTrainer:
             # if this order is changed loading behavior might break
             self.add_dataset_edges()
             # get a list of the start states for the graph
-            self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
-            print(f"Found {len(self.start_states)} start nodes")
-            np.save(self.start_state_path, self.start_states)
             nnz = self.train_dynamics()
             if nnz > self.neighbor_limit:
                 return None
@@ -264,6 +261,11 @@ class BATSTrainer:
             self.G.save(str(self.output_dir / 'mdp.gt'))
             processes = None
             self.value_iteration()
+        else:
+            self.label_start_states()
+        self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+        print(f"Found {len(self.start_states)} start nodes")
+        np.save(self.start_state_path, self.start_states)
         for i in trange(self.num_stitching_iters):
             stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()
@@ -494,6 +496,9 @@ class BATSTrainer:
             # This is hardcoded to assume there are 5 models.
             self.G.ep.model_errors[e] = [0 for _ in range(5)]
             self.G.ep.stitch_itr[e] = 0
+        self.label_start_states()
+
+    def label_start_states(self):
         start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
         self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 
