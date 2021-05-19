@@ -40,6 +40,13 @@ MOUNTAINCAR_CONFIGS['mountaincar-10k']['load_model'] = model_base_path / '64,64,
 MOUNTAINCAR_CONFIGS['mountaincar-10k']['load_bisim_model'] = model_base_path / '64,64,64_mc_random_10k_bisim'
 MOUNTAINCAR_CONFIGS['mountaincar-10k']['dynamics_encoder_hidden'] = '64,64'
 MOUNTAINCAR_CONFIGS['mountaincar-10k']['dynamics_latent_dim'] = 64
+MOUNTAINCAR_CONFIGS['mountaincar-5'] = deepcopy(base_config)
+MOUNTAINCAR_CONFIGS['mountaincar-5']['env_name'] = ENV_NAME
+MOUNTAINCAR_CONFIGS['mountaincar-5']['offline_dataset_path'] = dataset_base_path / 'mountaincar_5.hdf5'
+MOUNTAINCAR_CONFIGS['mountaincar-5']['load_model'] = model_base_path / 'mc_5'
+MOUNTAINCAR_CONFIGS['mountaincar-5']['load_bisim_model'] = None
+MOUNTAINCAR_CONFIGS['mountaincar-5']['dynamics_encoder_hidden'] = '64,64'
+MOUNTAINCAR_CONFIGS['mountaincar-5']['dynamics_latent_dim'] = 64
 
 
 to_add = OrderedDict()

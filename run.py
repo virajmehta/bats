@@ -48,7 +48,7 @@ def parse_arguments():
     parser.add_argument('--pudb', action='store_true')
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     parser.add_argument('--bisim_latent_dim', type=int, default=6, help="How many dimensions for the latent space of the bisimulation metric")
-    parser.add_argument('--use_all_planning_itrs', action='store_true')
+    parser.add_argument('-uapi', '--use_all_planning_itrs', action='store_true')
     parser.add_argument('--continue_after_no_advantage', action='store_true')
     parser.add_argument('-p', '--penalize_stitches', action='store_true')
     parser.add_argument('-v', '--verbose', action='store_true')

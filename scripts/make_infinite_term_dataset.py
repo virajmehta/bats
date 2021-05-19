@@ -37,7 +37,8 @@ def load_in_policy(args):
     return policy
 
 def collect_data(args):
-    env = NormalizedBoxEnv(gym.make(args.env))
+    wrapped_env = gym.make(args.env).env
+    env = NormalizedBoxEnv(wrapped_env)
     if args.policy_path is not None:
         policy = load_in_policy(args)
     else:
@@ -45,10 +46,10 @@ def collect_data(args):
     print("Policy loaded")
     observations, actions, rewards, next_observations, terminals, timeouts =\
             [[] for _ in range(6)]
-    pbar = tqdm(total=args.num_collects)
+    pbar = tqdm()
     earlyterms = []
     neps = 0
-    while len(observations) < args.num_collects:
+    while neps < args.neps:
         done = False
         s = env.reset()
         neps += 1
@@ -58,13 +59,12 @@ def collect_data(args):
             a, _ = policy.get_action(s)
             n, r, done, info = env.step(a)
             t += 1
-            if (t + 1 >= args.path_length
-                    or len(observations) + 1 >= args.num_collects):
+            if t + 1 >= args.path_length:
                 timeout = True
                 done = args.terminate_at_horizon
             else:
                 if done:
-                    earlyterms.append(t)
+                    print(t)
                 timeout = False
             observations.append(s)
             actions.append(a)
@@ -74,10 +74,7 @@ def collect_data(args):
             timeouts.append(timeout)
             s = n
             pbar.update(1)
-            if len(observations) == args.num_collects:
-                break
     print(f"{neps} episodes")
-    print(earlyterms)
     with h5py.File(args.save_path, 'w') as wd:
         wd.create_dataset('observations', data=np.vstack(observations))
         wd.create_dataset('actions', data=np.vstack(actions))
@@ -97,7 +94,7 @@ if __name__ == "__main__":
     parser.add_argument('--path_length', type=int, default=1000,
                         help='Max length of rollout')
     parser.add_argument('--gpu', action='store_true')
-    parser.add_argument('--num_collects', type=int)
+    parser.add_argument('--neps', type=int)
     parser.add_argument('--terminate_at_horizon', action='store_true',
                         help='States at end of time limit marked as terminal.')
     parser.add_argument('--is_rlkit_policy', action='store_true')

@@ -533,6 +533,7 @@ class BATSTrainer:
         return added
 
     def add_dataset_edges(self):
+        breakpoint()
         if self.graph_stitching_done:
             print("skipping adding dataset edges")
             return

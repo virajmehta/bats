@@ -81,10 +81,11 @@ def get_offline_env(name, dataset_fraction, data_path=None):
         with h5py.File(str(data_path), 'r') as hdata:
             for k, v in hdata.items():
                 dataset[k] = v[()]
+    breakpoint()
     trajectory_dataset = get_trajectory_dataset(dataset)
     num_trajectories = len(trajectory_dataset['actions'])
     num_traj_sample = ceil(dataset_fraction * num_trajectories)
-    trajs = np.random.choice(num_trajectories, num_traj_sample)
+    trajs = np.random.choice(num_trajectories, num_traj_sample, replace=False)
     for name in trajectory_dataset:
         item = trajectory_dataset[name]
         new_item = []
