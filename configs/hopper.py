@@ -29,7 +29,7 @@ HOPPER_CONFIGS['hopper-random']['env_name'] = 'hopper-random-v0'
 HOPPER_CONFIGS['hopper-mixed'] = deepcopy(base_config)
 HOPPER_CONFIGS['hopper-mixed']['env_name'] =\
     'hopper-medium-replay-v0'
-HOPPER_CONFIGS['hopper-mixed']['load_model'] = Path('~/base/shared/models/hpv0-mixed').expanduser()
+HOPPER_CONFIGS['hopper-mixed']['load_model'] = Path('~/bats/models/hpv0-mixed').expanduser()
 
 HOPPER_CONFIGS['hopper-medium'] = deepcopy(base_config)
 HOPPER_CONFIGS['hopper-medium']['env_name'] = 'hopper-medium-v0'
@@ -40,7 +40,7 @@ for k, v in HOPPER_CONFIGS.items():
     config = deepcopy(v)
     config['use_all_planning_itrs'] = True
     config['continue_after_no_advantage'] = True
-    config['num_stitching_iters'] = 20
+    config['num_stitching_iters'] = 40
     config['stitching_chunk_size'] = 5000
     # For mixed dataset edge distance = 0.726 +- 0.632
     # config['epsilon_neighbors'] = 0.3
