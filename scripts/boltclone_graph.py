@@ -26,7 +26,10 @@ from util import get_starts_from_graph, get_offline_env, make_output_dir
 
 def run(args):
     # Learn an advantage weighting function.
-    env = gym.make(args.env)
+    if args.env is None:
+        env = None
+    else:
+        env = gym.make(args.env)
     graph = load_graph(os.path.join(args.graph_dir, args.graph_name))
     if args.planning_quantile is not None and args.epsilon_planning is not None:
         print('Making graph consistent with hyperparameters...')
@@ -52,15 +55,19 @@ def run(args):
             args.n_collects = float('inf')
         else:
             args.n_collects = graph.num_vertices()
-    if args.use_graphs_starts:
+    if env is None or args.use_graphs_starts:
         starts = None
     else:
         starts = get_starts_from_graph(graph, env, args.env)
+    if args.max_path_length is None:
+        num_steps = env._max_episode_steps
+    else:
+        num_steps = args.max_path_length
     data, val_data, _ = make_boltzmann_policy_dataset(
             graph=graph,
             n_collects=args.n_collects,
             temperature=args.temperature,
-            max_ep_len=env._max_episode_steps,
+            max_ep_len=num_steps,
             n_val_collects=args.n_val_collects,
             val_start_prop=args.val_start_prop,
             val_selection_prob=args.val_selection_prob,
@@ -73,6 +80,7 @@ def run(args):
             top_percent_starts=args.top_percent_starts,
             return_threshold=args.return_threshold,
             all_starts_once=args.all_starts_once,
+            get_fusion_slope_obs=args.fusion,
     )
     # Run AWR with the pre-trained qnets.
     behavior_clone(
@@ -84,7 +92,7 @@ def run(args):
         val_dataset=val_data,
         cuda_device=args.cuda_device,
         env=env,
-        max_ep_len=env._max_episode_steps,
+        max_ep_len=0 if env is None else env._max_episode_steps,
         train_loops_per_epoch=1,
         num_eval_eps=args.num_eval_eps,
         add_entropy_bonus=args.add_entropy_bonus,
@@ -127,6 +135,8 @@ def parse_args():
     parser.add_argument('--stitch_itr', type=int)
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--graph_name', default='vi.gt')
+    parser.add_argument('--max_path_length', type=int)
+    parser.add_argument('--fusion', action='store_true')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 

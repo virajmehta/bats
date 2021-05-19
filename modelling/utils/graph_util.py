@@ -6,6 +6,8 @@ import numpy as np
 from tqdm import tqdm
 
 
+ACTION_MAX = 2500000
+
 def make_qlearning_dataset(graph):
     data = {k: [] for k in ['observations', 'actions', 'rewards',
                             'next_observations', 'terminals']}
@@ -56,7 +58,11 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   return_threshold=None,
                                   all_starts_once=False,
                                   silent=False,
-                                  get_fusion_slope_obs=False):
+                                  get_fusion_slope_obs=False,
+                                  # Only collect betan and li by default.
+                                  fusion_signal_idxs=[3,4],
+                                  add_action_to_state=True,
+                                  actions_are_deltas=True):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
     Args:
         graph: The graph object.
@@ -182,7 +188,6 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                     else:
                         toadd = currdata
                         curredgeset.add(edgehash)
-                toadd['actions'].append(np.array(graph.ep.action[edge]))
                 if include_reward_next_obs:
                     toadd['rewards'].append(graph.ep.reward[edge])
                     toadd['terminals'].append(graph.vp.terminal[nxtv])
@@ -193,21 +198,33 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                     ))
                 if get_fusion_slope_obs:
                     currfull = np.array(graph.vp.full_states[currv]).reshape(18, 200)
-                    toadd['observations'].append(np.append(
-                        np.array(graph.vp.obs[currv]),
-                        np.mean(currfull[:10, -50:], axis=1)
-                            - np.mean(currfull[:10, :50], axis=1)
-                    ))
+                    state = np.append(
+                        np.array(graph.vp.obs[currv])[fusion_signal_idxs],
+                        np.mean(currfull[fusion_signal_idxs, -50:], axis=1)
+                            - np.mean(currfull[fusion_signal_idxs, :50], axis=1)
+                    )
+                    if add_action_to_state:
+                        state = np.append(state,
+                                np.mean(currfull[10:] / ACTION_MAX * 2 - 1))
+                    toadd['observations'].append(state)
+                    act = np.array(graph.ep.action[edge])
+                    if actions_are_deltas:
+                        act -= np.mean(currfull[10:] / ACTION_MAX * 2 - 1)
+                    toadd['actions'].append(act)
                     if include_reward_next_obs:
                         nxtfull = np.array(graph.vp.full_states[nxtv]).reshape(18, 200)
-                        toadd['next_observations'].append(np.append(
-                            np.array(graph.vp.obs[nxtv]),
-                            np.mean(currfull[:10, -50:], axis=1)
-                                - np.mean(currfull[:10, :50], axis=1)
-                        ))
-                        data['next_observations'].append(np.array(graph.vp.obs[nxtv]))
+                        state = np.append(
+                            np.array(graph.vp.obs[nxtv])[fusion_signal_idxs],
+                            np.mean(currfull[fusion_signal_idxs, -50:], axis=1)
+                                - np.mean(currfull[fusion_signal_idxs, :50], axis=1)
+                        )
+                        if add_action_to_state:
+                            state = np.append(state,
+                                    np.mean(nxtfull[10:] / ACTION_MAX * 2 - 1))
+                        toadd['next_observations'].append(state)
                 else:
                     toadd['observations'].append(np.array(graph.vp.obs[currv]))
+                    toadd['actions'].append(np.array(graph.ep.action[edge]))
                     if include_reward_next_obs:
                         toadd['next_observations'].append(np.array(graph.vp.obs[nxtv]))
             done = graph.vp.terminal[nxtv]

@@ -54,6 +54,8 @@ def parse_args():
     parser.add_argument('--planning_quantiles', type=str, default='0.8')
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--graph_name', default='vi.gt')
+    parser.add_argument('--fusion', action='store_true')
+    parser.add_argument('--max_path_length', type=int)
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 

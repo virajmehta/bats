@@ -225,3 +225,24 @@ def get_starts_from_graph(graph, env, env_name):
     else:
         raise NotImplementedError('env {env_name} not supported for start state detection')
 
+class BlankEnv(object):
+
+    def __init__(self, obs_dim=20):
+        self.obs_dim = obs_dim
+        self.observation_space = gym.spaces.Box(
+            low=-1 * np.ones(obs_dim),
+            high=np.ones(obs_dim),
+            dtype=np.float32,
+        )
+        self.action_space = gym.spaces.Box(
+            low=-1,
+            high=1,
+            shape=(1,),
+            dtype=np.float32,
+        )
+
+    def step(self, act):
+        return np.ones(self.obs_dim), 0, False, {}
+
+    def reset(self):
+        return np.ones(self.obs_dim)

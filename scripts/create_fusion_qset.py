@@ -24,6 +24,10 @@ def create_single_act_qset(options):
     ssize = options.state_size
     sstride = options.state_stride
     obsmooth = options.obs_smooth_amt
+    if len(options.signal_idxs) == 1:
+        sidxs = np.array([int(options.signal_idxs)])
+    else:
+        sidxs = np.array([int(si) for si in options.signal_idxs.split(',')])
     np.random.seed(options.seed)
     os.makedirs(options.save_dir, exist_ok=True)
     shotnames = [sn for sn in os.listdir(options.shot_dir) if '.npy' in sn]
@@ -54,8 +58,8 @@ def create_single_act_qset(options):
             obstrt = obend - obsmooth
             if options.add_slope_to_obs:
                 qset['observations'].append(np.append(
-                    np.mean(shot[:10, obstrt:obend], axis=1),
-                    np.mean(shot[:10, obstrt:obend], axis=1)
+                    np.mean(shot[sigidxs, obstrt:obend], axis=1),
+                    np.mean(shot[sigidxs, obstrt:obend], axis=1)
                         - np.mean(shot[:10, idx:idx+obsmooth], axis=1)
                 ))
             else:
@@ -108,6 +112,8 @@ def load_options():
     parser.add_argument('--dont_filter_tests', action='store_true')
     parser.add_argument('--raw_actions', action='store_true')
     parser.add_argument('--add_slope_to_obs', action='store_true')
+    parser.add_argument('--add_power_to_obs', action='store_true')
+    parser.add_argument('--signal_idxs', default='0,1,2,3,4,5,6,7,8,9')
     parser.add_argument('--pudb', action='store_true')
     parser.add_argument('--seed', type=int, default=0)
     return parser.parse_args()
