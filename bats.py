@@ -99,7 +99,7 @@ class BATSTrainer:
         self.bolt_gather_params['get_unique_edges'] =\
                 kwargs.get('get_unique_edges', False)
         self.bolt_gather_params['val_start_prop'] =\
-                kwargs.get('val_start_prop', 0.05)
+                kwargs.get('val_start_prop', 0)
         self.bc_every_iter = kwargs['bc_every_iter']
 
         # could do it this way or with knn, this is simpler to implement for now
