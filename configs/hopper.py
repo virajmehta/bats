@@ -40,7 +40,7 @@ for k, v in HOPPER_CONFIGS.items():
     config = deepcopy(v)
     config['use_all_planning_itrs'] = True
     config['continue_after_no_advantage'] = True
-    config['num_stitching_iters'] = 20
+    config['num_stitching_iters'] = 40
     config['stitching_chunk_size'] = 5000
     # For mixed dataset edge distance = 0.726 +- 0.632
     # config['epsilon_neighbors'] = 0.3
