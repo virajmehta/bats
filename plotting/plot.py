@@ -40,6 +40,11 @@ def plot_from_stats_files(
         task_name,
         **kwargs
 ):
+    df = load_stats_dict_as_df(stats_dict)
+    return plot_from_df(df, task_name, **kwargs)
+
+
+def load_stats_dict_as_df(stats_dict):
     df = None
     for algo_name, spaths in stats_dict.items():
         for spath in spaths:
@@ -48,7 +53,8 @@ def plot_from_stats_files(
                 df = curr_df
             else:
                 df = df.append(curr_df)
-    return plot_from_df(df, task_name, **kwargs)
+    return df
+
 
 def load_stats_file(stats_path, algo_name):
     df = pd.read_csv(stats_path)
@@ -59,3 +65,19 @@ def get_top_k(task_name, k):
     scores = [v for v in BASELINES[task_name].values()]
     tops = np.argsort(scores)[::-1]
     return np.array([alg for alg in BASELINES[task_name].keys()])[tops[:k]]
+
+
+def get_validation_top_scores(paths):
+    retdict = {}
+    statd = {'run%d' % i: [f] for i, f in enumerate(paths)}
+    statdf = load_stats_dict_as_df(statd)
+    minidxs = statdf.groupby('Algorithm')['MSE/avg/val'].idxmin().to_numpy()
+    for runnum, runpath in enumerate(paths):
+        key = 'run%d' % runnum
+        ep, score = statdf[statdf['Algorithm'] == key].loc[minidxs[runnum]][['Epoch', 'Returns/avg']].to_numpy()
+        retdict[key] = dict(
+            path=runpath,
+            best_epoch=ep,
+            score=score,
+        )
+    return retdict

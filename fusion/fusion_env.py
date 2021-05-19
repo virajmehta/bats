@@ -120,7 +120,8 @@ class BaseFusionEnv(gym.Env):
         self.normalize_observations = normalize_observations
         self.standardize_observations = standardize_observations
 
-        self.state_size = np.sum(dyn_time_scale)
+        # self.state_size = np.sum(dyn_time_scale)
+        self.state_size = dyn_time_scale[0]
         self.inits = deque()
         self._fill_inits()
 
@@ -253,6 +254,8 @@ class SingleActTargetFusionEnv(BaseFusionEnv):
             standardize_observations=True,
             beta_target=1.5,
             rew_coefs=(9, 10),
+            ob_smooth_amt=2,
+            pos_reward=True,
     ):
         """
         Args:
@@ -291,6 +294,8 @@ class SingleActTargetFusionEnv(BaseFusionEnv):
                 high=np.tile(highs, 2),
                 dtype=np.float32,
         )
+        self.ob_smooth_amt = ob_smooth_amt
+        self.pos_reward = pos_reward
         super(SingleActTargetFusionEnv, self).__init__(
                 signal_list,
                 dyn_model,
@@ -310,8 +315,8 @@ class SingleActTargetFusionEnv(BaseFusionEnv):
     def reset(self):
         """Reset and get the first state.."""
         super(SingleActTargetFusionEnv, self).reset()
-        last_obs = self.state_log[:, -1]
-        slopes = (last_obs - self.state_log[:, 0]) / self.state_log.shape[1]
+        last_obs = np.mean(self.state_log[:, -self.ob_smooth_amt:], axis=1)
+        slopes = (last_obs - np.mean(self.state_log[:, :self.ob_smooth_amt], axis=1)) / self.state_log.shape[1]
         return np.append(last_obs, slopes)
 
 
@@ -327,15 +332,14 @@ class SingleActTargetFusionEnv(BaseFusionEnv):
         )
         s, r, d, info = super(SingleActTargetFusionEnv, self).step(true_act)
         # Transform observation into last observations + slopes.
-        last_obs = s[:, -1]
-        slopes = (last_obs - s[:, 0]) / s.shape[1]
+        last_obs = np.mean(s[:, -self.ob_smooth_amt:], axis=1)
+        slopes = (last_obs - np.mean(s[:, :self.ob_smooth_amt], axis=1)) / s.shape[1]
         nxt_state = np.append(last_obs, slopes)
         return nxt_state, r, d, info
 
     def _get_reward(self):
         """Calculate the current reward for after a step has been made."""
-        beta_loss = np.abs((self.beta_target
-            - self.state_log[self.beta_idx, -1]))
+        beta_loss = np.abs((self.beta_target - self.state_log[self.beta_idx, -1]))
         exp_term = np.exp(self.rew_coefs[1] * (self.stab_log[-1] - 0.5))
         dis_loss = self.rew_coefs[0] * (exp_term / (1 + exp_term))
         rew_info = {
@@ -343,7 +347,11 @@ class SingleActTargetFusionEnv(BaseFusionEnv):
                 'TearPenalty': dis_loss,
                 'Tearability': self.stab_log[-1],
         }
-        return -beta_loss - dis_loss, rew_info
+        if self.pos_reward:
+            rew = 3 - beta_loss
+        else:
+            rew = -beta_loss - dis_loss
+        return rew, rew_info
 
 class SISOTargetFusionEnv(BaseFusionEnv):
     def __init__(
@@ -362,6 +370,7 @@ class SISOTargetFusionEnv(BaseFusionEnv):
             standardize_observations=True,
             beta_target=1.5,
             rew_coefs=(9, 10),
+            pos_reward=False,
     ):
         """
         Args:
@@ -385,6 +394,7 @@ class SISOTargetFusionEnv(BaseFusionEnv):
         # 0 and 2500000.
         self.beta_target = beta_target
         self.rew_coefs = rew_coefs
+        self.pos_reward = pos_reward
         self.action_space = spaces.Box(
                 low=-1,
                 high=1,
@@ -446,7 +456,11 @@ class SISOTargetFusionEnv(BaseFusionEnv):
                 'TearPenalty': dis_loss,
                 'Tearability': self.stab_log[-1],
         }
-        return -beta_loss - dis_loss, rew_info
+        if self.pos_reward:
+            rew = 3 - beta_loss
+        else:
+            rew = -beta_loss - dis_loss
+        return rew, rew_info
 
 class SmallTargetFusionEnv(BaseFusionEnv):
     """Environment where observation is average beta_n and average probability
@@ -587,6 +601,7 @@ class PIDFusionEnv(SISOTargetFusionEnv):
             beta_target=2,
             rew_coefs=(0, 10),
             state_space='b,p,i,d',
+            pos_reward=False,
     ):
         """
         Args:
@@ -629,6 +644,7 @@ class PIDFusionEnv(SISOTargetFusionEnv):
                 standardize_observations=standardize_observations,
                 beta_target=beta_target,
                 rew_coefs=rew_coefs,
+                pos_reward=pos_reward,
         )
         low, high = SIGNAL_BOUNDS['efsbetan']
         obs_dim = np.sum(self.state_space)
@@ -682,7 +698,7 @@ class MDPPIDFusionEnv(PIDFusionEnv):
 
 
 class FullPIDFusionEnv(SingleActTargetFusionEnv):
-    """PID Environment with mean of all of the signals given."""
+    """Environment where observation is average beta_N and the PID components."""
     def __init__(
             self,
             signal_list,
@@ -700,6 +716,7 @@ class FullPIDFusionEnv(SingleActTargetFusionEnv):
             beta_target=2,
             rew_coefs=(0, 10),
             state_space='b,p,i,d',
+            pos_reward=False,
     ):
         """
         Args:
@@ -719,12 +736,6 @@ class FullPIDFusionEnv(SingleActTargetFusionEnv):
             rew_coefs: Coefficients for reward in form of (a, b) where the
                 reward is (-beta_L2 - a * sigmoid(b * (disrupt_prob - 0.5))).
         """
-        self.state_space = np.array([
-            'b' in state_space,
-            'p' in state_space,
-            'i' in state_space,
-            'd' in state_space,
-        ]).flatten()
         self.pid = PID(1, 1, 1,
                        setpoint=beta_target)
         super(FullPIDFusionEnv, self).__init__(
@@ -742,40 +753,35 @@ class FullPIDFusionEnv(SingleActTargetFusionEnv):
                 standardize_observations=standardize_observations,
                 beta_target=beta_target,
                 rew_coefs=rew_coefs,
+                pos_reward=pos_reward,
         )
         low, high = SIGNAL_BOUNDS['efsbetan']
-        obs_dim = np.sum(self.state_space)
         self.observation_space = spaces.Box(
-                low=np.asarray([low for _ in range(obs_dim)]),
-                high=np.asarray([high for _ in range(obs_dim)]),
+                low=np.asarray([low for _ in range(13)]),
+                high=np.asarray([high for _ in range(13)]),
                 dtype=np.float32,
         )
 
-    def step(self, action):
-        # Unnormalize action.
-        action = np.clip(action, -1, 1)
-        action = float(2500000 * (action + 1) / 2)
-        # Create constant actions for each of the beams.
-        true_act = action * np.ones(shape=(
-                self.act_log.shape[0],
-                self.dyn_time_scale[1]),
-        )
-        s, r, d, info = super(FullPIDFusionEnv, self).step(true_act)
-        obs = self._append_pid(s)
-        return obs, r, d, info
 
     def reset(self):
         """Reset and get the first state.."""
         self.pid.reset()
-        obs = super(FullPIDFusionEnv, self).reset()
-        return self._append_pid(obs)
+        super(FullPIDFusionEnv, self).reset()
+        return self._get_obs()
 
     def set_target(self, target):
         self.pid = PID(1, 1, 1,
                        setpoint=target)
         self.beta_target = target
 
-    def _append_pid(self, obs):
+    def step(self, action):
+        """Take step in the environment."""
+        _, rew, done, info = super(FullPIDFusionEnv, self).step(action)
+        nxt = self._get_obs()
+        return nxt, rew, done, info
+
+    def _get_obs(self):
+        obs = np.mean(self.state_log[:, -self.state_size:], axis=1)
         self.pid(float(obs[self.beta_idx]), dt=self.dyn_time_scale[1] / 1000)
         p, i, d = self.pid.components
-        return np.append(np.array([p, i, d]), obs)
+        return np.append(obs, np.array([p, i, d]))

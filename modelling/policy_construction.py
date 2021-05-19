@@ -433,11 +433,12 @@ def load_policy(
     hidden_sizes='256,256',
     standardize_targets=False,
     cuda_device='',
+    policy_file='model.pt',
 ):
     policy = get_policy(obs_dim, act_dim, hidden_sizes, deterministic,
                         standardize_targets)
     device = 'cpu' if cuda_device == '' else 'cuda:' + cuda_device
-    policy.load_model(os.path.join(load_dir, 'model.pt'), map_location=device)
+    policy.load_model(os.path.join(load_dir, policy_file), map_location=device)
     return policy
 
 
