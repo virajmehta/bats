@@ -87,9 +87,9 @@ class BATSTrainer:
         self.temperature = kwargs.get('temperature', 0.25)
         self.bolt_gather_params = {}
         self.bolt_gather_params['return_threshold'] =\
-                kwargs.get('return_threshold', 450)
+                kwargs.get('return_threshold', 0)
         self.bolt_gather_params['n_collects'] =\
-                kwargs.get('n_collects', 1000000)
+                kwargs.get('n_collects', 100000)
         self.bolt_gather_params['val_selection_prob'] =\
                 kwargs.get('val_selection_prob', 0.2)
         self.bolt_gather_params['temperature'] =\
