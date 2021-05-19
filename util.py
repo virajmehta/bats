@@ -10,7 +10,6 @@ import d4rl
 import gym
 import h5py
 import torch
-from ipdb import set_trace as db
 
 DATA_DIR = 'experiments'
 ENSEMBLE = None
@@ -57,7 +56,7 @@ def get_trajectory_dataset(dataset):
             for name in dataset:
                 traj = dataset[name][last_start:i, ...]
                 trajectory_dataset[name].append(traj)
-                last_start = i
+            last_start = i
         last_obs = next_obs
     for name in dataset:
         traj = dataset[name][last_start:, ...]
@@ -224,7 +223,7 @@ def make_mujoco_resetter(env, task):
     return resetter
 
 
-def get_starts_from_graph(graph, env, env_name):
+def get_starts_from_graph(graph, env, env_name, dataset):
     # When env is made it is wrapped in TimeLimiter, hence the .env
     env = env.env
     if env_name.startswith('maze'):
@@ -234,9 +233,24 @@ def get_starts_from_graph(graph, env, env_name):
                         for st in env.empty_and_goal_locations])
         is_starts = np.any(np.all(np.abs(diffs) < 0.1, axis=-1), 0)
         return np.argwhere(is_starts).flatten()
+    elif env_name.startswith('Pendulum'):
+        return np.arange(dataset['rewards'].shape[0]).astype(int)
+    elif env_name.startswith('Mountain'):
+        starts = []
+        nelem = dataset['rewards'].shape[0]
+        last_obs = None
+        for i in range(nelem):
+            obs = dataset['observations'][i, :]
+            if (obs != last_obs).any():
+                starts.append(i)
+            next_obs = dataset['next_observations'][i, :]
+            last_obs = next_obs
+        return np.array(starts)
     elif env_name.startswith('halfcheetah') or env_name.startswith('walker') or env_name.startswith('hopper'):
-        dataset = env.get_dataset()
-        ends = dataset['timeouts'].astype(bool) | dataset['terminals'].astype(bool)
+        if 'timeouts' in dataset:
+            ends = dataset['timeouts'].astype(bool) | dataset['terminals'].astype(bool)
+        else:
+            ends = dataset['terminals'].astype(bool)
         ends_dense = np.nonzero(ends)[0]
         start_states = np.concatenate([[0], ends_dense + 1])
         if start_states[-1] >= graph.get_vertices().shape[0]:

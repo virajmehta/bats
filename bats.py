@@ -52,6 +52,13 @@ class BATSTrainer:
         self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 100)
         self.dynamics_train_params['cuda_device'] = kwargs.get('cuda_device', '')
 
+        self.dynamics_load_params = {}
+        if 'dynamics_encoder_hidden' in kwargs:
+            self.dynamics_load_params['encoder_hidden'] = kwargs['dynamics_encoder_hidden']
+        if 'dynamics_latent_dim' in kwargs:
+            self.dynamics_load_params['latent_dim'] = kwargs['dynamics_latent_dim']
+        self.use_dl_params = len(self.dynamics_load_params) > 0
+
         # set up the parameters for the bisimulation metric space
         self.use_bisimulation = kwargs['use_bisimulation']
         self.penalize_stitches = kwargs['penalize_stitches']
@@ -271,7 +278,6 @@ class BATSTrainer:
             size = self.G.num_vertices()
             self.neighbors.resize((size, size))
             save_npz(self.output_dir / self.neighbor_name, self.neighbors)
-            print(f"Num vertices: {size}, nn shape: {self.neighbors.shape}")
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
             vi_start_time = time.time()
             self.value_iteration()
@@ -324,8 +330,12 @@ class BATSTrainer:
                 self.bisim_model, self.bisim_trainer = train_bisim(**self.bisim_train_params)
                 self.bisim_model_path = str(self.output_dir)
             self.compute_embeddings()
-        dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
-                                          cuda_device='')
+        if self.use_dl_params:
+            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
+                                               cuda_device='', model_params=self.dynamics_load_params)
+        else:
+            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
+                                              cuda_device='')
         self.dynamics_unroller = ModelUnroller(self.env_name, dynamics_ensemble)
         nnz = self.find_nearest_neighbors()
         return nnz
@@ -425,6 +435,9 @@ class BATSTrainer:
                 args.append('-ub')
             if self.use_all_planning_itrs:
                 args.append('-uapi')
+            if self.use_dl_params:
+                for k, v in self.dynamics_load_params.items():
+                    args += [f"--{k}", f"{v}"]
             if self.verbose and i == 0:
                 print(' '.join(args))
             process = Popen(args)
@@ -547,8 +560,12 @@ class BATSTrainer:
             # This is hardcoded to assume there are 5 models.
             self.G.ep.model_errors[e] = [0 for _ in range(5)]
             self.G.ep.stitch_itr[e] = 0
-        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
-        self.G.vp.start_node.get_array()[start_nodes_dense] = 1
+        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name, self.dataset)
+        start_vertices_dense = []
+        for node in start_nodes_dense:
+            start_vertices_dense.append(self.get_vertex(self.dataset['observations'][node, :]))
+        start_vertices_dense = np.array(start_vertices_dense).astype(int)
+        self.G.vp.start_node.get_array()[start_vertices_dense] = 1
 
     def find_nearest_neighbors(self):
         '''

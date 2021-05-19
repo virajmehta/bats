@@ -6,7 +6,7 @@ from pathlib import Path
 from copy import deepcopy
 
 base_config = OrderedDict(
-    epsilon_planning=0.1,
+    epsilon_planning=0.02,
     # epsilon_neighbors=0.225,
     num_cpus=6,
     num_stitching_iters=20,
@@ -31,11 +31,15 @@ PENDULUM_CONFIGS['pendulum-1k']['env_name'] = ENV_NAME
 PENDULUM_CONFIGS['pendulum-1k']['offline_dataset_path'] = dataset_base_path / 'pendulum-random-1000.hdf5'
 PENDULUM_CONFIGS['pendulum-1k']['load_model'] = model_base_path / '64,64,64_pendulum_random_1k'
 PENDULUM_CONFIGS['pendulum-1k']['load_bisim_model'] = model_base_path / '64,64,64_pendulum_random_1k_bisim'
+PENDULUM_CONFIGS['pendulum-1k']['dynamics_encoder_hidden'] = '64,64'
+PENDULUM_CONFIGS['pendulum-1k']['dynamics_latent_dim'] = 64
 PENDULUM_CONFIGS['pendulum-10k'] = deepcopy(base_config)
 PENDULUM_CONFIGS['pendulum-10k']['env_name'] = ENV_NAME
 PENDULUM_CONFIGS['pendulum-10k']['offline_dataset_path'] = dataset_base_path / 'pendulum-random-10000.hdf5'
 PENDULUM_CONFIGS['pendulum-10k']['load_model'] = model_base_path / '64,64,64_pendulum_random_10k'
 PENDULUM_CONFIGS['pendulum-10k']['load_bisim_model'] = model_base_path / '64,64,64_pendulum_random_10k_bisim'
+PENDULUM_CONFIGS['pendulum-10k']['dynamics_encoder_hidden'] = '64,64'
+PENDULUM_CONFIGS['pendulum-10k']['dynamics_latent_dim'] = 64
 
 
 to_add = OrderedDict()
