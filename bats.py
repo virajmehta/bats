@@ -74,28 +74,32 @@ class BATSTrainer:
         # set up the parameters for behavior cloning
         self.policy = None
         self.bc_params = {}
-        self.bc_params['save_dir'] = str(output_dir)
-        self.bc_params['epochs'] = kwargs.get('bc_epochs', 50)
+        self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
         self.bc_params['od_wait'] = kwargs.get('od_wait', 15)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
         self.bc_params['batch_updates_per_epoch'] =\
             kwargs.get('batch_updates_per_epoch', None)
         self.bc_params['add_entropy_bonus'] =\
-            kwargs.get('add_entropy_bonus', True)
+            kwargs.get('add_entropy_bonus', False)
         self.intermediate_bc_params = deepcopy(self.bc_params)
-        self.intermediate_bc_params['epochs'] = 30
-        self.temperature = kwargs.get('temperature', 0.0)
-        self.rollout_stitch_temperature = kwargs.get('rollout_stitch_temperature', 0.25)
+        # self.intermediate_bc_params['epochs'] = 5
+        self.temperature = kwargs.get('temperature', 0.25)
         self.bolt_gather_params = {}
-        self.bolt_gather_params['top_percent_starts'] =\
-            kwargs.get('top_percent_starts', 0.8)
+        self.bolt_gather_params['return_threshold'] =\
+                kwargs.get('return_threshold', 0)
+        self.bolt_gather_params['n_collects'] =\
+                kwargs.get('n_collects', 100000)
+        self.bolt_gather_params['val_selection_prob'] =\
+                kwargs.get('val_selection_prob', 0.2)
+        self.bolt_gather_params['temperature'] =\
+                kwargs.get('bc_temperature', 0.1)
         self.bolt_gather_params['silent'] =\
-            kwargs.get('silent', False)
+                kwargs.get('silent', False)
         self.bolt_gather_params['get_unique_edges'] =\
-            kwargs.get('get_unique_edges', False)
+                kwargs.get('get_unique_edges', False)
         self.bolt_gather_params['val_start_prop'] =\
-            kwargs.get('val_start_prop', 0.05)
+                kwargs.get('val_start_prop', 0)
         self.bc_every_iter = kwargs['bc_every_iter']
 
         # could do it this way or with knn, this is simpler to implement for now
@@ -682,10 +686,7 @@ class BATSTrainer:
         print("cloning a policy")
         data, val_data, stats = make_boltzmann_policy_dataset(
                 graph=self.G,
-                n_collects=self.G.num_vertices(),
                 max_ep_len=self.env._max_episode_steps,
-                n_val_collects=self.bolt_gather_params['val_start_prop']
-                               * self.G.num_vertices(),
                 starts=self.start_states,
                 **self.bolt_gather_params)
         for k, v in stats.items():
