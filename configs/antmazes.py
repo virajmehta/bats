@@ -37,7 +37,7 @@ ANTMAZE_CONFIGS['antmaze-umaze']['env_name'] = 'maze2d-umaze-v1'
 # MAZE_CONFIGS['maze-large']['epsilon_neighbors'] = 0.15
 
 to_add = OrderedDict()
-for k, v in MAZE_CONFIGS.items():
+for k, v in ANTMAZE_CONFIGS.items():
     task_type = k[k.index('-') + 1:]
     if 'maze' not in task_type:
         task_type = task_type + 'maze'

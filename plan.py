@@ -155,7 +155,10 @@ def main(args):
     outputs = []
     # input_data = torch.Tensor(input_data)
     # input_data = input_data.to(device)
-    for row in input_data:
+    interval = len(input_data) // 10
+    for i, row in enumerate(input_data):
+        if (i + 1) % interval == 0:
+            print(f"{i} elements done of {len(input_data)}, {len(outputs)} successful")
         data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim,
                    ensemble, bisim_model, args.epsilon, args.max_stitch_length,
                    args.quantile, mean, std, args.env_name, device=device,
