@@ -81,6 +81,7 @@ def run(args):
             return_threshold=args.return_threshold,
             all_starts_once=args.all_starts_once,
             get_fusion_slope_obs=args.fusion,
+            silent=args.silent,
     )
     # Run AWR with the pre-trained qnets.
     behavior_clone(
@@ -98,6 +99,7 @@ def run(args):
         add_entropy_bonus=args.add_entropy_bonus,
         batch_updates_per_epoch=args.batch_updates_per_epoch,
         target_entropy=args.target_entropy,
+        silent=args.silent,
     )
     with open(os.path.join(args.save_dir, 'args.pkl'), 'wb') as f:
         pkl.dump(args, f)
@@ -136,6 +138,7 @@ def parse_args():
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--max_path_length', type=int)
+    parser.add_argument('--silent', action='store_true')
     parser.add_argument('--fusion', action='store_true')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
