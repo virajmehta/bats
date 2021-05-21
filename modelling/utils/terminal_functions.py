@@ -26,7 +26,7 @@ def mc_terminal(states):
     states = _add_axis_if_needed(states)
     positions = states[:, 0]
     velocities = states[:, 1]
-    done = np.logical_and.reduce(positions >= goal_position, velocities >= goal_velocity)
+    done = np.logical_and(positions >= goal_position, velocities >= goal_velocity)
     return done
 
 def antmaze_terminal(states):
