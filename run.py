@@ -54,6 +54,8 @@ def parse_arguments():
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('-pc', '--penalty_coefficient', type=float, default=1.0)
     parser.add_argument('-msl', '--max_stitch_length', type=int, default=1)
+    parser.add_argument('--starts_from_dataset', action='store_true')
+    parser.add_argument('--reward_offset', type=float)
     if defaults is not None:
         parser.set_defaults(**defaults)
     args = parser.parse_args(remaining)

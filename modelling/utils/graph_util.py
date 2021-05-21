@@ -124,7 +124,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     upper_returns = []
     if not silent:
         if all_starts_once:
-            amt_on_bar = min(n_collects, len(starts) * max_ep_len)
+            amt_on_bar = len(starts) * max_ep_len
         else:
             amt_on_bar = n_collects
         pbar = tqdm(total=amt_on_bar)
@@ -200,13 +200,13 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             upper_ret += graph.ep.upper_reward[edge]
             currv = nxtv
             t += 1
-            if n_edges >= n_collects:
+            if not all_starts_once and n_edges >= n_collects:
                 break
         if not silent:
             pbar.set_postfix(OrderedDict(
                 TrainEdges=len(edge_set),
                 ValEdges=len(val_edge_set),
-                Imaginary=(n_imagined / n_edges),
+                Imaginary=0 if n_edges == 0 else (n_imagined / n_edges),
                 Return=ret,
                 UpperReturn=upper_ret,
             ))
@@ -221,7 +221,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             upper_returns.append(upper_ret)
         running = n_edges < n_collects
         if all_starts_once:
-            running = running and nxt_start_idx < len(starts) - 1
+            running = nxt_start_idx < len(starts) - 1
     if not silent:
         pbar.close()
         print('Done collecting.')

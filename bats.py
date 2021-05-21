@@ -74,6 +74,7 @@ class BATSTrainer:
         # set up the parameters for behavior cloning
         self.policy = None
         self.bc_params = {}
+        self.bc_params['save_dir'] = str(output_dir)
         self.bc_params['epochs'] = kwargs.get('bc_epochs', 100)
         self.bc_params['od_wait'] = kwargs.get('od_wait', 15)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
@@ -84,7 +85,7 @@ class BATSTrainer:
             kwargs.get('add_entropy_bonus', False)
         self.intermediate_bc_params = deepcopy(self.bc_params)
         # self.intermediate_bc_params['epochs'] = 5
-        self.temperature = kwargs.get('temperature', 0.25)
+        self.temperature = kwargs.get('temperature', 0.1)
         self.bolt_gather_params = {}
         self.bolt_gather_params['return_threshold'] =\
                 kwargs.get('return_threshold', 0)
@@ -101,6 +102,7 @@ class BATSTrainer:
         self.bolt_gather_params['val_start_prop'] =\
                 kwargs.get('val_start_prop', 0)
         self.bc_every_iter = kwargs['bc_every_iter']
+        self.reward_offset = kwargs.get('reward_offset', 0)
 
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
@@ -174,6 +176,8 @@ class BATSTrainer:
         self.continue_after_no_advantage =\
                 kwargs.get('continue_after_no_advantage', False)
         self.pick_positive_adv = True  # Set to False after no positive adv.
+        self.rollout_stitch_temperature = kwargs.get('rollout_stitch_temperature', 0.2)
+        self.starts_from_dataset = kwargs.get('starts_from_dataset', False)
 
         # printing parameters
         self.neighbor_print_period = 1000
@@ -520,7 +524,7 @@ class BATSTrainer:
                 self.edges_added.append((start_v, end_v))
                 self.G.ep.action[e] = action
                 self.G.ep.imagined[e] = True
-                reward = rewards[i]
+                reward = rewards[i] + self.reward_offset
                 self.G.ep.model_errors[e] = model_errs
                 self.G.ep.stitch_itr[e] = iteration
                 self.G.ep.stitch_length[e] = actions.shape[0]
@@ -564,7 +568,9 @@ class BATSTrainer:
             # This is hardcoded to assume there are 5 models.
             self.G.ep.model_errors[e] = [0 for _ in range(5)]
             self.G.ep.stitch_itr[e] = 0
-        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name, self.dataset)
+        start_nodes_dense = get_starts_from_graph(self.G, self.env,
+                self.env_name, self.dataset,
+                self.starts_from_dataset)
         start_vertices_dense = []
         for node in start_nodes_dense:
             start_vertices_dense.append(self.get_vertex(self.dataset['observations'][node, :]))
