@@ -2,12 +2,12 @@ import numpy as np
 import os
 import pickle as pkl
 
-from gym_env.fusion_env import BaseFusionEnv, SingleActTargetFusionEnv,\
+from fusion.fusion_env import BaseFusionEnv, SingleActTargetFusionEnv,\
         SISOTargetFusionEnv, SmallTargetFusionEnv, PIDFusionEnv,\
         MDPPIDFusionEnv
-from gym_env.disrupt_predictor import CatBoostDisruptionPredictor,\
+from fusion.disrupt_predictor import CatBoostDisruptionPredictor,\
     load_cb_from_files
-from gym_env.state_predictor_frame import make_signal_namespace,\
+from fusion.state_predictor_frame import make_signal_namespace,\
         CatBoostStatePredictor
 
 def create_base_env(

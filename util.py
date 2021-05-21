@@ -18,8 +18,9 @@ def get_output_dir(name):
     return Path(DATA_DIR) / name
 
 
-def make_output_dir(name, overwrite, args):
-    dir_path = get_output_dir(name)
+def make_output_dir(name, overwrite, args, dir_path=None):
+    if dir_path is None:
+        dir_path = get_output_dir(name)
     if dir_path.exists():
         if overwrite:
             rmtree(dir_path)
@@ -31,7 +32,8 @@ def make_output_dir(name, overwrite, args):
     output_path = dir_path / 'output'
     output_path.mkdir()
     args_path = dir_path / 'args.json'
-    args = vars(args)
+    if not isinstance(args, dict):
+        args = vars(args)
     print(args)
     for k, v in args.items():
         if type(v) is PosixPath:
@@ -42,7 +44,10 @@ def make_output_dir(name, overwrite, args):
 
 
 def get_offline_env(name, dataset_fraction, data_path=None):
-    env = gym.make(name)
+    if name is None:
+        env = None
+    else:
+        env = gym.make(name)
     if data_path is None:
         dataset = d4rl.qlearning_dataset(env)
     else:
@@ -158,6 +163,16 @@ def s2i(string):
     return [int(s) for s in string.split(',')]
 
 
+def s2f(string):
+    """Make a comma separated string of ints into a list of ints."""
+    if ',' not in string:
+        if len(string) > 0:
+            return [float(string)]
+        else:
+            return []
+    return [float(s) for s in string.split(',')]
+
+
 def prepare_model_inputs(obs, actions):
     return torch.Tensor(np.hstack([obs, actions]))
 
@@ -193,7 +208,11 @@ def get_starts_from_graph(graph, env, env_name):
         obs = obs.T
         diffs = np.array([obs - np.array([st[0], st[1], 0, 0])
                         for st in env.empty_and_goal_locations])
-        is_starts = np.any(np.all(np.abs(diffs) < 0.1, axis=-1), 0)
+        start_conditions = np.all(np.abs(diffs) < 0.1, axis=-1)
+        no_start_rows = np.argwhere(np.sum(start_conditions, axis=1) == 0)
+        loose_conditions = np.all(np.abs(diffs[..., :2]) < 0.1, axis=-1)
+        start_conditions[no_start_rows] = loose_conditions[no_start_rows]
+        is_starts = np.any(start_conditions, 0)
         return np.argwhere(is_starts).flatten()
     elif env_name.startswith('halfcheetah') or env_name.startswith('walker') or env_name.startswith('hopper'):
         dataset = env.get_dataset()
@@ -206,3 +225,24 @@ def get_starts_from_graph(graph, env, env_name):
     else:
         raise NotImplementedError('env {env_name} not supported for start state detection')
 
+class BlankEnv(object):
+
+    def __init__(self, obs_dim=20):
+        self.obs_dim = obs_dim
+        self.observation_space = gym.spaces.Box(
+            low=-1 * np.ones(obs_dim),
+            high=np.ones(obs_dim),
+            dtype=np.float32,
+        )
+        self.action_space = gym.spaces.Box(
+            low=-1,
+            high=1,
+            shape=(1,),
+            dtype=np.float32,
+        )
+
+    def step(self, act):
+        return np.ones(self.obs_dim), 0, False, {}
+
+    def reset(self):
+        return np.ones(self.obs_dim)

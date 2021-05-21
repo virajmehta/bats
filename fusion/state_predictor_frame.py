@@ -5,9 +5,6 @@ import pickle as pkl
 import torch
 from catboost import CatBoostRegressor
 
-sys.path.append(os.path.dirname(os.path.realpath(__file__)))
-import NNKit
-
 
 ##################################################################
 def check_same(mat_1, mat_2):

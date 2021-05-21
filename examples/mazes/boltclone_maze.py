@@ -24,8 +24,8 @@ def run(args):
     graph = load_graph(os.path.join(args.graph_dir, 'vi.gt'))
     if args.n_collects is None:
         args.n_collects = graph.num_vertices()
-    starts = get_starts_from_graph(graph, env)
-    data, val_data = make_boltzmann_policy_dataset(
+    starts = get_starts_from_graph(graph, env, args.env)
+    data, val_data, _ = make_boltzmann_policy_dataset(
             graph=graph,
             n_collects=args.n_collects,
             temperature=args.temperature,
@@ -35,18 +35,6 @@ def run(args):
             any_state_is_start=args.use_any_start,
             starts=starts,
     )
-    # Run AWR with the pre-trained qnets.
-    # del data['values']
-    # learn_awac_policy(
-    #     dataset=data,
-    #     save_path=args.save_dir,
-    #     policy_hidden_sizes='128,64',
-    #     qnet_hidden_sizes='256,256',
-    #     epochs=args.epochs,
-    #     n_qnets=2,
-    #     env=env,
-    #     train_loops_per_epoch=1000,
-    # )
     behavior_clone(
         dataset=data,
         save_dir=args.save_dir,
@@ -71,8 +59,8 @@ def parse_args():
     parser.add_argument('--od_wait', type=int, default=10)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
-    parser.add_argument('--n_val_collects', type=int, default=0)
-    parser.add_argument('--val_start_prop', type=float, default=0)
+    parser.add_argument('--n_val_collects', type=int, default=10000)
+    parser.add_argument('--val_start_prop', type=float, default=0.1)
     parser.add_argument('--temperature', type=float, default=0)
     parser.add_argument('--target_entropy', type=float, default=None)
     parser.add_argument('--use_any_start', action='store_true')

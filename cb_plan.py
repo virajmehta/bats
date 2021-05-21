@@ -1,14 +1,13 @@
 import argparse
+from collections import deque
 import os
 from pathlib import Path
 
 import graph_tool
-import torch
 import pickle
 import numpy as np
 from fusion.env_creator import create_single_act_target_env
 from modelling.bisim_construction import load_bisim
-from modelling.utils.torch_utils import set_cuda_device, ModelUnroller
 
 
 MODEL_PARAMS = dict(
@@ -35,28 +34,25 @@ def parse_arguments():
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     parser.add_argument('-uapi', '--use_all_planning_itrs',
                         action='store_true')
+    parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
-
-
-def prepare_model_inputs_torch(obs, actions):
-    return torch.cat([obs, actions], dim=-1)
 
 
 def make_init_action(actions, horizon):
     action_horizon = len(actions)
     action_dim = len(actions[0])
-    action = torch.Tensor(actions)
+    action = np.array(actions)
     if horizon == action_horizon:
         return action
     elif horizon < action_horizon:
         return action[:horizon, ...]
     else:
-        padding = torch.zeros((horizon - action_horizon, action_dim))
-        return torch.cat((action, padding))
+        padding = np.zeros((horizon - action_horizon, action_dim))
+        return np.append(action, padding)
 
 
-def CEM(row, obs_dim, action_dim, latent_dim, environment, epsilon,
-        max_stitch_length, quantile, mean, std, env_name, device=None,
+def CEM(row, obs_dim, action_dim, latent_dim, env, epsilon,
+        max_stitch_length, quantile, mean, std, env_name,
         use_all_iterations=False, **kwargs):
     '''
     attempts CEM optimization to plan a single step from the start state to the end state.
@@ -88,23 +84,25 @@ def CEM(row, obs_dim, action_dim, latent_dim, environment, epsilon,
         num_elites = kwargs.get('num_elites', 64)
         alpha = kwargs.get('alpha', 0.25)
         mean = init_action
-        var = torch.ones_like(mean) * ((action_upper_bound - action_lower_bound) / initial_variance_divisor) ** 2
+        var = np.ones_like(mean) * ((action_upper_bound - action_lower_bound) / initial_variance_divisor) ** 2
         best_found, best_qscore = None, float('inf')
         for i in range(max_iters):
-            samples = torch.fmod(torch.randn(size=(popsize, horizon, action_dim), device=device),
-                                 2) * torch.sqrt(var) + mean
-            samples = torch.clip(samples, action_lower_bound, action_upper_bound)
-            start_states = start_state.repeat(popsize, 1)
+            samples = np.random.normal(size=(popsize, horizon, action_dim))
+            samples = np.clip(samples * np.sqrt(var) + mean,
+                              action_lower_bound,
+                              action_upper_bound)
             model_obs, model_rewards, model_terminals =\
                     [[] for _ in range(3)]
             for acts in samples:
                 trajobs, trajrews, trajterms = [[] for _ in range(3)]
                 env.reset()
-                env.state_log = start_state[:env.num_signals]
-                env.act_log = start_state[env.num_signals:]
+                env.state_log[:, -start_state.shape[1]:] =\
+                        start_state[:env.num_signals]
+                env.act_log[:, -start_state.shape[1]:] =\
+                        start_state[env.num_signals:]
                 for act in acts:
                     nxt, rew, done, _ = env.step(act)
-                    trajobs.append(nxt)
+                    trajobs.append(nxt[:len(end_obs)])
                     trajrews.append(rew)
                     trajterms.append(done)
                 model_obs.append(np.array(trajobs))
@@ -126,23 +124,24 @@ def CEM(row, obs_dim, action_dim, latent_dim, environment, epsilon,
             if std is not None:
                 displacements /= std
             distances = np.linalg.norm(displacements, axis=-1)
-            min_idx = np.argmin(distances)
-            min_dist = distances[min_idx]
+            min_idx = np.argmin(distances[-1])
+            min_dist = distances[-1, min_idx]
             if min_dist < threshold:
                 threshold = min_dist
                 # success!
                 if min_dist < best_qscore:
-                    obs_history = model_obs[min_index, 1:-1, :]
+                    obs_history = model_obs[min_idx, 1:-1, :]
                     rewards = model_rewards[min_idx, ...]
                     actions = samples[min_idx, ...]
                     model_errs = np.array([min_dist])
                     best_found = (start_idx, end_idx, actions,
-                            min_quantile, rewards, obs_history, model_errs)
+                                  min_dist, rewards, obs_history, model_errs)
+                    best_qscore = min_dist
                 if not use_all_iterations:
                     return best_found
-            elites = samples[np.argsort(distances)[:num_elites], ...]
-            new_mean = torch.mean(elites, dim=0)
-            new_var = torch.var(elites, dim=0)
+            elites = samples[np.argsort(distances[-1])[:num_elites], ...]
+            new_mean = np.mean(elites, axis=0)
+            new_var = np.var(elites, axis=0)
             mean = alpha * mean + (1 - alpha) * new_mean
             var = alpha * var + (1 - alpha) * new_var
     return None
@@ -150,8 +149,6 @@ def CEM(row, obs_dim, action_dim, latent_dim, environment, epsilon,
 
 def main(args):
     device_num = ''
-    set_cuda_device(device_num)
-    device = torch.device('cpu' if device_num == '' else 'cuda:' + device_num)
     with args.input_file.open('rb') as f:
         input_data = pickle.load(f)
     mean = np.load(args.mean_file) if args.mean_file else None
@@ -160,6 +157,10 @@ def main(args):
         horizon=5,
         init_at_start_only=True,
         num_cached_starts=False,
+        preloaded_inits=deque([(np.zeros((10, 400)), np.zeros((8, 400)))]),
+        beta_target=2,
+        rew_coefs=(0, 0),
+        standardize_observations=False,
         **MODEL_PARAMS,
     )
     bisim_model = None
@@ -167,7 +168,7 @@ def main(args):
     for row in input_data:
         data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim,
                    env, args.epsilon, args.max_stitch_length,
-                   args.quantile, mean, std, args.env_name, device=device,
+                   args.quantile, mean, std, args.env_name,
                    use_all_planning_itrs=args.use_all_planning_itrs)
         if data is not None:
             outputs.append(data)
@@ -177,4 +178,6 @@ def main(args):
 
 if __name__ == '__main__':
     args = parse_arguments()
+    if args.pudb:
+        import pudb; pudb.set_trace()
     main(args)

@@ -14,8 +14,9 @@ from modelling.policy_construction import behavior_clone
 def train(args):
     if args.pudb:
         import pudb; pudb.set_trace()
+    env = gym.make(args.env)
     if args.dataset_path is None:
-        dataset = d4rl.qlearning_dataset(gym.make(args.env))
+        dataset = d4rl.qlearning_dataset(env)
     else:
         dataset = {}
         with h5py.File(args.dataset_path, 'r') as hdata:
@@ -26,7 +27,7 @@ def train(args):
     del train_params['env']
     del train_params['pudb']
     del train_params['dataset_path']
-    behavior_clone(dataset, **train_params)
+    behavior_clone(dataset, env=env, **train_params)
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -38,7 +39,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--dataset_path', type=str, default=None)
-    parser.add_argument('--batch_updates_per_epoch', type=int, default=100)
+    parser.add_argument('--batch_updates_per_epoch', type=int)
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
