@@ -57,7 +57,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   top_percent_starts=None,
                                   return_threshold=None,
                                   all_starts_once=False,
-                                  silent=False):
+                                  silent=False,
+                                  include_vertex_numbers=False):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
     Args:
         graph: The graph object.
@@ -84,6 +85,9 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         all_starts_once: Whether to just collect trajectories from all start
             states once instead of an amount of samples.
         silent: Whether to be silent.
+        include_vertex_numbers: whether to include the numbers of vertices
+            which are used by the policy
+
     """
     data = defaultdict(list)
     # Get the start states.
@@ -195,6 +199,9 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                         upper_reward = graph.ep.upper_reward[edge],
                         t = t,
                     ))
+                if include_vertex_numbers:
+                    toadd['vertex'].append(nxtv)
+                    toadd['next_vertex'].append(nxtv)
             done = graph.vp.terminal[nxtv]
             ret += graph.ep.reward[edge]
             upper_ret += graph.ep.upper_reward[edge]

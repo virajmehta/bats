@@ -13,10 +13,10 @@ base_config = OrderedDict(
     stitching_chunk_size=100,
     bc_epochs=25,
     bc_every_iter=True,
-    od_wait=-1,
     top_percent_starts=None,
     temperature=0.1,
-    k_neighbors=10,
+    od_wait=None,
+    # k_neighbors=10,
     max_stitch_length=2,
 )
 
@@ -52,14 +52,11 @@ MOUNTAINCAR_CONFIGS['mountaincar-5']['dynamics_latent_dim'] = 64
 to_add = OrderedDict()
 for k, v in MOUNTAINCAR_CONFIGS.items():
     task_type = k[k.index('-') + 1:]
-    if 'maze' not in task_type:
-        task_type = task_type + 'maze'
     config = deepcopy(v)
     config['use_all_planning_itrs'] = True
-    config['continue_after_no_advantage'] = True
+    # config['continue_after_no_advantage'] = True
     # config['num_stitching_iters'] = 25
     # For umaze dataset edge distance = 0.11 +- 0.03
-    config['planning_quantile'] = 0.4
     config['epsilon_planning'] = 1.5
     config['verbose'] = True
     to_add[k + '-tune'] = config

@@ -54,11 +54,15 @@ def get_trajectory_dataset(dataset):
         if (obs != last_obs).any() and last_obs is not None:
             ntraj += 1
             for name in dataset:
+                if name == 'infos':
+                    continue
                 traj = dataset[name][last_start:i, ...]
                 trajectory_dataset[name].append(traj)
             last_start = i
         last_obs = next_obs
     for name in dataset:
+        if name == 'infos':
+            continue
         traj = dataset[name][last_start:, ...]
         trajectory_dataset[name].append(traj)
     print(f"Dataset size {nelem}, {ntraj} trajectories")
