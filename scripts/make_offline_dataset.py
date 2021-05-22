@@ -27,7 +27,7 @@ class RandomPolicy(object):
 def load_in_policy(args):
     if args.is_rlkit_policy:
         from rlkit.torch.pytorch_util import set_gpu_mode
-        data = torch.load(args.policy_path)
+        data = torch.load(args.policy_path, map_location='cpu')
         policy = data['evaluation/policy']
         if args.gpu:
             set_gpu_mode(True)
@@ -46,13 +46,16 @@ def collect_data(args):
     observations, actions, rewards, next_observations, terminals, ends =\
             [[] for _ in range(6)]
     pbar = tqdm(total=args.num_collects)
+    returns = []
     while len(observations) < args.num_collects:
         done = False
         s = env.reset()
         t = 0
+        ret = 0
         while not done and t < args.path_length:
             a, _ = policy.get_action(s)
             n, r, done, info = env.step(a)
+            ret += r
             t += 1
             if (t >= args.path_length
                     or len(observations) + 1 >= args.num_collects):
@@ -69,6 +72,7 @@ def collect_data(args):
             pbar.update(1)
             if len(observations) == args.num_collects:
                 break
+        returns.append(ret)
     with h5py.File(args.save_path, 'w') as wd:
         wd.create_dataset('observations', data=np.vstack(observations))
         wd.create_dataset('actions', data=np.vstack(actions))
@@ -76,7 +80,7 @@ def collect_data(args):
         wd.create_dataset('next_observations', data=np.vstack(next_observations))
         wd.create_dataset('terminals', data=np.vstack(terminals))
         wd.create_dataset('ends', data=np.vstack(ends))
-    print('Done.')
+    print('Done. Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
 
 
 if __name__ == "__main__":
