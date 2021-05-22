@@ -83,8 +83,7 @@ class BATSTrainer:
         self.bc_params['add_entropy_bonus'] =\
             kwargs.get('add_entropy_bonus', False)
         self.intermediate_bc_params = deepcopy(self.bc_params)
-        # self.intermediate_bc_params['epochs'] = 5
-        self.temperature = kwargs.get('temperature', 0.1)
+        self.temperature = kwargs.get('temperature', 0.25)
         self.rollout_stitch_temperature = kwargs.get('rollout_stitch_temperature', 0.25)
         self.bolt_gather_params = {}
         self.bolt_gather_params['return_threshold'] =\
@@ -557,7 +556,7 @@ class BATSTrainer:
             if (self.G.vertex_index[v_from], self.G.vertex_index[v_to]) in self.stitches_tried:  # NOQA
                 continue
             action = self.dataset['actions'][i, :]
-            reward = self.dataset['rewards'][i]
+            reward = self.dataset['rewards'][i] + self.reward_offset
             terminal = self.dataset['terminals'][i]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)

@@ -42,6 +42,13 @@ PENDULUM_CONFIGS['pendulum-10k']['load_model'] = 'models/pendulum/10k_10starts'
 PENDULUM_CONFIGS['pendulum-10k']['epsilon_neighbors'] = 0.1
 PENDULUM_CONFIGS['pendulum-10k']['epsilon_planning'] = 0.1
 
+PENDULUM_CONFIGS['pendulum-mixed'] = deepcopy(base_config)
+PENDULUM_CONFIGS['pendulum-mixed']['env_name'] = ENV_NAME
+PENDULUM_CONFIGS['pendulum-mixed']['offline_dataset_path'] = 'datasets/pendulum/mixed-pendulum.hdf5'
+PENDULUM_CONFIGS['pendulum-mixed']['load_model'] = 'models/pendulum/mixed-pendulum'
+PENDULUM_CONFIGS['pendulum-mixed']['epsilon_neighbors'] = 0.1
+PENDULUM_CONFIGS['pendulum-mixed']['epsilon_planning'] = 0.1
+
 
 to_add = OrderedDict()
 for k, v in PENDULUM_CONFIGS.items():
