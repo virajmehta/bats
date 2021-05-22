@@ -84,11 +84,11 @@ class BATSTrainer:
         self.bc_params['add_entropy_bonus'] =\
             kwargs.get('add_entropy_bonus', False)
         self.intermediate_bc_params = deepcopy(self.bc_params)
-        # self.intermediate_bc_params['epochs'] = 5
-        self.temperature = kwargs.get('temperature', 0.1)
+        self.temperature = kwargs.get('temperature', 0.25)
+        self.rollout_stitch_temperature = kwargs.get('rollout_stitch_temperature', 0.25)
         self.bolt_gather_params = {}
         self.bolt_gather_params['return_threshold'] =\
-                kwargs.get('return_threshold', 0)
+                kwargs.get('return_threshold', -10000000)
         self.bolt_gather_params['n_collects'] =\
                 kwargs.get('n_collects', 100000)
         self.bolt_gather_params['val_selection_prob'] =\
@@ -700,7 +700,9 @@ class BATSTrainer:
         params = deepcopy(self.intermediate_bc_params if intermediate
                           else self.bc_params)
         if dir_name is not None:
-            params['save_dir'] = os.path.join(params['save_dir'], dir_name)
+            params['save_dir'] = self.output_dir / dir_name
+        else:
+            params['save_dir'] = self.output_dir
         self.policy, bc_trainer = behavior_clone(
                 dataset=data,
                 val_dataset=val_data,

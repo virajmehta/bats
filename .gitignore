@@ -1,4 +1,5 @@
 *.swp
+models/
 *.sif
 *.img
 slurm*.out
