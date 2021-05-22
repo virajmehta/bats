@@ -52,6 +52,13 @@ class BATSTrainer:
         self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 100)
         self.dynamics_train_params['cuda_device'] = kwargs.get('cuda_device', '')
 
+        self.dynamics_load_params = {}
+        if 'dynamics_encoder_hidden' in kwargs:
+            self.dynamics_load_params['encoder_hidden'] = kwargs['dynamics_encoder_hidden']
+        if 'dynamics_latent_dim' in kwargs:
+            self.dynamics_load_params['latent_dim'] = kwargs['dynamics_latent_dim']
+        self.use_dl_params = len(self.dynamics_load_params) > 0
+
         # set up the parameters for the bisimulation metric space
         self.use_bisimulation = kwargs['use_bisimulation']
         self.penalize_stitches = kwargs['penalize_stitches']
@@ -67,28 +74,33 @@ class BATSTrainer:
         # set up the parameters for behavior cloning
         self.policy = None
         self.bc_params = {}
-        self.bc_params['save_dir'] = str(output_dir)
-        self.bc_params['epochs'] = kwargs.get('bc_epochs', 50)
+        self.bc_params['epochs'] = kwargs['bc_epochs']
         self.bc_params['od_wait'] = kwargs.get('od_wait', 15)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
         self.bc_params['batch_updates_per_epoch'] =\
             kwargs.get('batch_updates_per_epoch', None)
         self.bc_params['add_entropy_bonus'] =\
-            kwargs.get('add_entropy_bonus', True)
+            kwargs.get('add_entropy_bonus', False)
         self.intermediate_bc_params = deepcopy(self.bc_params)
-        self.intermediate_bc_params['epochs'] = 30
-        self.temperature = kwargs.get('temperature', 0.0)
+        # self.intermediate_bc_params['epochs'] = 5
+        self.temperature = kwargs.get('temperature', 0.25)
         self.rollout_stitch_temperature = kwargs.get('rollout_stitch_temperature', 0.25)
         self.bolt_gather_params = {}
-        self.bolt_gather_params['top_percent_starts'] =\
-            kwargs.get('top_percent_starts', 0.8)
+        self.bolt_gather_params['return_threshold'] =\
+                kwargs.get('return_threshold', -10000000)
+        self.bolt_gather_params['n_collects'] =\
+                kwargs.get('n_collects', 100000)
+        self.bolt_gather_params['val_selection_prob'] =\
+                kwargs.get('val_selection_prob', 0.2)
+        self.bolt_gather_params['temperature'] =\
+                kwargs.get('bc_temperature', 0.1)
         self.bolt_gather_params['silent'] =\
-            kwargs.get('silent', False)
+                kwargs.get('silent', False)
         self.bolt_gather_params['get_unique_edges'] =\
-            kwargs.get('get_unique_edges', False)
+                kwargs.get('get_unique_edges', False)
         self.bolt_gather_params['val_start_prop'] =\
-            kwargs.get('val_start_prop', 0.05)
+                kwargs.get('val_start_prop', 0)
         self.bc_every_iter = kwargs['bc_every_iter']
 
         # could do it this way or with knn, this is simpler to implement for now
@@ -271,7 +283,6 @@ class BATSTrainer:
             size = self.G.num_vertices()
             self.neighbors.resize((size, size))
             save_npz(self.output_dir / self.neighbor_name, self.neighbors)
-            print(f"Num vertices: {size}, nn shape: {self.neighbors.shape}")
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
             vi_start_time = time.time()
             self.value_iteration()
@@ -324,8 +335,12 @@ class BATSTrainer:
                 self.bisim_model, self.bisim_trainer = train_bisim(**self.bisim_train_params)
                 self.bisim_model_path = str(self.output_dir)
             self.compute_embeddings()
-        dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
-                                          cuda_device='')
+        if self.use_dl_params:
+            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
+                                               cuda_device='', model_params=self.dynamics_load_params)
+        else:
+            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
+                                              cuda_device='')
         self.dynamics_unroller = ModelUnroller(self.env_name, dynamics_ensemble)
         nnz = self.find_nearest_neighbors()
         return nnz
@@ -425,6 +440,9 @@ class BATSTrainer:
                 args.append('-ub')
             if self.use_all_planning_itrs:
                 args.append('-uapi')
+            if self.use_dl_params:
+                for k, v in self.dynamics_load_params.items():
+                    args += [f"--{k}", f"{v}"]
             if self.verbose and i == 0:
                 print(' '.join(args))
             process = Popen(args)
@@ -547,7 +565,7 @@ class BATSTrainer:
             # This is hardcoded to assume there are 5 models.
             self.G.ep.model_errors[e] = [0 for _ in range(5)]
             self.G.ep.stitch_itr[e] = 0
-        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
+        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name, self.dataset)
         self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 
     def find_nearest_neighbors(self):
@@ -665,10 +683,7 @@ class BATSTrainer:
         print("cloning a policy")
         data, val_data, stats = make_boltzmann_policy_dataset(
                 graph=self.G,
-                n_collects=self.G.num_vertices(),
                 max_ep_len=self.env._max_episode_steps,
-                n_val_collects=self.bolt_gather_params['val_start_prop']
-                               * self.G.num_vertices(),
                 starts=self.start_states,
                 **self.bolt_gather_params)
         for k, v in stats.items():
@@ -676,7 +691,9 @@ class BATSTrainer:
         params = deepcopy(self.intermediate_bc_params if intermediate
                           else self.bc_params)
         if dir_name is not None:
-            params['save_dir'] = os.path.join(params['save_dir'], dir_name)
+            params['save_dir'] = self.output_dir / dir_name
+        else:
+            params['save_dir'] = self.output_dir
         self.policy, bc_trainer = behavior_clone(
                 dataset=data,
                 val_dataset=val_data,
