@@ -566,11 +566,7 @@ class BATSTrainer:
             self.G.ep.model_errors[e] = [0 for _ in range(5)]
             self.G.ep.stitch_itr[e] = 0
         start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name, self.dataset)
-        start_vertices_dense = []
-        for node in start_nodes_dense:
-            start_vertices_dense.append(self.get_vertex(self.dataset['observations'][node, :]))
-        start_vertices_dense = np.array(start_vertices_dense).astype(int)
-        self.G.vp.start_node.get_array()[start_vertices_dense] = 1
+        self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 
     def find_nearest_neighbors(self):
         '''

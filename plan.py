@@ -149,7 +149,7 @@ def main(args):
         bisim_model.to(device)
         ensemble = None
     else:
-        if args.latent_dim:
+        if args.encoder_hidden:
             model_params = dict(latent_dim=args.latent_dim, encoder_hidden=args.encoder_hidden)
             ensemble = load_ensemble(args.ensemble_path, args.obs_dim, args.action_dim, cuda_device=device_num, model_params=model_params)
         else:
@@ -160,7 +160,7 @@ def main(args):
     outputs = []
     # input_data = torch.Tensor(input_data)
     # input_data = input_data.to(device)
-    interval = len(input_data) // 10
+    interval = max(len(input_data) // 10, 1)
     for i, row in enumerate(input_data):
         if (i + 1) % interval == 0:
             print(f"{i} elements done of {len(input_data)}, {len(outputs)} successful")

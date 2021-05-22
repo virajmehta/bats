@@ -230,6 +230,8 @@ def make_mujoco_resetter(env, task):
 def get_starts_from_graph(graph, env, env_name, dataset):
     # When env is made it is wrapped in TimeLimiter, hence the .env
     env = env.env
+    if env_name.startswith('antmaze'):
+        return np.arange(graph.num_vertices())
     if env_name.startswith('maze'):
         obs = graph.vp.obs.get_2d_array(np.arange(env.observation_space.low.size))
         obs = obs.T

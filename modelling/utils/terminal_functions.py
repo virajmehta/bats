@@ -13,7 +13,7 @@ def get_terminal_function(env):
     if 'mountaincar' in env.lower():
         return mc_terminal
     if 'antmaze' in env.lower():
-        return antmaze_terminal()
+        return antmaze_terminal
     return no_terminal
 
 def no_terminal(states):
