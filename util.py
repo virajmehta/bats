@@ -54,11 +54,15 @@ def get_trajectory_dataset(dataset):
         if (obs != last_obs).any() and last_obs is not None:
             ntraj += 1
             for name in dataset:
+                if name == 'infos':
+                    continue
                 traj = dataset[name][last_start:i, ...]
                 trajectory_dataset[name].append(traj)
             last_start = i
         last_obs = next_obs
     for name in dataset:
+        if name == 'infos':
+            continue
         traj = dataset[name][last_start:, ...]
         trajectory_dataset[name].append(traj)
     print(f"Dataset size {nelem}, {ntraj} trajectories")
@@ -84,7 +88,7 @@ def get_offline_env(name, dataset_fraction, data_path=None):
     trajectory_dataset = get_trajectory_dataset(dataset)
     num_trajectories = len(trajectory_dataset['actions'])
     num_traj_sample = ceil(dataset_fraction * num_trajectories)
-    trajs = np.random.choice(num_trajectories, num_traj_sample)
+    trajs = np.random.choice(num_trajectories, num_traj_sample, replace=False)
     for name in trajectory_dataset:
         item = trajectory_dataset[name]
         new_item = []
@@ -223,19 +227,16 @@ def make_mujoco_resetter(env, task):
     return resetter
 
 
-def get_starts_from_graph(graph, env, env_name, dataset,
-                          starts_from_dataset=False):
-    if starts_from_dataset:
-        return np.append(0, np.argwhere(np.all(
-            dataset['observations'][1:] != dataset['next_observations'][:-1],
-            axis=1)) + 1)
+def get_starts_from_graph(graph, env, env_name, dataset, vertices):
     # When env is made it is wrapped in TimeLimiter, hence the .env
     env = env.env
+    if env_name.startswith('antmaze'):
+        return np.arange(graph.num_vertices())
     if env_name.startswith('maze'):
         obs = graph.vp.obs.get_2d_array(np.arange(env.observation_space.low.size))
         obs = obs.T
         diffs = np.array([obs - np.array([st[0], st[1], 0, 0])
-                        for st in env.empty_and_goal_locations])
+                          for st in env.empty_and_goal_locations])
         is_starts = np.any(np.all(np.abs(diffs) < 0.1, axis=-1), 0)
         return np.argwhere(is_starts).flatten()
     elif env_name.startswith('Pendulum'):
@@ -247,7 +248,8 @@ def get_starts_from_graph(graph, env, env_name, dataset,
         for i in range(nelem):
             obs = dataset['observations'][i, :]
             if (obs != last_obs).any():
-                starts.append(i)
+                idx = vertices[obs.tobytes()]
+                starts.append(idx)
             next_obs = dataset['next_observations'][i, :]
             last_obs = next_obs
         return np.array(starts)
