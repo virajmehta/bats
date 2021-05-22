@@ -51,7 +51,6 @@ def run(args):
             return_threshold=args.return_threshold,
             include_reward_next_obs=True,
             all_starts_once=args.all_starts_once,
-            get_fusion_slope_obs=args.fusion,
     )
     with h5py.File(args.save_path, 'w') as wd:
         for k, v in data.items():

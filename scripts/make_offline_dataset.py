@@ -27,7 +27,7 @@ class RandomPolicy(object):
 def load_in_policy(args):
     if args.is_rlkit_policy:
         from rlkit.torch.pytorch_util import set_gpu_mode
-        data = torch.load(args.policy_path)
+        data = torch.load(args.policy_path, map_location='cpu')
         policy = data['evaluation/policy']
         if args.gpu:
             set_gpu_mode(True)

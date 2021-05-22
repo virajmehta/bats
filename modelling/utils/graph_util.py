@@ -128,7 +128,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     upper_returns = []
     if not silent:
         if all_starts_once:
-            amt_on_bar = min(n_collects, len(starts) * max_ep_len)
+            amt_on_bar = len(starts) * max_ep_len
         else:
             amt_on_bar = n_collects
         pbar = tqdm(total=amt_on_bar)
@@ -207,13 +207,13 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             upper_ret += graph.ep.upper_reward[edge]
             currv = nxtv
             t += 1
-            if n_edges >= n_collects:
+            if not all_starts_once and n_edges >= n_collects:
                 break
         if not silent:
             pbar.set_postfix(OrderedDict(
                 TrainEdges=len(edge_set),
                 ValEdges=len(val_edge_set),
-                Imaginary=(n_imagined / n_edges),
+                Imaginary=0 if n_edges == 0 else (n_imagined / n_edges),
                 Return=ret,
                 UpperReturn=upper_ret,
             ))
@@ -228,7 +228,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             upper_returns.append(upper_ret)
         running = n_edges < n_collects
         if all_starts_once:
-            running = running and nxt_start_idx < len(starts) - 1
+            running = nxt_start_idx < len(starts) - 1
     if not silent:
         pbar.close()
         print('Done collecting.')
@@ -289,6 +289,35 @@ def make_graph_consistent(
         if not silent:
             pbar.update(1)
             pbar.set_postfix(stats)
+    if not silent:
+        pbar.close()
+    return graph, stats
+
+
+def add_penalty_to_graph(
+    graph,
+    disagreement_coef,
+    planning_coef,
+    silent=False,
+):
+    """Go through the graph and remove any edges that are not consistent with
+    the given hyperparameters.
+    """
+    stats = OrderedDict(EdgesRemoved=0, EdgesKept=0)
+    # Loop through all of the edges in the graph.
+    if not silent:
+        pbar = tqdm(total=graph.num_edges())
+    for inv, outv, im in graph.get_edges([graph.ep.imagined]):
+        if im:
+            edge = graph.edge(inv, outv)
+            errs = graph.ep.model_errors[edge]
+            penalty = (disagreement_coef * np.std(errs)
+                        + planning_coef * np.mean(errs))
+            rew = graph.ep.reward[edge]
+            graph.ep.reward[edge] = rew - penalty
+            graph.ep.upper_reward[edge] = rew + penalty
+        if not silent:
+            pbar.update(1)
     if not silent:
         pbar.close()
     return graph, stats

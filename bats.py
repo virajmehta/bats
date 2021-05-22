@@ -83,7 +83,6 @@ class BATSTrainer:
         self.bc_params['add_entropy_bonus'] =\
             kwargs.get('add_entropy_bonus', False)
         self.intermediate_bc_params = deepcopy(self.bc_params)
-        # self.intermediate_bc_params['epochs'] = 5
         self.temperature = kwargs.get('temperature', 0.25)
         self.rollout_stitch_temperature = kwargs.get('rollout_stitch_temperature', 0.25)
         self.bolt_gather_params = {}
@@ -102,6 +101,7 @@ class BATSTrainer:
         self.bolt_gather_params['val_start_prop'] =\
                 kwargs.get('val_start_prop', 0)
         self.bc_every_iter = kwargs['bc_every_iter']
+        self.reward_offset = kwargs.get('reward_offset', 0)
 
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
@@ -175,6 +175,7 @@ class BATSTrainer:
         self.continue_after_no_advantage =\
                 kwargs.get('continue_after_no_advantage', False)
         self.pick_positive_adv = True  # Set to False after no positive adv.
+        self.starts_from_dataset = kwargs.get('starts_from_dataset', False)
 
         # printing parameters
         self.neighbor_print_period = 1000
@@ -525,7 +526,7 @@ class BATSTrainer:
                 self.edges_added.append((start_v, end_v))
                 self.G.ep.action[e] = action
                 self.G.ep.imagined[e] = True
-                reward = rewards[i]
+                reward = rewards[i] + self.reward_offset
                 self.G.ep.model_errors[e] = model_errs
                 self.G.ep.stitch_itr[e] = iteration
                 self.G.ep.stitch_length[e] = actions.shape[0]
@@ -555,7 +556,7 @@ class BATSTrainer:
             if (self.G.vertex_index[v_from], self.G.vertex_index[v_to]) in self.stitches_tried:  # NOQA
                 continue
             action = self.dataset['actions'][i, :]
-            reward = self.dataset['rewards'][i]
+            reward = self.dataset['rewards'][i] + self.reward_offset
             terminal = self.dataset['terminals'][i]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)

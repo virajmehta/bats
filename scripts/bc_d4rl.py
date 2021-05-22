@@ -23,7 +23,7 @@ def train(args):
                 dataset[k] = v[()]
     # dataset['weights'] = np.minimum(np.exp(dataset['rewards'] - 6), 20)
     train_params = vars(args)
-    del train_params['env']
+    train_params['env'] = gym.make(args.env)
     del train_params['pudb']
     del train_params['dataset_path']
     behavior_clone(dataset, **train_params)
@@ -38,7 +38,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--dataset_path', type=str, default=None)
-    parser.add_argument('--batch_updates_per_epoch', type=int, default=100)
+    parser.add_argument('--batch_updates_per_epoch', type=int)
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
