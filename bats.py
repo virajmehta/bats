@@ -265,6 +265,10 @@ class BATSTrainer:
         self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
         self.value_iteration()
+        if self.bc_every_iter:
+            bc_start_time = time.time()
+            self.train_bc(dir_name='start', intermediate=True)
+            print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
         for i in self.get_iterator(self.num_stitching_iters):
             stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()
@@ -565,7 +569,7 @@ class BATSTrainer:
             # This is hardcoded to assume there are 5 models.
             self.G.ep.model_errors[e] = [0 for _ in range(5)]
             self.G.ep.stitch_itr[e] = 0
-        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name, self.dataset)
+        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name, self.dataset, self.vertices)
         self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 
     def find_nearest_neighbors(self):

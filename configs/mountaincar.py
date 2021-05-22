@@ -47,7 +47,13 @@ MOUNTAINCAR_CONFIGS['mountaincar-5']['load_model'] = model_base_path / 'mc_5'
 MOUNTAINCAR_CONFIGS['mountaincar-5']['load_bisim_model'] = None
 MOUNTAINCAR_CONFIGS['mountaincar-5']['dynamics_encoder_hidden'] = '64,64'
 MOUNTAINCAR_CONFIGS['mountaincar-5']['dynamics_latent_dim'] = 64
-
+MOUNTAINCAR_CONFIGS['mountaincar-mixed'] = deepcopy(base_config)
+MOUNTAINCAR_CONFIGS['mountaincar-mixed']['env_name'] = ENV_NAME
+MOUNTAINCAR_CONFIGS['mountaincar-mixed']['offline_dataset_path'] = dataset_base_path / 'mountaincar-mixed-v2.hdf5'
+MOUNTAINCAR_CONFIGS['mountaincar-mixed']['load_model'] = model_base_path / 'mc_mixed'
+MOUNTAINCAR_CONFIGS['mountaincar-mixed']['load_bisim_model'] = None
+MOUNTAINCAR_CONFIGS['mountaincar-mixed']['dynamics_encoder_hidden'] = '64,64'
+MOUNTAINCAR_CONFIGS['mountaincar-mixed']['dynamics_latent_dim'] = 64
 
 to_add = OrderedDict()
 for k, v in MOUNTAINCAR_CONFIGS.items():
