@@ -287,6 +287,35 @@ def make_graph_consistent(
     return graph, stats
 
 
+def add_penalty_to_graph(
+    graph,
+    disagreement_coef,
+    planning_coef,
+    silent=False,
+):
+    """Go through the graph and remove any edges that are not consistent with
+    the given hyperparameters.
+    """
+    stats = OrderedDict(EdgesRemoved=0, EdgesKept=0)
+    # Loop through all of the edges in the graph.
+    if not silent:
+        pbar = tqdm(total=graph.num_edges())
+    for inv, outv, im in graph.get_edges([graph.ep.imagined]):
+        if im:
+            edge = graph.edge(inv, outv)
+            errs = graph.ep.model_errors[edge]
+            penalty = (disagreement_coef * np.std(errs)
+                        + planning_coef * np.mean(errs))
+            rew = graph.ep.reward[edge]
+            graph.ep.reward[edge] = rew - penalty
+            graph.ep.upper_reward[edge] = rew + penalty
+        if not silent:
+            pbar.update(1)
+    if not silent:
+        pbar.close()
+    return graph, stats
+
+
 def get_best_policy_returns(
         graph,
         starts=None,
