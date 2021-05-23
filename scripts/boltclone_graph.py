@@ -27,6 +27,7 @@ from util import get_starts_from_graph, get_offline_env, make_output_dir
 def run(args):
     # Learn an advantage weighting function.
     env = gym.make(args.env)
+    dataset = d4rl.qlearning_dataset(env)
     graph = load_graph(os.path.join(args.graph_dir, args.graph_name))
     if args.planning_quantile is not None and args.epsilon_planning is not None:
         print('Making graph consistent with hyperparameters...')
@@ -55,7 +56,7 @@ def run(args):
     if args.use_graphs_starts:
         starts = None
     else:
-        starts = get_starts_from_graph(graph, env, args.env)
+        starts = get_starts_from_graph(graph, env, args.env, dataset)
     data, val_data, _ = make_boltzmann_policy_dataset(
             graph=graph,
             n_collects=args.n_collects,
@@ -73,6 +74,7 @@ def run(args):
             top_percent_starts=args.top_percent_starts,
             return_threshold=args.return_threshold,
             all_starts_once=args.all_starts_once,
+            reward_offset=args.reward_offset,
     )
     # Run AWR with the pre-trained qnets.
     behavior_clone(
@@ -127,6 +129,7 @@ def parse_args():
     parser.add_argument('--stitch_itr', type=int)
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--graph_name', default='vi.gt')
+    parser.add_argument('--reward_offset', type=float, default=0)
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
