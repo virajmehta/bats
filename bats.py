@@ -258,6 +258,11 @@ class BATSTrainer:
         self.penalize_stitches = True
         self.fine_tune_dynamics()
         self.G.save(str(self.output_dir / 'penalized.gt'))
+        if self.bc_every_iter:
+            self.value_iteration()
+            bc_start_time = time.time()
+            self.train_bc(dir_name='start', intermediate=True)
+            print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
 
     def train(self):
         # add the original dataset into the graph
