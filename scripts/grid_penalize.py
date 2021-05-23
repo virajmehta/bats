@@ -24,9 +24,10 @@ def launch_jobs(args):
                 'graph_name': args.graph_name,
                 'graph_path': os.path.join(args.graph_dir, args.graph_name),
                 'disagreement_coef': dc,
-                'planning_coef': pc,
+                'planerr_coef': pc,
                 'save_dir': os.path.join(args.parent_save_dir,
-                    'dc%.3f_pc%.3f' % (dc, pc))
+                    'dc%.3f_pc%.3f' % (dc, pc)),
+                'silent': True,
             })
     with Pool(args.num_jobs) as p:
         p.map(run, configs)
@@ -43,3 +44,10 @@ def parse_args():
     parser.add_argument('--graph_name', default='mdp.gt')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
+
+
+if __name__ == '__main__':
+    args = parse_args()
+    if args.pudb:
+        import pudb; pudb.set_trace()
+    launch_jobs(args)
