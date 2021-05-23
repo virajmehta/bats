@@ -1,5 +1,4 @@
 import argparse
-import graph_tool
 import torch
 import pickle
 import numpy as np
@@ -26,6 +25,8 @@ def parse_arguments():
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     parser.add_argument('-uapi', '--use_all_planning_itrs',
                         action='store_true')
+    parser.add_argument('--encoder_hidden', default=None)
+    parser.add_argument('--latent_dim', default=None, type=int)
     return parser.parse_args()
 
 
@@ -123,7 +124,7 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
                     actions = samples[min_index, ...]
                     model_errs = distances[min_qidx, :]
                     best_found = (start_idx, end_idx, actions,
-                            min_quantile, rewards, obs_history, model_errs)
+                                  min_quantile, rewards, obs_history, model_errs)
                 if not use_all_iterations:
                     return best_found
                 # return np.array([row[0], row[1], *samples[min_index, :].tolist(), min_quantile, reward])
@@ -148,14 +149,21 @@ def main(args):
         bisim_model.to(device)
         ensemble = None
     else:
-        ensemble = load_ensemble(args.ensemble_path, args.obs_dim, args.action_dim, cuda_device=device_num)
+        if args.encoder_hidden:
+            model_params = dict(latent_dim=args.latent_dim, encoder_hidden=args.encoder_hidden)
+            ensemble = load_ensemble(args.ensemble_path, args.obs_dim, args.action_dim, cuda_device=device_num, model_params=model_params)
+        else:
+            ensemble = load_ensemble(args.ensemble_path, args.obs_dim, args.action_dim, cuda_device=device_num)
         bisim_model = None
         for model in ensemble:
             model.to(device)
     outputs = []
     # input_data = torch.Tensor(input_data)
     # input_data = input_data.to(device)
-    for row in input_data:
+    interval = max(len(input_data) // 10, 1)
+    for i, row in enumerate(input_data):
+        if (i + 1) % interval == 0:
+            print(f"{i} elements done of {len(input_data)}, {len(outputs)} successful")
         data = CEM(row, args.obs_dim, args.action_dim, args.latent_dim,
                    ensemble, bisim_model, args.epsilon, args.max_stitch_length,
                    args.quantile, mean, std, args.env_name, device=device,
