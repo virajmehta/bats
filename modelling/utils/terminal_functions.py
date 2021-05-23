@@ -10,11 +10,33 @@ def get_terminal_function(env):
         return hopper_terminal
     elif 'walker' in env.lower():
         return walker_terminal
+    if 'mountaincar' in env.lower():
+        return mc_terminal
+    if 'antmaze' in env.lower():
+        return antmaze_terminal
     return no_terminal
 
 def no_terminal(states):
     states = _add_axis_if_needed(states)
     return np.full(states.shape[0], False)
+
+def mc_terminal(states):
+    goal_position = 0.45
+    goal_velocity = 0.
+    states = _add_axis_if_needed(states)
+    positions = states[:, 0]
+    velocities = states[:, 1]
+    done = np.logical_and(positions >= goal_position, velocities >= goal_velocity)
+    return done
+
+def antmaze_terminal(states):
+    states = _add_axis_if_needed(states)
+    pos = states[:, :2]
+    target = np.array([[0.35, 8.35]])
+    displacements = pos - target
+    norms = np.linalg.norm(displacements, axis=1)
+    return norms <= 0.5
+
 
 def hopper_terminal(states):
     """As written in MOPO code base."""

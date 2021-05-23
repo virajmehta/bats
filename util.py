@@ -10,7 +10,6 @@ import d4rl
 import gym
 import h5py
 import torch
-from ipdb import set_trace as db
 
 DATA_DIR = 'experiments'
 ENSEMBLE = None
@@ -20,8 +19,9 @@ def get_output_dir(name):
     return Path(DATA_DIR) / name
 
 
-def make_output_dir(name, overwrite, args):
-    dir_path = get_output_dir(name)
+def make_output_dir(name, overwrite, args, dir_path=None):
+    if dir_path is None:
+        dir_path = get_output_dir(name)
     if dir_path.exists():
         if overwrite:
             rmtree(dir_path)
@@ -33,7 +33,8 @@ def make_output_dir(name, overwrite, args):
     output_path = dir_path / 'output'
     output_path.mkdir()
     args_path = dir_path / 'args.json'
-    args = vars(args)
+    if not isinstance(args, dict):
+        args = vars(args)
     print(args)
     for k, v in args.items():
         if type(v) is PosixPath:
@@ -55,11 +56,15 @@ def get_trajectory_dataset(dataset):
         if (obs != last_obs).any() and last_obs is not None:
             ntraj += 1
             for name in dataset:
+                if name == 'infos':
+                    continue
                 traj = dataset[name][last_start:i, ...]
                 trajectory_dataset[name].append(traj)
             last_start = i
         last_obs = next_obs
     for name in dataset:
+        if name == 'infos':
+            continue
         traj = dataset[name][last_start:, ...]
         trajectory_dataset[name].append(traj)
     print(f"Dataset size {nelem}, {ntraj} trajectories")
@@ -197,6 +202,16 @@ def s2i(string):
     return [int(s) for s in string.split(',')]
 
 
+def s2f(string):
+    """Make a comma separated string of floats into a list of floats."""
+    if ',' not in string:
+        if len(string) > 0:
+            return [float(string)]
+        else:
+            return []
+    return [float(s) for s in string.split(',')]
+
+
 def prepare_model_inputs(obs, actions):
     return torch.Tensor(np.hstack([obs, actions]))
 
@@ -224,19 +239,37 @@ def make_mujoco_resetter(env, task):
     return resetter
 
 
-def get_starts_from_graph(graph, env, env_name):
+def get_starts_from_graph(graph, env, env_name, dataset, vertices):
     # When env is made it is wrapped in TimeLimiter, hence the .env
     env = env.env
+    if env_name.startswith('antmaze'):
+        return np.arange(graph.num_vertices())
     if env_name.startswith('maze'):
         obs = graph.vp.obs.get_2d_array(np.arange(env.observation_space.low.size))
         obs = obs.T
         diffs = np.array([obs - np.array([st[0], st[1], 0, 0])
-                        for st in env.empty_and_goal_locations])
+                          for st in env.empty_and_goal_locations])
         is_starts = np.any(np.all(np.abs(diffs) < 0.1, axis=-1), 0)
         return np.argwhere(is_starts).flatten()
+    elif env_name.startswith('Pendulum'):
+        return np.arange(dataset['rewards'].shape[0]).astype(int)
+    elif env_name.startswith('Mountain'):
+        starts = []
+        nelem = dataset['rewards'].shape[0]
+        last_obs = None
+        for i in range(nelem):
+            obs = dataset['observations'][i, :]
+            if (obs != last_obs).any():
+                idx = vertices[obs.tobytes()]
+                starts.append(idx)
+            next_obs = dataset['next_observations'][i, :]
+            last_obs = next_obs
+        return np.array(starts)
     elif env_name.startswith('halfcheetah') or env_name.startswith('walker') or env_name.startswith('hopper'):
-        dataset = env.get_dataset()
-        ends = dataset['timeouts'].astype(bool) | dataset['terminals'].astype(bool)
+        if 'timeouts' in dataset:
+            ends = dataset['timeouts'].astype(bool) | dataset['terminals'].astype(bool)
+        else:
+            ends = dataset['terminals'].astype(bool)
         ends_dense = np.nonzero(ends)[0]
         start_states = np.concatenate([[0], ends_dense + 1])
         if start_states[-1] >= graph.get_vertices().shape[0]:
