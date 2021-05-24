@@ -408,8 +408,10 @@ class BATSTrainer:
                 pass
         actions1step = np.array(actions1step)
         stitches1step = np.array(stitches1step)
-        start_obs1step = stitches1step[:, 0]
-        end_obs1step = self.G.vp.z[stitches1step[:, 1]]
+        # start_obs1step = stitches1step[:, 0]
+        start_obs1step = self.G.vp.z.get_2d_array(range(self.latent_dim)).T[stitches1step[:, 0]]
+        end_obs1step = self.G.vp.z.get_2d_array(range(self.latent_dim)).T[stitches1step[:, 1]]
+        # end_obs1step = self.G.vp.z[stitches1step[:, 1]]
         conditions = np.concatenate([start_obs1step, actions1step], axis=1)
         model_outputs = self.bisim_model.get_mean_logvar(conditions)[0]
         state_outputs = model_outputs[:, :, 1:]
@@ -439,14 +441,16 @@ class BATSTrainer:
                 edge = self.G.edge(end, next_state)
                 actions.append(self.G.ep.action[edge])
                 end = next_state
+            actions = torch.Tensor(actions)[None, ...]
+            start_obs = torch.Tensor(start_obs)[None, ...]
             end_obs = self.G.vp.z[end]
-            model_obs, model_actions, model_rewards, model_terminals = bisim_unroller(start_obs, actions)
-            displacements = model_obs[:, :. -1, :] - end_obs
+            model_obs, model_actions, model_rewards, model_terminals = bisim_unroller.model_unroll(start_obs, actions)
+            displacements = model_obs[:, :, -1, :] - end_obs
             distances = np.linalg.norm(displacements, axis=-1, ord=1)
             quantile = np.quantile(distances, self.planning_quantile, axis=-1)
-            og_reward = self.G.reward[first_edge]
-            self.G.reward[first_edge] = og_reward - self.gamma * quantile
-            self.G.upper_reward[first_edge] = og_reward + self.gamma * quantile
+            og_reward = self.G.ep.reward[first_edge]
+            self.G.ep.reward[first_edge] = og_reward - self.gamma * quantile
+            self.G.ep.upper_reward[first_edge] = og_reward + self.gamma * quantile
         # Viraj: I think this works but probably has bugs, will test when we need to run it
 
     def test_possible_stitches(self, possible_stitches):
@@ -493,6 +497,7 @@ class BATSTrainer:
             if self.use_dl_params:
                 for k, v in self.dynamics_load_params.items():
                     args += [f"--{k}", f"{v}"]
+
             if self.verbose and i == 0:
                 print(' '.join(args))
             process = Popen(args)

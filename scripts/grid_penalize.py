@@ -16,6 +16,8 @@ from util import s2f, make_output_dir, get_offline_env
 
 
 def launch_jobs(args):
+    parent_save_dir = Path(args.parent_save_dir)
+    parent_save_dir.mkdir(exist_ok=True)
     configs = []
     for dc in s2f(args.disagreement_coefs):
         for pc in s2f(args.planerr_coefs):

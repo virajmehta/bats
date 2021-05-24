@@ -26,10 +26,16 @@ def train(args):
     train_params['bisim_params'] = {
             'encoder_architecture': args.encoder_architecture,
     }
+    if args.dyn_architecture:
+        train_params['bisim_params']['dyn_architecture'] = args.dyn_architecture
+    if args.dyn_latent_dim:
+        train_params['bisim_params']['dyn_latent_dim'] = args.dyn_latent_dim
     del train_params['env']
     del train_params['pudb']
     del train_params['data_path']
     del train_params['encoder_architecture']
+    del train_params['dyn_architecture']
+    del train_params['dyn_latent_dim']
     train_bisim(dataset=dataset, **train_params)
 
 def parse_args():
@@ -38,13 +44,15 @@ def parse_args():
     parser.add_argument('--env')
     parser.add_argument('--data_path')
     parser.add_argument('--latent_dim', type=int, default=6)
+    parser.add_argument('--dyn_latent_dim', type=int)
+    parser.add_argument('--dyn_architecture')
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--save_freq', type=int, default=-1)
     parser.add_argument('--od_wait', type=int)
     parser.add_argument('--batch_updates_per_epoch', type=int)
     parser.add_argument('--validation_batches_per_epoch', type=int, default=50)
     parser.add_argument('--n_members', type=int, default=5)
-    parser.add_argument('--encoder_architecture', default='64,64')
+    parser.add_argument('--encoder_architecture')
     parser.add_argument('--val_size', type=float, default=1000)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--cuda_device', type=str, default='')
