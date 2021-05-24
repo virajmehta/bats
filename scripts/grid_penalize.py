@@ -24,7 +24,8 @@ def launch_jobs(args):
                     configs.append({
                         'graph_dir': args.graph_dir,
                         'graph_name': args.graph_name,
-                        'graph_path': os.path.join(args.graph_dir, args.graph_name),
+                        'graph_path': os.path.join(args.graph_dir,
+                                                   args.graph_name),
                         'disagreement_coef': dc,
                         'planning_coef': pc,
                         'epsilon_planning': ep,
