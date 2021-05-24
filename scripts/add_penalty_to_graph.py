@@ -7,6 +7,7 @@ import json
 from multiprocessing import Pool
 from pathlib import Path
 import os
+import pickle as pkl
 
 from graph_tool import load_graph
 
@@ -16,6 +17,12 @@ from util import s2f, make_output_dir, get_offline_env
 
 def run(config):
     graph = load_graph(os.path.join(config['graph_dir'], config['graph_name']))
+    graph, _ = make_graph_consistent(
+            graph,
+            args.planning_quantile,
+            args.epsilon_planning,
+            stitch_itr=args.stitch_itr,
+    )
     graph, _ = add_penalty_to_graph(
             graph=graph,
             disagreement_coef=config['disagreement_coef'],
@@ -36,6 +43,8 @@ def run(config):
     trainer.G = graph
     trainer.value_iteration()
     trainer.G.save(os.path.join(config['save_dir'], 'vi.gt'))
+    with open(os.path.join(config['save_dir'], 'penalty_args.pkl'), 'wb') as f:
+        pkl.dump(args, f)
 
 
 def parse_args():
@@ -45,6 +54,9 @@ def parse_args():
     parser.add_argument('--save_dir', required=True)
     parser.add_argument('--disagreement_coef', type=float, required=True)
     parser.add_argument('--planerr_coef', type=float, required=True)
+    parser.add_argument('--planning_quantile', type=float, required=True)
+    parser.add_argument('--epsilon_planning', type=float, required=True)
+    parser.add_argument('--stitch_itr', type=int)
     parser.add_argument('--graph_name', default='mdp.gt')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
