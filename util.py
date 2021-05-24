@@ -19,9 +19,11 @@ def get_output_dir(name):
     return Path(DATA_DIR) / name
 
 
-def make_output_dir(name, overwrite, args, dir_path=None):
+def make_output_dir(name, overwrite, args, dir_path=None, ignore_exists=False):
     if dir_path is None:
         dir_path = get_output_dir(name)
+    if ignore_exists:
+        return dir_path
     if dir_path.exists():
         if overwrite:
             rmtree(dir_path)
@@ -231,6 +233,7 @@ def make_mujoco_resetter(env, task):
         midpt = 9
     else:
         NotImplementedError('No resetter implemented for %s.' % task)
+
     def resetter(obs):
         env.reset()
         if append_zero:

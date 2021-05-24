@@ -55,8 +55,9 @@ def parse_arguments():
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('-pc', '--penalty_coefficient', type=float, default=1.0)
     parser.add_argument('-msl', '--max_stitch_length', type=int, default=1)
+    parser.add_argument('-rl', '--relabel', action='store_true', help="Don't train but compute all the new edge penalties")
     parser.add_argument('--starts_from_dataset', action='store_true')
-    parser.add_argument('--reward_offset', type=float)
+    parser.add_argument('--reward_offset', type=float, default=0)
     if defaults is not None:
         parser.set_defaults(**defaults)
     args = parser.parse_args(remaining)
@@ -67,13 +68,16 @@ def parse_arguments():
 
 
 def main(args):
-    output_dir = util.make_output_dir(args.name, args.overwrite, deepcopy(args))
+    output_dir = util.make_output_dir(args.name, args.overwrite, deepcopy(args), ignore_exists=args.relabel)
     env, dataset = util.get_offline_env(args.env_name,
                                         args.dataset_fraction,
                                         data_path=args.offline_dataset_path)
-    args = vars(args)
-    bats = BATSTrainer(dataset, env, output_dir, **args)
-    bats.train()
+    args_dict = vars(args)
+    bats = BATSTrainer(dataset, env, output_dir, **args_dict)
+    if args.relabel:
+        bats.label_bisimulation()
+    else:
+        bats.train()
     return bats.stats
 
 
