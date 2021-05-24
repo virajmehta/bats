@@ -19,9 +19,7 @@ def launch_jobs(args):
 
 def create_config_list(args):
     configs = []
-    devices = args.cuda_devices.split(',')
     for graph in os.listdir(args.target_dir):
-        device_idx = np.random.randint(len(devices))
         config = deepcopy(args)
         config.save_path = os.path.join(
                 args.save_location,
@@ -38,7 +36,7 @@ def parse_args():
     parser.add_argument('--env')
     parser.add_argument('--target_dir')
     parser.add_argument('--save_location')
-    parser.add_argument('--num_jobs', default=1)
+    parser.add_argument('--num_jobs', type=int ,default=1)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
     parser.add_argument('--n_val_collects', type=int, default=0)
