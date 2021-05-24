@@ -27,11 +27,12 @@ def launch_jobs(args):
                         'graph_path': os.path.join(args.graph_dir,
                                                    args.graph_name),
                         'disagreement_coef': dc,
-                        'planning_coef': pc,
+                        'planerr_coef': pc,
                         'epsilon_planning': ep,
                         'planning_quantile': pq,
                         'save_dir': os.path.join(args.parent_save_dir,
-                            'dc%.3f_pc%.3f_pq%.3f_ep%.3f' % (dc, pc, pq, ep))
+                            'dc%.3f_pc%.3f_pq%.3f_ep%.3f' % (dc, pc, pq, ep)),
+                        'stitch_itr': args.stitch_itr,
                         'silent': True,
                     })
     with Pool(args.num_jobs) as p:
@@ -47,7 +48,8 @@ def parse_args():
     parser.add_argument('--epsilon_plannings', required=True)
     parser.add_argument('--num_jobs', type=int, required=True)
     parser.add_argument('--disagreement_coefs', default='0')
-    parser.add_argument('--planning_qunatile', default='0.8')
+    parser.add_argument('--planning_quantiles', default='0.8')
+    parser.add_argument('--stitch_itr', type=int)
     parser.add_argument('--graph_name', default='mdp.gt')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
