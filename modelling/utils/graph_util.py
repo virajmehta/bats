@@ -339,8 +339,8 @@ def add_penalty_to_graph(
             penalty = (disagreement_coef * np.std(errs)
                         + planning_coef * np.mean(errs))
             rew = graph.ep.reward[edge]
-            graph.G.ep.reward[edge] = rew - penalty
-            graph.G.ep.upper_reward[edge] = rew + penalty
+            graph.ep.reward[edge] = rew - penalty
+            graph.ep.upper_reward[edge] = rew + penalty
         if not silent:
             pbar.update(1)
     if not silent:

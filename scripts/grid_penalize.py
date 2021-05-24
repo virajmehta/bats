@@ -31,7 +31,8 @@ def launch_jobs(args):
                         'epsilon_planning': ep,
                         'planning_quantile': pq,
                         'save_dir': os.path.join(args.parent_save_dir,
-                            'dc%.3f_pc%.3f' % (dc, pc))
+                            'dc%.3f_pc%.3f_pq%.3f_ep%.3f' % (dc, pc, pq, ep))
+                        'silent': True,
                     })
     with Pool(args.num_jobs) as p:
         p.map(run, configs)
@@ -50,3 +51,10 @@ def parse_args():
     parser.add_argument('--graph_name', default='mdp.gt')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
+
+
+if __name__ == '__main__':
+    args = parse_args()
+    if args.pudb:
+        import pudb; pudb.set_trace()
+    launch_jobs(args)

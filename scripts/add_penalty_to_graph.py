@@ -3,6 +3,7 @@ Add penalty to the graph and redo value iteration.
 """
 import argparse
 from bats import BATSTrainer
+from copy import deepcopy
 import json
 from multiprocessing import Pool
 from pathlib import Path
@@ -26,8 +27,8 @@ def run(config):
     graph, _ = add_penalty_to_graph(
             graph=graph,
             disagreement_coef=config['disagreement_coef'],
-            planning_coef=config['planning_coef'],
-            silent=True,
+            planning_coef=config['planerr_coef'],
+            silent=config['silent'],
     )
     with open(os.path.join(config['graph_dir'], 'args.json')) as f:
         train_args = json.load(f)
@@ -49,7 +50,7 @@ def run(config):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', requ)
+    parser.add_argument('--env', required=True)
     parser.add_argument('--graph_dir', required=True)
     parser.add_argument('--save_dir', required=True)
     parser.add_argument('--disagreement_coef', type=float, required=True)
@@ -58,6 +59,7 @@ def parse_args():
     parser.add_argument('--epsilon_planning', type=float, required=True)
     parser.add_argument('--stitch_itr', type=int)
     parser.add_argument('--graph_name', default='mdp.gt')
+    parser.add_argument('--silent', action='store_true')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
