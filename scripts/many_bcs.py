@@ -6,6 +6,7 @@ from copy import deepcopy
 from multiprocessing import Pool
 import os
 
+import numpy as np
 from scripts.boltclone_graph import run
 from util import s2f, s2i
 
@@ -19,9 +20,9 @@ def launch_jobs(args):
 def create_config_list(args):
     configs = []
     devices = args.cuda_devices.split(',')
-    device_idx = 0
     for graph in os.listdir(args.target_dir):
         for t in range(1, args.trials + 1):
+            device_idx = np.random.randint(len(devices))
             config = deepcopy(args)
             config.save_dir = os.path.join(
                     args.save_location,
@@ -31,7 +32,6 @@ def create_config_list(args):
             config.silent = True
             config.cuda_device = str(devices[device_idx])
             configs.append(config)
-            device_idx = (device_idx + 1) % len(devices)
     return configs
 
 
@@ -44,12 +44,12 @@ def parse_args():
     parser.add_argument('--num_jobs', type=int, default=4)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch_updates_per_epoch', type=int)
-    parser.add_argument('--od_wait', type=int, default=25)
+    parser.add_argument('--od_wait', type=int)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=1000000)
     parser.add_argument('--n_val_collects', type=int, default=0)
     parser.add_argument('--val_start_prop', type=float, default=0)
-    parser.add_argument('--val_selection_prob', type=float, default=0.2)
+    parser.add_argument('--val_selection_prob', type=float, default=0)
     parser.add_argument('--temperature', type=float, default=0)
     parser.add_argument('--pi_architecture', default='256,256')
     parser.add_argument('--real_edges_only', action='store_true')

@@ -280,6 +280,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 if len(v.shape) == 1:
                     v = v.reshape(-1, 1)
                 ds[k] = v
+    if len(val_edge_set) == 0:
+        val_data = None
     return data, val_data, stats
 
 
