@@ -441,7 +441,7 @@ class BATSTrainer:
                 end = next_state
             end_obs = self.G.vp.z[end]
             model_obs, model_actions, model_rewards, model_terminals = bisim_unroller(start_obs, actions)
-            displacements = model_obs[:, :. -1, :] - end_obs
+            displacements = model_obs[:, :, -1, :] - end_obs
             distances = np.linalg.norm(displacements, axis=-1, ord=1)
             quantile = np.quantile(distances, self.planning_quantile, axis=-1)
             og_reward = self.G.reward[first_edge]

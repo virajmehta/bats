@@ -67,7 +67,8 @@ def train_bisim(
     # Create trainer and save off params.
     trainer = make_trainer(model,
                            n_members,
-                           save_dir)
+                           save_dir,
+                           cuda_device=cuda_device)
     with open(os.path.join(save_dir, 'params.pkl'), 'wb') as f:
         pkl.dump(params, f)
     # Do training.
