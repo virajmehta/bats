@@ -54,6 +54,7 @@ MOUNTAINCAR_CONFIGS['mountaincar-mixed']['load_model'] = model_base_path / 'mc_m
 MOUNTAINCAR_CONFIGS['mountaincar-mixed']['load_bisim_model'] = None
 MOUNTAINCAR_CONFIGS['mountaincar-mixed']['dynamics_encoder_hidden'] = '64,64'
 MOUNTAINCAR_CONFIGS['mountaincar-mixed']['dynamics_latent_dim'] = 64
+MOUNTAINCAR_CONFIGS['mountaincar-mixed']['bisim_latent_dim'] = 3
 
 to_add = OrderedDict()
 for k, v in MOUNTAINCAR_CONFIGS.items():

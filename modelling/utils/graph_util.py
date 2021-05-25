@@ -58,7 +58,8 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   return_threshold=None,
                                   all_starts_once=False,
                                   silent=False,
-                                  include_vertex_numbers=False):
+                                  include_vertex_numbers=False,
+                                  reward_offset=0):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
     Args:
         graph: The graph object.
@@ -192,19 +193,19 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                 toadd['actions'].append(np.array(graph.ep.action[edge]))
                 if include_reward_next_obs:
                     toadd['next_observations'].append(np.array(graph.vp.obs[nxtv]))
-                    toadd['rewards'].append(graph.ep.reward[edge])
+                    toadd['rewards'].append(graph.ep.reward[edge] - reward_offset)
                     toadd['terminals'].append(graph.vp.terminal[nxtv])
                     toadd['infos'].append(dict(
                         stitch_itr = graph.ep.stitch_itr[edge],
-                        upper_reward = graph.ep.upper_reward[edge],
+                        upper_reward = graph.ep.upper_reward[edge] - reward_offset,
                         t = t,
                     ))
                 if include_vertex_numbers:
                     toadd['vertex'].append(nxtv)
                     toadd['next_vertex'].append(nxtv)
             done = graph.vp.terminal[nxtv]
-            ret += graph.ep.reward[edge]
-            upper_ret += graph.ep.upper_reward[edge]
+            ret += graph.ep.reward[edge] - reward_offset
+            upper_ret += graph.ep.upper_reward[edge] - reward_offset
             currv = nxtv
             t += 1
             if not all_starts_once and n_edges >= n_collects:

@@ -84,7 +84,7 @@ def load_ensemble(
         act_dim,
         model_type='PNN',
         model_params={},
-        load_model_params=True,
+        load_model_params=False,
         cuda_device='',
 ):
     if load_model_params:
