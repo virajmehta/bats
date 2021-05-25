@@ -90,13 +90,20 @@ def arctanh(x):
 
 class IteratedDataLoader(object):
 
-    def __init__(self, dataloader):
+    def __init__(self, dataloader, with_replacement=True):
         self._dataloader = dataloader
         self._iterator = iter(dataloader)
+        self._with_replacement = with_replacement
 
     def next(self):
+        if self._with_replacement:
+            self._iterator = iter(dataloader)
+            return next(self._iterator)
         try:
             batch = next(self._iterator)
+            if len(batch[0]) < self._dataloader.batch_size:
+                self._iterator = iter(self._dataloader)
+                batch = next(self._iterator)
         except StopIteration:
             self._iterator = iter(self._dataloader)
             batch = next(self._iterator)
