@@ -100,6 +100,7 @@ def run(args):
         batch_updates_per_epoch=args.batch_updates_per_epoch,
         target_entropy=args.target_entropy,
         silent=args.silent,
+        save_freq=args.save_freq,
     )
     with open(os.path.join(args.save_dir, 'args.pkl'), 'wb') as f:
         pkl.dump(args, f)
@@ -138,6 +139,7 @@ def parse_args():
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--max_path_length', type=int)
+    parser.add_argument('--save_freq', type=int, default=-1)
     parser.add_argument('--silent', action='store_true')
     parser.add_argument('--fusion', action='store_true')
     parser.add_argument('--pudb', action='store_true')

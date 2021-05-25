@@ -21,6 +21,14 @@ def create_config_list(args):
     configs = []
     devices = args.cuda_devices.split(',')
     for graph in os.listdir(args.target_dir):
+        use_this = True
+        if args.if_contains is not None:
+            for kw in args.if_contains.split(','):
+                if kw not in graph:
+                    use_this = False
+                    break
+        if not use_this:
+            continue
         for t in range(1, args.trials + 1):
             device_idx = np.random.randint(len(devices))
             config = deepcopy(args)
@@ -69,8 +77,10 @@ def parse_args():
     parser.add_argument('--stitch_itr', type=int)
     parser.add_argument('--cuda_devices', type=str, required=True)
     parser.add_argument('--graph_name', default='vi.gt')
+    parser.add_argument('--save_freq', type=int, default=-1)
     parser.add_argument('--fusion', action='store_true')
     parser.add_argument('--max_path_length', type=int)
+    parser.add_argument('--if_contains')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
