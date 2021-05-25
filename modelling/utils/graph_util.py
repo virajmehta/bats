@@ -57,6 +57,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   top_percent_starts=None,
                                   return_threshold=None,
                                   all_starts_once=False,
+                                  unpenalized_rewards=False,
                                   silent=False,
                                   get_fusion_slope_obs=False,
                                   # Only collect betan and li by default.
@@ -189,6 +190,11 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                         toadd = currdata
                         curredgeset.add(edgehash)
                 if include_reward_next_obs:
+                    if unpenalized_rewards:
+                        toadd['rewards'].append(np.mean([
+                            graph.ep.reward[edge],
+                            graph.ep.upper_reward[e],
+                        ]))
                     toadd['rewards'].append(graph.ep.reward[edge])
                     toadd['terminals'].append(graph.vp.terminal[nxtv])
                     toadd['infos'].append(dict(
