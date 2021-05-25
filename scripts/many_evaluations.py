@@ -6,6 +6,7 @@ from collections import OrderedDict
 import os
 import pickle as pkl
 
+import d4rl
 import gym
 import numpy as np
 from tqdm import tqdm
@@ -22,11 +23,11 @@ def run(args):
     pbar = tqdm(total=total)
     env = None
     with open(args.save_path, 'w') as f:
-        f.writeline(','.join([
+        f.write(','.join([
             'AverageReturns' ,
             'AverageNormalizeReturns',
             'Path',
-        ]))
+        ]) + '\n')
     all_returns = []
     all_nreturns = []
     for rundir in args.target_dir.split(','):
@@ -40,7 +41,7 @@ def run(args):
                 obs_dim=env.observation_space.low.size,
                 act_dim=env.action_space.low.size,
                 policy_file=args.filename,
-                hidden_sizes=args.pi_architecture,
+                hidden_sizes=config.pi_architecture,
             )
             returns = [unroll(env, policy) for _ in range(args.episodes)]
             nreturns = [d4rl.get_normalized_score(config.env, r) for r in returns]
@@ -48,14 +49,15 @@ def run(args):
                 Return=np.mean(returns),
                 NormReturn=np.mean(nreturns) * 100,
             ))
+            pbar.update(1)
             with open(args.save_path, 'a') as f:
-                f.writeline(','.join([
+                f.write(','.join([
                     str(np.mean(returns)),
                     str(np.mean(nreturns) * 100),
                     trialpath,
-                ]))
+                ]) + '\n')
             all_returns.append(np.mean(returns))
-            all_nreturns.append(np.mean(all_nreturns) * 100)
+            all_nreturns.append(np.mean(nreturns) * 100)
     pbar.close()
     print('================================================')
     print('Returns: %f +- %f' % (np.mean(all_returns), sem(all_returns)))

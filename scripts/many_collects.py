@@ -51,6 +51,7 @@ def parse_args():
     parser.add_argument('--value_threshold', type=float)
     parser.add_argument('--top_percent_starts', type=float)
     parser.add_argument('--return_threshold', type=float)
+    parser.add_argument('--unpenalized_rewards', action='store_true')
     parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--fusion', action='store_true')
     parser.add_argument('--pudb', action='store_true')
