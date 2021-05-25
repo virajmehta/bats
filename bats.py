@@ -49,7 +49,7 @@ class BATSTrainer:
         self.dynamics_train_params['n_members'] = kwargs.get('dynamics_n_members', 7)
         self.dynamics_train_params['n_elites'] = kwargs.get('dynamics_n_elites', 5)
         self.dynamics_train_params['save_dir'] = str(output_dir)
-        self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 100)
+        self.train_epochs = self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 100)
         self.dynamics_train_params['cuda_device'] = kwargs.get('cuda_device', '')
 
         self.dynamics_load_params = {}
@@ -66,7 +66,7 @@ class BATSTrainer:
         self.fine_tune_epochs = kwargs.get('fine_tune_epochs', 20)
         self.bisim_train_params = {}
         self.latent_dim = self.bisim_train_params['latent_dim'] = kwargs['bisim_latent_dim']
-        self.bisim_train_params['epochs'] = kwargs.get('bisim_epochs', 250)
+        self.bisim_train_params['epochs'] = kwargs.get('bisim_epochs', 100)
         self.bisim_train_params['dataset'] = self.dataset
         self.bisim_n_members = self.bisim_train_params['n_members'] = kwargs.get('bisim_n_members', 5)
         self.bisim_train_params['save_dir'] = self.output_dir
@@ -253,7 +253,14 @@ class BATSTrainer:
 
     def label_bisimulation(self):
         # assumes there's already a graph loaded and a bisimulation dynamics model
-        self.bisim_model = load_bisim(self.bisim_model_path)
+        if self.bisim_model_path:
+            self.bisim_model = load_bisim(self.bisim_model_path)
+        else:
+            train_params = deepcopy(self.bisim_train_params)
+            train_params['save_dir'] = self.output_dir
+            train_params['latent_dim'] = self.latent_dim
+            train_params['bisim_params']['latent_dim'] = self.latent_dim
+            self.bisim_model = train_bisim(dataset=self.dataset, **train_params)
         self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
         self.penalize_stitches = True
         self.fine_tune_dynamics()
