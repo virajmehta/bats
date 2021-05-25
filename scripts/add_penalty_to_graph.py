@@ -12,7 +12,7 @@ import pickle as pkl
 
 from graph_tool import load_graph
 
-from modelling.utils.graph_util import add_penalty_to_graph
+from modelling.utils.graph_util import add_penalty_to_graph, make_graph_consistent
 from util import s2f, make_output_dir, get_offline_env
 
 
@@ -20,9 +20,10 @@ def run(config):
     graph = load_graph(os.path.join(config['graph_dir'], config['graph_name']))
     graph, _ = make_graph_consistent(
             graph,
-            args.planning_quantile,
-            args.epsilon_planning,
-            stitch_itr=args.stitch_itr,
+            config['planning_quantile'],
+            config['epsilon_planning'],
+            stitch_itr=config['stitch_itr'],
+            silent=config['silent'],
     )
     graph, _ = add_penalty_to_graph(
             graph=graph,
@@ -45,7 +46,7 @@ def run(config):
     trainer.value_iteration()
     trainer.G.save(os.path.join(config['save_dir'], 'vi.gt'))
     with open(os.path.join(config['save_dir'], 'penalty_args.pkl'), 'wb') as f:
-        pkl.dump(args, f)
+        pkl.dump(config, f)
 
 
 def parse_args():
