@@ -20,6 +20,7 @@ def launch_jobs(args):
 def create_config_list(args):
     configs = []
     devices = args.cuda_devices.split(',')
+    seed = 1
     for graph in os.listdir(args.target_dir):
         use_this = True
         if args.if_contains is not None:
@@ -29,7 +30,6 @@ def create_config_list(args):
                     break
         if not use_this:
             continue
-        seed = 1
         for t in range(1, args.trials + 1):
             device_idx = np.random.randint(len(devices))
             config = deepcopy(args)
@@ -53,14 +53,14 @@ def parse_args():
     parser.add_argument('--save_location')
     parser.add_argument('--trials', type=int, default=3)
     parser.add_argument('--num_jobs', type=int, default=4)
-    parser.add_argument('--epochs', type=int, default=50)
-    parser.add_argument('--batch_updates_per_epoch', type=int)
+    parser.add_argument('--epochs', type=int, default=500)
+    parser.add_argument('--batch_updates_per_epoch', type=int, default=20)
     parser.add_argument('--od_wait', type=int)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=1000000)
     parser.add_argument('--n_val_collects', type=int, default=0)
     parser.add_argument('--val_start_prop', type=float, default=0)
-    parser.add_argument('--val_selection_prob', type=float, default=0)
+    parser.add_argument('--val_selection_prob', type=float, default=0.1)
     parser.add_argument('--temperature', type=float, default=0)
     parser.add_argument('--pi_architecture', default='256,256')
     parser.add_argument('--real_edges_only', action='store_true')
