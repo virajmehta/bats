@@ -29,6 +29,7 @@ def create_config_list(args):
                     break
         if not use_this:
             continue
+        seed = 1
         for t in range(1, args.trials + 1):
             device_idx = np.random.randint(len(devices))
             config = deepcopy(args)
@@ -39,7 +40,9 @@ def create_config_list(args):
             config.graph_dir = os.path.join(args.target_dir, graph)
             config.silent = True
             config.cuda_device = str(devices[device_idx])
+            config.seed = seed
             configs.append(config)
+            seed += 1
     return configs
 
 

@@ -97,7 +97,7 @@ class IteratedDataLoader(object):
 
     def next(self):
         if self._with_replacement:
-            self._iterator = iter(dataloader)
+            self._iterator = iter(self._dataloader)
             return next(self._iterator)
         try:
             batch = next(self._iterator)

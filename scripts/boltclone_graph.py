@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import pickle as pkl
+import random
 
 import d4rl
 from graph_tool import load_graph
@@ -15,6 +16,7 @@ from graph_tool.draw import graph_draw
 import h5py
 import gym
 import numpy as np
+import torch
 from tqdm import tqdm
 
 from env_wrapper import NormalizedBoxEnv
@@ -26,6 +28,10 @@ from util import get_starts_from_graph, get_offline_env, make_output_dir
 
 def run(args):
     # Learn an advantage weighting function.
+    if args.seed is not None:
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        random.seed(args.seed)
     if args.env is None:
         env = None
     else:
@@ -142,6 +148,7 @@ def parse_args():
     parser.add_argument('--save_freq', type=int, default=-1)
     parser.add_argument('--silent', action='store_true')
     parser.add_argument('--fusion', action='store_true')
+    parser.add_argument('--seed')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
