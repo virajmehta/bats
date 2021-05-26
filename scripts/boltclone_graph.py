@@ -86,6 +86,7 @@ def run(args):
             top_percent_starts=args.top_percent_starts,
             return_threshold=args.return_threshold,
             all_starts_once=args.all_starts_once,
+            unpenalized_rewards=args.unpenalized_rewards,
             get_fusion_slope_obs=args.fusion,
             silent=args.silent,
     )
@@ -147,6 +148,7 @@ def parse_args():
     parser.add_argument('--max_path_length', type=int)
     parser.add_argument('--save_freq', type=int, default=-1)
     parser.add_argument('--silent', action='store_true')
+    parser.add_argument('--unpenalized_rewards', action='store_true')
     parser.add_argument('--fusion', action='store_true')
     parser.add_argument('--seed')
     parser.add_argument('--pudb', action='store_true')

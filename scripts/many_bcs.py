@@ -81,6 +81,7 @@ def parse_args():
     parser.add_argument('--cuda_devices', type=str, required=True)
     parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--save_freq', type=int, default=-1)
+    parser.add_argument('--unpenalized_rewards', action='store_true')
     parser.add_argument('--fusion', action='store_true')
     parser.add_argument('--max_path_length', type=int)
     parser.add_argument('--if_contains')
