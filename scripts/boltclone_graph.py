@@ -117,9 +117,9 @@ def parse_args():
     parser.add_argument('--env')
     parser.add_argument('--graph_dir')
     parser.add_argument('--save_dir')
-    parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--batch_updates_per_epoch', type=int)
-    parser.add_argument('--od_wait', type=int, default=10)
+    parser.add_argument('--epochs', type=int, default=500)
+    parser.add_argument('--batch_updates_per_epoch', type=int, default=20)
+    parser.add_argument('--od_wait', type=int)
     # If None, then collect as many points as there are in the dataset.
     parser.add_argument('--n_collects', type=int, default=None)
     parser.add_argument('--all_starts_once', action='store_true')
