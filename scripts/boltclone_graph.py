@@ -126,7 +126,7 @@ def parse_args():
     parser.add_argument('--all_starts_once', action='store_true')
     parser.add_argument('--n_val_collects', type=int, default=0)
     parser.add_argument('--val_start_prop', type=float, default=0)
-    parser.add_argument('--val_selection_prob', type=float, default=0.1)
+    parser.add_argument('--val_selection_prob', type=float, default=0.05)
     parser.add_argument('--temperature', type=float, default=0)
     parser.add_argument('--pi_architecture', default='256,256')
     parser.add_argument('--real_edges_only', action='store_true')

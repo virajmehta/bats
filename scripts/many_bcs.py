@@ -20,7 +20,8 @@ def launch_jobs(args):
 def create_config_list(args):
     configs = []
     devices = args.cuda_devices.split(',')
-    seed = 1
+    seed = len(os.listdir(args.target_dir)) * args.trials if args.eval_seeds\
+           else 1
     for graph in os.listdir(args.target_dir):
         use_this = True
         if args.if_contains is not None:
@@ -60,7 +61,7 @@ def parse_args():
     parser.add_argument('--n_collects', type=int, default=1000000)
     parser.add_argument('--n_val_collects', type=int, default=0)
     parser.add_argument('--val_start_prop', type=float, default=0)
-    parser.add_argument('--val_selection_prob', type=float, default=0.1)
+    parser.add_argument('--val_selection_prob', type=float, default=0.05)
     parser.add_argument('--temperature', type=float, default=0)
     parser.add_argument('--pi_architecture', default='256,256')
     parser.add_argument('--real_edges_only', action='store_true')
@@ -85,6 +86,7 @@ def parse_args():
     parser.add_argument('--fusion', action='store_true')
     parser.add_argument('--max_path_length', type=int)
     parser.add_argument('--if_contains')
+    parser.add_argument('--eval_seeds', action='store_true')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 
