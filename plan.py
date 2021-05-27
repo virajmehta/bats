@@ -112,6 +112,8 @@ def CEM(row, obs_dim, action_dim, latent_dim, ensemble, bisim_model, epsilon,
                 displacements /= std
             distances = np.linalg.norm(displacements, axis=-1, ord=p)
             quantiles = np.quantile(distances, quantile, axis=1)
+            if quantiles.size == 0:
+                return None
             min_qidx = quantiles.argmin()
             min_quantile = quantiles[min_qidx]
             if min_quantile < threshold:

@@ -37,6 +37,17 @@ HALFCHEETAH_CONFIGS['halfcheetah-mixed']['bc_every_iter'] = False
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['epsilon_neighbors'] = 0.25
 HALFCHEETAH_CONFIGS['halfcheetah-mixed']['load_model'] = Path('~/bats/models/hcv0-mixed').expanduser()
 
+HALFCHEETAH_CONFIGS['halfcheetah-adv'] = deepcopy(base_config)
+HALFCHEETAH_CONFIGS['halfcheetah-adv']['env_name'] =\
+    'halfcheetah-medium-replay-v0'
+# HALFCHEETAH_CONFIGS['halfcheetah-mixed']['load_bisim_model'] = Path("/zfsauton/project/public/ichar/models/bisimulation/halfcheetah")  # NOQA
+HALFCHEETAH_CONFIGS['halfcheetah-adv']['use_bisimulation'] = False
+HALFCHEETAH_CONFIGS['halfcheetah-adv']['penalize_stitches'] = False
+HALFCHEETAH_CONFIGS['halfcheetah-adv']['bc_every_iter'] = False
+HALFCHEETAH_CONFIGS['halfcheetah-adv']['epsilon_neighbors'] = 0.25
+HALFCHEETAH_CONFIGS['halfcheetah-adv']['load_model'] = Path('~/bats/models/hc_adv').expanduser()
+HALFCHEETAH_CONFIGS['halfcheetah-adv']['offline_dataset_path'] = Path('~/.d4rl/datasets/halfcheetah-adv-mixed.hdf5').expanduser()
+
 HALFCHEETAH_CONFIGS['halfcheetah-medium'] = deepcopy(base_config)
 HALFCHEETAH_CONFIGS['halfcheetah-medium']['env_name'] = 'halfcheetah-medium-v0'
 
