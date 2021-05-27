@@ -22,15 +22,17 @@ def run(args):
     # Learn an advantage weighting function.
     if args.env is None:
         env = None
+        dataset = None
     else:
         env = gym.make(args.env)
+        dataset = d4rl.qlearning_dataset(env)
     graph = load_graph(os.path.join(args.graph_dir, args.graph_name))
     if args.n_collects is None:
         args.n_collects = graph.num_vertices()
     if args.use_graphs_starts or env is None:
         starts = None
     else:
-        starts = get_starts_from_graph(graph, env, args.env)
+        starts = get_starts_from_graph(graph, env, args.env, dataset)
     if args.max_path_length is None:
         num_steps = env._max_episode_steps
     else:
@@ -51,6 +53,7 @@ def run(args):
             return_threshold=args.return_threshold,
             include_reward_next_obs=True,
             all_starts_once=args.all_starts_once,
+            reward_offset=args.reward_offset,
     )
     with h5py.File(args.save_path, 'w') as wd:
         for k, v in data.items():
@@ -86,6 +89,7 @@ def parse_args():
     parser.add_argument('--return_threshold', type=float)
     parser.add_argument('--graph_name', default='vi.gt')
     parser.add_argument('--fusion', action='store_true')
+    parser.add_argument('--reward_offset', type=float, default=0)
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 

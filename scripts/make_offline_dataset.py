@@ -48,16 +48,19 @@ def collect_data(args):
     pbar = tqdm(total=args.num_collects)
     earlyterms = []
     neps = 0
+    returns = []
     while len(observations) < args.num_collects:
         done = False
         s = env.reset()
         neps += 1
         t = 0
         timeout = False
+        ret = 0
         while not done and t < args.path_length and not timeout:
             a, _ = policy.get_action(s)
             n, r, done, info = env.step(a)
             t += 1
+            ret += r
             if (t + 1 >= args.path_length
                     or len(observations) + 1 >= args.num_collects):
                 timeout = True
@@ -76,8 +79,9 @@ def collect_data(args):
             pbar.update(1)
             if len(observations) == args.num_collects:
                 break
+        returns.append(ret)
     print(f"{neps} episodes")
-    print(earlyterms)
+    print('Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
     with h5py.File(args.save_path, 'w') as wd:
         wd.create_dataset('observations', data=np.vstack(observations))
         wd.create_dataset('actions', data=np.vstack(actions))
