@@ -1,0 +1,15 @@
+experiments/
+__pycache__/
+*.py[cod]
+*$py.class
+
+experiments/
+get_data.sh
+
+*.so
+*/*.simg
+*/*.sif
+*.sif
+*.simg
+
+.Python

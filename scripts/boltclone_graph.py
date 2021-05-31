@@ -34,8 +34,10 @@ def run(args):
         random.seed(args.seed)
     if args.env is None:
         env = None
+        dataset = None
     else:
         env = gym.make(args.env)
+        dataset = d4rl.qlearning_dataset(env)
     graph = load_graph(os.path.join(args.graph_dir, args.graph_name))
     if args.planning_quantile is not None and args.epsilon_planning is not None:
         print('Making graph consistent with hyperparameters...')
@@ -64,7 +66,7 @@ def run(args):
     if env is None or args.use_graphs_starts:
         starts = None
     else:
-        starts = get_starts_from_graph(graph, env, args.env)
+        starts = get_starts_from_graph(graph, env, args.env, dataset)
     if args.max_path_length is None:
         num_steps = env._max_episode_steps
     else:
@@ -89,6 +91,7 @@ def run(args):
             unpenalized_rewards=args.unpenalized_rewards,
             get_fusion_slope_obs=args.fusion,
             silent=args.silent,
+            reward_offset=args.reward_offset,
     )
     # Run AWR with the pre-trained qnets.
     behavior_clone(
@@ -151,6 +154,7 @@ def parse_args():
     parser.add_argument('--unpenalized_rewards', action='store_true')
     parser.add_argument('--fusion', action='store_true')
     parser.add_argument('--seed')
+    parser.add_argument('--reward_offset', type=float, default=0)
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()
 

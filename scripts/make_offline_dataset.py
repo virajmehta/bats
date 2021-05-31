@@ -43,44 +43,54 @@ def collect_data(args):
     else:
         policy = RandomPolicy(env)
     print("Policy loaded")
-    observations, actions, rewards, next_observations, terminals, ends =\
+    observations, actions, rewards, next_observations, terminals, timeouts =\
             [[] for _ in range(6)]
     pbar = tqdm(total=args.num_collects)
+    earlyterms = []
+    neps = 0
     returns = []
     while len(observations) < args.num_collects:
         done = False
         s = env.reset()
+        neps += 1
         t = 0
+        timeout = False
         ret = 0
-        while not done and t < args.path_length:
+        while not done and t < args.path_length and not timeout:
             a, _ = policy.get_action(s)
             n, r, done, info = env.step(a)
             ret += r
             t += 1
-            if (t >= args.path_length
+            ret += r
+            if (t + 1 >= args.path_length
                     or len(observations) + 1 >= args.num_collects):
+                timeout = True
                 done = args.terminate_at_horizon
-                ends.append(True)
             else:
-                ends.append(False)
+                if done:
+                    earlyterms.append(t)
+                timeout = False
             observations.append(s)
             actions.append(a)
             rewards.append(r)
             next_observations.append(n)
             terminals.append(done)
+            timeouts.append(timeout)
             s = n
             pbar.update(1)
             if len(observations) == args.num_collects:
                 break
         returns.append(ret)
+    print(f"{neps} episodes")
+    print('Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
     with h5py.File(args.save_path, 'w') as wd:
         wd.create_dataset('observations', data=np.vstack(observations))
         wd.create_dataset('actions', data=np.vstack(actions))
         wd.create_dataset('rewards', data=np.vstack(rewards))
         wd.create_dataset('next_observations', data=np.vstack(next_observations))
         wd.create_dataset('terminals', data=np.vstack(terminals))
-        wd.create_dataset('ends', data=np.vstack(ends))
-    print('Done. Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
+        wd.create_dataset('timeouts', data=np.vstack(timeouts))
+    print('Done.')
 
 
 if __name__ == "__main__":

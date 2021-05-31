@@ -1,4 +1,9 @@
 *.swp
+models/
+*.sif
+*.img
+slurm*.out
+*mjkey.txt
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -6,6 +11,9 @@ __pycache__/
 
 # data outputs
 experiments/
+overlays/
+models/
+models
 get_data.sh
 
 # C extensions

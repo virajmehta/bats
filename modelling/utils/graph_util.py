@@ -64,6 +64,9 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   fusion_signal_idxs=[3,4],
                                   add_action_to_state=True,
                                   actions_are_deltas=True):
+                                  silent=False,
+                                  include_vertex_numbers=False,
+                                  reward_offset=0):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
     Args:
         graph: The graph object.
@@ -90,6 +93,9 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         all_starts_once: Whether to just collect trajectories from all start
             states once instead of an amount of samples.
         silent: Whether to be silent.
+        include_vertex_numbers: whether to include the numbers of vertices
+            which are used by the policy
+
     """
     data = defaultdict(list)
     # Get the start states.
@@ -130,7 +136,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     upper_returns = []
     if not silent:
         if all_starts_once:
-            amt_on_bar = min(n_collects, len(starts) * max_ep_len)
+            amt_on_bar = len(starts) * max_ep_len
         else:
             amt_on_bar = n_collects
         pbar = tqdm(total=amt_on_bar)
@@ -153,6 +159,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         else:
             nxt_start_idx = np.random.randint(len(starts))
         currv = starts[nxt_start_idx]
+        lastact = None
         while not done and t < max_ep_len:
             # bstv = graph.vp.best_child[currv]
             bstv = graph.vp.best_neighbor[currv]
@@ -189,62 +196,32 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                     else:
                         toadd = currdata
                         curredgeset.add(edgehash)
+                toadd['observations'].append(np.array(graph.vp.obs[currv]))
+                toadd['actions'].append(np.array(graph.ep.action[edge]))
                 if include_reward_next_obs:
-                    if unpenalized_rewards:
-                        toadd['rewards'].append(np.mean([
-                            graph.ep.reward[edge],
-                            graph.ep.upper_reward[e],
-                        ]))
-                    toadd['rewards'].append(graph.ep.reward[edge])
+                    toadd['next_observations'].append(np.array(graph.vp.obs[nxtv]))
+                    toadd['rewards'].append(graph.ep.reward[edge] - reward_offset)
                     toadd['terminals'].append(graph.vp.terminal[nxtv])
                     toadd['infos'].append(dict(
                         stitch_itr = graph.ep.stitch_itr[edge],
-                        upper_reward = graph.ep.upper_reward[edge],
+                        upper_reward = graph.ep.upper_reward[edge] - reward_offset,
                         t = t,
                     ))
-                if get_fusion_slope_obs:
-                    currfull = np.array(graph.vp.full_states[currv]).reshape(18, 200)
-                    state = np.append(
-                        np.array(graph.vp.obs[currv])[fusion_signal_idxs],
-                        np.mean(currfull[fusion_signal_idxs, -50:], axis=1)
-                            - np.mean(currfull[fusion_signal_idxs, :50], axis=1)
-                    )
-                    if add_action_to_state:
-                        state = np.append(state,
-                                np.mean(currfull[10:] / ACTION_MAX * 2 - 1))
-                    toadd['observations'].append(state)
-                    act = np.array(graph.ep.action[edge])
-                    if actions_are_deltas:
-                        act -= np.mean(currfull[10:] / ACTION_MAX * 2 - 1)
-                    toadd['actions'].append(act)
-                    if include_reward_next_obs:
-                        nxtfull = np.array(graph.vp.full_states[nxtv]).reshape(18, 200)
-                        state = np.append(
-                            np.array(graph.vp.obs[nxtv])[fusion_signal_idxs],
-                            np.mean(currfull[fusion_signal_idxs, -50:], axis=1)
-                                - np.mean(currfull[fusion_signal_idxs, :50], axis=1)
-                        )
-                        if add_action_to_state:
-                            state = np.append(state,
-                                    np.mean(nxtfull[10:] / ACTION_MAX * 2 - 1))
-                        toadd['next_observations'].append(state)
-                else:
-                    toadd['observations'].append(np.array(graph.vp.obs[currv]))
-                    toadd['actions'].append(np.array(graph.ep.action[edge]))
-                    if include_reward_next_obs:
-                        toadd['next_observations'].append(np.array(graph.vp.obs[nxtv]))
+                if include_vertex_numbers:
+                    toadd['vertex'].append(nxtv)
+                    toadd['next_vertex'].append(nxtv)
             done = graph.vp.terminal[nxtv]
-            ret += graph.ep.reward[edge]
-            upper_ret += graph.ep.upper_reward[edge]
+            ret += graph.ep.reward[edge] - reward_offset
+            upper_ret += graph.ep.upper_reward[edge] - reward_offset
             currv = nxtv
             t += 1
-            if n_edges >= n_collects:
+            if not all_starts_once and n_edges >= n_collects:
                 break
         if not silent:
             pbar.set_postfix(OrderedDict(
                 TrainEdges=len(edge_set),
                 ValEdges=len(val_edge_set),
-                Imaginary=(n_imagined / n_edges),
+                Imaginary=0 if n_edges == 0 else (n_imagined / n_edges),
                 Return=ret,
                 UpperReturn=upper_ret,
             ))
@@ -259,7 +236,7 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             upper_returns.append(upper_ret)
         running = n_edges < n_collects
         if all_starts_once:
-            running = running and nxt_start_idx < len(starts) - 1
+            running = nxt_start_idx < len(starts) - 1
     if not silent:
         pbar.close()
         print('Done collecting.')

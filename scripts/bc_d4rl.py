@@ -24,7 +24,7 @@ def train(args):
                 dataset[k] = v[()]
     # dataset['weights'] = np.minimum(np.exp(dataset['rewards'] - 6), 20)
     train_params = vars(args)
-    del train_params['env']
+    train_params['env'] = gym.make(args.env)
     del train_params['pudb']
     del train_params['dataset_path']
     behavior_clone(dataset, env=env, **train_params)

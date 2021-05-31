@@ -84,8 +84,12 @@ def load_ensemble(
         act_dim,
         model_type='PNN',
         model_params={},
+        load_model_params=False,
         cuda_device='',
 ):
+    if load_model_params:
+        with open(os.path.join(load_dir, 'model_params.pkl'), 'rb') as f:
+            model_params = pkl.load(f)
     ensemble = []
     if os.path.exists(os.path.join(load_dir, 'elites.txt')):
         with open(os.path.join(load_dir, 'elites.txt'), 'r') as f:

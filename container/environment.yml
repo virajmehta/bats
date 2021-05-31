@@ -1,0 +1,16 @@
+name: batcave
+channels:
+    - conda-forge
+    - menpo
+dependencies:
+    - python=3.8
+    - graph-tool
+    - pandas
+    - scipy
+    - scikit-learn
+    - tqdm
+    - patchelf
+    - osmesa
+    - pip
+    - pip:
+        - gym

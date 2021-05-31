@@ -2,13 +2,14 @@ import json
 from pathlib import Path, PosixPath
 from shutil import rmtree
 from tqdm import trange
+from math import ceil
 import numpy as np
+from collections import defaultdict
 # from scipy import stats
 import d4rl
 import gym
 import h5py
 import torch
-from ipdb import set_trace as db
 
 DATA_DIR = 'experiments'
 ENSEMBLE = None
@@ -18,9 +19,11 @@ def get_output_dir(name):
     return Path(DATA_DIR) / name
 
 
-def make_output_dir(name, overwrite, args, dir_path=None):
+def make_output_dir(name, overwrite, args, dir_path=None, ignore_exists=False):
     if dir_path is None:
         dir_path = get_output_dir(name)
+    if ignore_exists:
+        return dir_path
     if dir_path.exists():
         if overwrite:
             rmtree(dir_path)
@@ -43,6 +46,40 @@ def make_output_dir(name, overwrite, args, dir_path=None):
     return dir_path
 
 
+def get_trajectory_dataset(dataset):
+    nelem = len(dataset['rewards'])
+    last_start = 0
+    last_obs = None
+    trajectory_dataset = defaultdict(list)
+    ntraj = 1
+    for i in range(nelem):
+        obs = dataset['observations'][i, ...]
+        next_obs = dataset['next_observations'][i, ...]
+        if (obs != last_obs).any() and last_obs is not None:
+            ntraj += 1
+            for name in dataset:
+                if name == 'infos':
+                    continue
+                traj = dataset[name][last_start:i, ...]
+                trajectory_dataset[name].append(traj)
+            last_start = i
+        last_obs = next_obs
+    for name in dataset:
+        if name == 'infos':
+            continue
+        traj = dataset[name][last_start:, ...]
+        trajectory_dataset[name].append(traj)
+    print(f"Dataset size {nelem}, {ntraj} trajectories")
+    return trajectory_dataset
+
+
+def roll_traj_dataset(dataset):
+    new_dataset = {}
+    for name in dataset:
+        new_dataset[name] = np.concatenate(dataset[name], axis=0)
+    return new_dataset
+
+
 def get_offline_env(name, dataset_fraction, data_path=None):
     if name is None:
         env = None
@@ -55,11 +92,18 @@ def get_offline_env(name, dataset_fraction, data_path=None):
         with h5py.File(str(data_path), 'r') as hdata:
             for k, v in hdata.items():
                 dataset[k] = v[()]
-    for name in dataset:
-        item = dataset[name]
-        size = item.shape[0]
-        keep = int(size * dataset_fraction)
-        dataset[name] = item[:keep, ...]
+    trajectory_dataset = get_trajectory_dataset(dataset)
+    num_trajectories = len(trajectory_dataset['actions'])
+    num_traj_sample = ceil(dataset_fraction * num_trajectories)
+    trajs = np.random.choice(num_trajectories, num_traj_sample, replace=False)
+    for name in trajectory_dataset:
+        item = trajectory_dataset[name]
+        new_item = []
+        for trajn in trajs:
+            new_item.append(item[trajn])
+        dataset[name] = new_item
+    print(f"Keeping {num_traj_sample} trajectories")
+    dataset = roll_traj_dataset(dataset)
     return env, dataset
 
 
@@ -164,7 +208,7 @@ def s2i(string):
 
 
 def s2f(string):
-    """Make a comma separated string of ints into a list of ints."""
+    """Make a comma separated string of floats into a list of floats."""
     if ',' not in string:
         if len(string) > 0:
             return [float(string)]
@@ -192,6 +236,7 @@ def make_mujoco_resetter(env, task):
         midpt = 9
     else:
         NotImplementedError('No resetter implemented for %s.' % task)
+
     def resetter(obs):
         env.reset()
         if append_zero:
@@ -200,9 +245,11 @@ def make_mujoco_resetter(env, task):
     return resetter
 
 
-def get_starts_from_graph(graph, env, env_name):
+def get_starts_from_graph(graph, env, env_name, dataset, vertices):
     # When env is made it is wrapped in TimeLimiter, hence the .env
     env = env.env
+    if env_name.startswith('antmaze'):
+        return np.arange(graph.num_vertices())
     if env_name.startswith('maze'):
         obs = graph.vp.obs.get_2d_array(np.arange(env.observation_space.low.size))
         obs = obs.T
@@ -214,9 +261,25 @@ def get_starts_from_graph(graph, env, env_name):
         start_conditions[no_start_rows] = loose_conditions[no_start_rows]
         is_starts = np.any(start_conditions, 0)
         return np.argwhere(is_starts).flatten()
+    elif env_name.startswith('Pendulum'):
+        return np.arange(dataset['rewards'].shape[0]).astype(int)
+    elif env_name.startswith('Mountain') or env_name.startswith('halfcheetah'):
+        starts = []
+        nelem = dataset['rewards'].shape[0]
+        last_obs = None
+        for i in range(nelem):
+            obs = dataset['observations'][i, :]
+            if (obs != last_obs).any():
+                idx = vertices[obs.tobytes()]
+                starts.append(idx)
+            next_obs = dataset['next_observations'][i, :]
+            last_obs = next_obs
+        return np.array(starts)
     elif env_name.startswith('halfcheetah') or env_name.startswith('walker') or env_name.startswith('hopper'):
-        dataset = env.get_dataset()
-        ends = dataset['timeouts'].astype(bool) | dataset['terminals'].astype(bool)
+        if 'timeouts' in dataset:
+            ends = dataset['timeouts'].astype(bool) | dataset['terminals'].astype(bool)
+        else:
+            ends = dataset['terminals'].astype(bool)
         ends_dense = np.nonzero(ends)[0]
         start_states = np.concatenate([[0], ends_dense + 1])
         if start_states[-1] >= graph.get_vertices().shape[0]:
@@ -224,25 +287,3 @@ def get_starts_from_graph(graph, env, env_name):
         return start_states
     else:
         raise NotImplementedError('env {env_name} not supported for start state detection')
-
-class BlankEnv(object):
-
-    def __init__(self, obs_dim=20):
-        self.obs_dim = obs_dim
-        self.observation_space = gym.spaces.Box(
-            low=-1 * np.ones(obs_dim),
-            high=np.ones(obs_dim),
-            dtype=np.float32,
-        )
-        self.action_space = gym.spaces.Box(
-            low=-1,
-            high=1,
-            shape=(1,),
-            dtype=np.float32,
-        )
-
-    def step(self, act):
-        return np.ones(self.obs_dim), 0, False, {}
-
-    def reset(self):
-        return np.ones(self.obs_dim)

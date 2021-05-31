@@ -129,7 +129,7 @@ def behavior_clone(
     save_dir,
     epochs,
     hidden_sizes='256,256',
-    add_entropy_bonus=True,
+    add_entropy_bonus=False,
     standardize_targets=False,
     od_wait=None,  # Epochs of no validation improvement before break.
     val_size=0,
