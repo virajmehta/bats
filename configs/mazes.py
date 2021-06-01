@@ -23,8 +23,8 @@ MAZE_CONFIGS = OrderedDict()
 
 MAZE_CONFIGS['maze-umaze'] = deepcopy(base_config)
 MAZE_CONFIGS['maze-umaze']['env_name'] = 'maze2d-umaze-v1'
-MAZE_CONFIGS['maze-umaze']['load_model'] =\
-        '/zfsauton/project/public/ichar/d4rl_models/mazes/umaze1'
+# MAZE_CONFIGS['maze-umaze']['load_model'] =\
+#         '/zfsauton/project/public/ichar/d4rl_models/mazes/umaze1'
 
 MAZE_CONFIGS['maze-medium'] = deepcopy(base_config)
 MAZE_CONFIGS['maze-medium']['env_name'] = 'maze2d-medium-v1'
@@ -32,8 +32,8 @@ MAZE_CONFIGS['maze-medium']['planning_quantile'] = 0.8
 MAZE_CONFIGS['maze-medium']['epsilon_planning'] = 0.425
 MAZE_CONFIGS['maze-medium']['num_stitching_iters'] = 10
 MAZE_CONFIGS['maze-medium']['max_stitch_length'] = 1
-MAZE_CONFIGS['maze-medium']['load_model'] = ('/zfsauton/project/public/ichar/'
-                            'd4rl_models/mazes/mediummaze')
+# MAZE_CONFIGS['maze-medium']['load_model'] = ('/zfsauton/project/public/ichar/'
+#                             'd4rl_models/mazes/mediummaze')
 MAZE_CONFIGS['maze-medium']['verbose'] = True
 
 MAZE_CONFIGS['maze-large'] = deepcopy(base_config)
