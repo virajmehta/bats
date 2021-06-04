@@ -245,7 +245,7 @@ def make_mujoco_resetter(env, task):
     return resetter
 
 
-def get_starts_from_graph(graph, env, env_name, dataset, vertices):
+def get_starts_from_graph(graph, env, env_name, dataset=None, vertices=None):
     # When env is made it is wrapped in TimeLimiter, hence the .env
     env = env.env
     if env_name.startswith('antmaze'):

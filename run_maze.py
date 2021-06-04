@@ -1,7 +1,7 @@
 import argparse
 # due to some weirdness with dynamic libraries graph_tool needs to be imported before torch
 # don't change the order of the next 2 lines
-from bats_maze.bats_maze import BATSTrainer
+from bats_maze import BATSTrainer
 import util
 from pathlib import Path
 from copy import deepcopy
@@ -59,6 +59,8 @@ def main(args):
     env, dataset = util.get_offline_env(args.env_name,
                                         args.dataset_fraction,
                                         data_path=args.offline_dataset_path)
+    for k, v in dataset.items():
+        dataset[k] = v[:int(v.shape[0] * args.dataset_fraction)]
     args = vars(args)
     bats = BATSTrainer(dataset, env, output_dir, **args)
     bats.train()

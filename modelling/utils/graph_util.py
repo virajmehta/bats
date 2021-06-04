@@ -58,12 +58,11 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   return_threshold=None,
                                   all_starts_once=False,
                                   unpenalized_rewards=False,
-                                  silent=False,
                                   get_fusion_slope_obs=False,
                                   # Only collect betan and li by default.
                                   fusion_signal_idxs=[3,4],
                                   add_action_to_state=True,
-                                  actions_are_deltas=True):
+                                  actions_are_deltas=True,
                                   silent=False,
                                   include_vertex_numbers=False,
                                   reward_offset=0):

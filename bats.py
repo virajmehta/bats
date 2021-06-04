@@ -42,8 +42,6 @@ class BATSTrainer:
         self.verbose = kwargs.get('verbose', True)
         self.cb_plan = kwargs.get('cb_plan', False)
         self.dont_bc = kwargs.get('dont_bc', False)
-        if 'full_states' in dataset:
-            self.full_state_shape = dataset['full_states'].shape[1:]
 
         # set up the parameters for the dynamics model training
         self.bisim_model = None
@@ -130,8 +128,6 @@ class BATSTrainer:
         self.G.vp.best_neighbor = self.G.new_vertex_property("int")
         self.G.vp.obs = self.G.new_vertex_property('vector<float>')
         self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
-        if 'full_states' in self.dataset:
-            self.G.vp.full_states = self.G.new_vertex_property('vector<float>')
         self.G.vp.start_node = self.G.new_vertex_property('bool')
         self.G.vp.real_node = self.G.new_vertex_property('bool')
         self.G.vp.real_node.get_array()[:] = True
@@ -338,7 +334,7 @@ class BATSTrainer:
         self.vertices = {obs.tobytes(): i for i, obs in enumerate(self.neighbor_obs)}
 
     def train_dynamics(self):
-        if (not self.cb_plan or self.dynamics_ensemble_path
+        if (self.dynamics_ensemble_path
                 is None and self.max_stitch_length > 1):
             print('training ensemble of dynamics models')
             train_ensemble(self.dataset, **self.dynamics_train_params)
@@ -482,17 +478,6 @@ class BATSTrainer:
             cpu_chunk = possible_stitches[i * chunksize:(i + 1) * chunksize]
             # If there is a true underlying state load that into cpu chunk
             # instead.
-            if 'full_states' in self.G.vp:
-                new_chunk = []
-                for cc in cpu_chunk:
-                    new_chunk.append((
-                        cc[0],
-                        cc[1],
-                        np.array(self.G.vp.full_states[cc[0]]).reshape(self.full_state_shape),
-                        cc[3],
-                        cc[-1],
-                    ))
-                cpu_chunk = new_chunk
             fn = input_path / f"{i}.pkl"
             with fn.open('wb') as f:
                 pickle.dump(cpu_chunk, f)
@@ -631,8 +616,6 @@ class BATSTrainer:
             next_obs = self.dataset['next_observations'][i, :]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
-            self.G.vp.full_states[v_from] = self.dataset['full_states'][i].flatten()
-            self.G.vp.full_states[v_to] = self.dataset['next_full_states'][i].flatten()
             if (self.G.vertex_index[v_from], self.G.vertex_index[v_to]) in self.stitches_tried:  # NOQA
                 continue
             action = self.dataset['actions'][i, :]
