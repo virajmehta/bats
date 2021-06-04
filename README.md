@@ -28,7 +28,7 @@ python scripts/train_d4rl_bisiumulation.py --save_dir <save_dir> --env <env_name
 
 * For mazes:
 ```
-python maze_run.py <experiment_name> --config maze-<maze_type> --num_cpus <num_cpus> --load_model <path_to_model>
+python run_maze.py <experiment_name> --config maze-<maze_type> --num_cpus <num_cpus> --load_model <path_to_model>
 ```
 
 * For mujoco + mountaincar:
@@ -50,5 +50,5 @@ Here:
 
 To run behavior cloning run:
 ```
-python scripts/boltclone_graph.py --env <env_name> --graph_dir <path_to_graph_dir> --save_dir <path_to_save_dir>
+python scripts/boltclone_graph.py --env <env_name> --graph_dir <path_to_graph_dir> --save_dir <path_to_save_dir> --unpenalized_rewards --return_threshold <threshold> --all_starts_once
 ```
