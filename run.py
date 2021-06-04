@@ -73,6 +73,8 @@ def main(args):
     env, dataset = util.get_offline_env(args.env_name,
                                         args.dataset_fraction,
                                         data_path=args.offline_dataset_path)
+    for k, v in dataset.items():
+        dataset[k] = v[:int(v.shape[0] * args.dataset_fraction)]
     args_dict = vars(args)
     bats = BATSTrainer(dataset, env, output_dir, **args_dict)
     if args.relabel:

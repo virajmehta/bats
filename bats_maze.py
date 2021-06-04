@@ -408,7 +408,7 @@ class BATSTrainer:
             np.save(fn, cpu_chunk)
             output_file = output_path / f"{i}.npy"
             args = ['python',
-                    'maze_bats/maze_plan.py',
+                    'maze_plan.py',
                     str(fn),
                     str(output_file),
                     str(self.dynamics_ensemble_path),
@@ -668,7 +668,7 @@ class BATSTrainer:
         for i in range(self.num_cpus):
             output_file = output_path / f"{i}.npy"
             args = ['python',
-                    'maze_bats/maze_rollout_stitches.py',
+                    'maze_rollout_stitches.py',
                     str(self.output_dir / 'mdp.gt'),
                     str(self.output_dir / self.neighbor_name),
                     str(self.output_dir / 'stitches_tried.pkl'),
