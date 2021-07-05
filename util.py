@@ -57,7 +57,7 @@ def get_trajectory_dataset(dataset):
             for name in dataset:
                 traj = dataset[name][last_start:i, ...]
                 trajectory_dataset[name].append(traj)
-                last_start = i
+            last_start = i
         last_obs = next_obs
     for name in dataset:
         traj = dataset[name][last_start:, ...]

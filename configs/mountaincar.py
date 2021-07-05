@@ -26,16 +26,16 @@ ENV_NAME = 'MountainCarContinuous-v0'
 # For any additional configurations, add them here.
 MOUNTAINCAR_CONFIGS = OrderedDict()
 
-MOUNTAINCAR_CONFIGS['pendulum-1k'] = deepcopy(base_config)
-MOUNTAINCAR_CONFIGS['pendulum-1k']['env_name'] = ENV_NAME
-MOUNTAINCAR_CONFIGS['pendulum-1k']['offline_dataset_path'] = dataset_base_path / 'mountaincar-random-1000.hdf5'
-MOUNTAINCAR_CONFIGS['pendulum-1k']['load_model'] = model_base_path / '64,64,64_mc_random_1k'
-MOUNTAINCAR_CONFIGS['pendulum-1k']['load_bisim_model'] = model_base_path / '64,64,64_mc_random_1k_bisim'
-MOUNTAINCAR_CONFIGS['pendulum-10k'] = deepcopy(base_config)
-MOUNTAINCAR_CONFIGS['pendulum-10k']['env_name'] = ENV_NAME
-MOUNTAINCAR_CONFIGS['pendulum-10k']['offline_dataset_path'] = dataset_base_path / 'mountaincar-random-10000.hdf5'
-MOUNTAINCAR_CONFIGS['pendulum-10k']['load_model'] = model_base_path / '64,64,64_mc_random_10k'
-MOUNTAINCAR_CONFIGS['pendulum-10k']['load_bisim_model'] = model_base_path / '64,64,64_mc_random_10k_bisim'
+MOUNTAINCAR_CONFIGS['mountaincar-1k'] = deepcopy(base_config)
+MOUNTAINCAR_CONFIGS['mountaincar-1k']['env_name'] = ENV_NAME
+MOUNTAINCAR_CONFIGS['mountaincar-1k']['offline_dataset_path'] = dataset_base_path / 'mountaincar-random-1000.hdf5'
+MOUNTAINCAR_CONFIGS['mountaincar-1k']['load_model'] = model_base_path / '64,64,64_mc_random_1k'
+MOUNTAINCAR_CONFIGS['mountaincar-1k']['load_bisim_model'] = model_base_path / '64,64,64_mc_random_1k_bisim'
+MOUNTAINCAR_CONFIGS['mountaincar-10k'] = deepcopy(base_config)
+MOUNTAINCAR_CONFIGS['mountaincar-10k']['env_name'] = ENV_NAME
+MOUNTAINCAR_CONFIGS['mountaincar-10k']['offline_dataset_path'] = dataset_base_path / 'mountaincar-random-10000.hdf5'
+MOUNTAINCAR_CONFIGS['mountaincar-10k']['load_model'] = model_base_path / '64,64,64_mc_random_10k'
+MOUNTAINCAR_CONFIGS['mountaincar-10k']['load_bisim_model'] = model_base_path / '64,64,64_mc_random_10k_bisim'
 
 
 to_add = OrderedDict()

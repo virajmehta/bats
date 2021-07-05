@@ -547,6 +547,8 @@ class BATSTrainer:
             # This is hardcoded to assume there are 5 models.
             self.G.ep.model_errors[e] = [0 for _ in range(5)]
             self.G.ep.stitch_itr[e] = 0
+            if 'q_values' in self.dataset:
+                self.G.vp.value[v_to] = self.dataset['q_values'][i] - reward
         start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
         self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 

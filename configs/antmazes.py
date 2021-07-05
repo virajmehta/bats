@@ -36,23 +36,23 @@ ANTMAZE_CONFIGS['antmaze-umaze']['env_name'] = 'maze2d-umaze-v1'
 # MAZE_CONFIGS['maze-large']['env_name'] = 'maze2d-large-v1'
 # MAZE_CONFIGS['maze-large']['epsilon_neighbors'] = 0.15
 
-to_add = OrderedDict()
-for k, v in MAZE_CONFIGS.items():
-    task_type = k[k.index('-') + 1:]
-    if 'maze' not in task_type:
-        task_type = task_type + 'maze'
-    config = deepcopy(v)
-    config['use_all_planning_itrs'] = True
-    config['continue_after_no_advantage'] = True
-    config['stitching_chunk_size'] = 10000
-    config['num_stitching_iters'] = 50
-    # For umaze dataset edge distance = 0.11 +- 0.03
-    config['planning_quantile'] = 0.4
-    config['epsilon_planning'] = 1.5
-    config['load_model'] = ('/zfsauton/project/public/ichar/'
-                            'd4rl_models/mazes/%s' % task_type)
-    config['verbose'] = True
-    config['k_neighbors'] = 25
-    config['max_stitch_length'] = 5
-    to_add[k + '-tune'] = config
-ANTMAZE_CONFIGS.update(to_add)
+# to_add = OrderedDict()
+# for k, v in MAZE_CONFIGS.items():
+#     task_type = k[k.index('-') + 1:]
+#     if 'maze' not in task_type:
+#         task_type = task_type + 'maze'
+#     config = deepcopy(v)
+#     config['use_all_planning_itrs'] = True
+#     config['continue_after_no_advantage'] = True
+#     config['stitching_chunk_size'] = 10000
+#     config['num_stitching_iters'] = 50
+#     # For umaze dataset edge distance = 0.11 +- 0.03
+#     config['planning_quantile'] = 0.4
+#     config['epsilon_planning'] = 1.5
+#     config['load_model'] = ('/zfsauton/project/public/ichar/'
+#                             'd4rl_models/mazes/%s' % task_type)
+#     config['verbose'] = True
+#     config['k_neighbors'] = 25
+#     config['max_stitch_length'] = 5
+#     to_add[k + '-tune'] = config
+# ANTMAZE_CONFIGS.update(to_add)
