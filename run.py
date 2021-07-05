@@ -44,21 +44,28 @@ def parse_arguments():
     parser.add_argument('-tvi', '--vi_tolerance', type=float, default=0.02)
     parser.add_argument('-mvi', '--max_val_iterations', type=int, default=1000, help='max number of iterations of value iterations to do during each stitching iter')
     parser.add_argument('-bei', '--bc_every_iter', action='store_true')
+    parser.add_argument('--bc_epochs', type=int, default=30)
     parser.add_argument('-ms', '--max_stitches', type=int, default=6, help='max stitches for a single state as the boltzmann rollouts proceed')
     parser.add_argument('-norm', '--normalize_obs', action='store_true')
     parser.add_argument('--pudb', action='store_true')
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     parser.add_argument('--bisim_latent_dim', type=int, default=6, help="How many dimensions for the latent space of the bisimulation metric")
-    parser.add_argument('--use_all_planning_itrs', action='store_true')
+    parser.add_argument('-uapi', '--use_all_planning_itrs', action='store_true')
     parser.add_argument('--continue_after_no_advantage', action='store_true')
     parser.add_argument('-p', '--penalize_stitches', action='store_true')
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('-pc', '--penalty_coefficient', type=float, default=1.0)
     parser.add_argument('-msl', '--max_stitch_length', type=int, default=1)
+<<<<<<< HEAD
     parser.add_argument('--warm_q_vals_path',
         help='Path to hdf5 file containing "q_values" estimates corresponding'
              'to edges in the dataset. If provided, initialize the graph'
              'with these values.')
+=======
+    parser.add_argument('-rl', '--relabel', action='store_true', help="Don't train but compute all the new edge penalties")
+    parser.add_argument('--starts_from_dataset', action='store_true')
+    parser.add_argument('--reward_offset', type=float, default=0)
+>>>>>>> 2094189608a8e8fa208cd882ef93b6b5aa4180d5
     if defaults is not None:
         parser.set_defaults(**defaults)
     args = parser.parse_args(remaining)
@@ -73,7 +80,7 @@ def pretrain_value(args, dataset):
 
 
 def main(args):
-    output_dir = util.make_output_dir(args.name, args.overwrite, deepcopy(args))
+    output_dir = util.make_output_dir(args.name, args.overwrite, deepcopy(args), ignore_exists=args.relabel)
     env, dataset = util.get_offline_env(args.env_name,
                                         args.dataset_fraction,
                                         data_path=args.offline_dataset_path)
@@ -81,9 +88,12 @@ def main(args):
         with h5py.File(args.warm_q_vals_path, 'r') as hdata:
             for k, v in hdata.items():
                 dataset[k] = v[()]
-    args = vars(args)
-    bats = BATSTrainer(dataset, env, output_dir, **args)
-    bats.train()
+    args_dict = vars(args)
+    bats = BATSTrainer(dataset, env, output_dir, **args_dict)
+    if args.relabel:
+        bats.label_bisimulation()
+    else:
+        bats.train()
     return bats.stats
 
 

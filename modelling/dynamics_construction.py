@@ -2,6 +2,7 @@
 Functions for training and loading in dyamics models.
 """
 import os
+import pickle as pkl
 
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -72,6 +73,8 @@ def train_ensemble(
         print('Elite Members: ', elite_str)
     with open(os.path.join(save_dir, 'elites.txt'), 'w') as f:
         f.write(elite_str)
+    with open(os.path.join(save_dir, 'model_params.pkl'), 'wb') as f:
+        pkl.dump(model_params, f)
     return [ensemble[idx] for idx in elite_idxs]
 
 
@@ -81,8 +84,12 @@ def load_ensemble(
         act_dim,
         model_type='PNN',
         model_params={},
+        load_model_params=False,
         cuda_device='',
 ):
+    if load_model_params:
+        with open(os.path.join(load_dir, 'model_params.pkl'), 'rb') as f:
+            model_params = pkl.load(f)
     ensemble = []
     if os.path.exists(os.path.join(load_dir, 'elites.txt')):
         with open(os.path.join(load_dir, 'elites.txt'), 'r') as f:

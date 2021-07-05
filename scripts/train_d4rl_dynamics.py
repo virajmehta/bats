@@ -14,15 +14,20 @@ from modelling.dynamics_construction import train_ensemble
 def train(args):
     if args.pudb:
         import pudb; pudb.set_trace()
-    # dataset = d4rl.qlearning_dataset(gym.make(args.env))
     args.save_dir.mkdir(exist_ok=True)
-    dataset = {}
-    with h5py.File(str(args.data_path), 'r') as hdata:
-        for k, v in hdata.items():
-            dataset[k] = v[()]
+    if args.data_path:
+        dataset = {}
+        with h5py.File(str(args.data_path), 'r') as hdata:
+            for k, v in hdata.items():
+                if k == 'infos':
+                    continue
+                dataset[k] = v[()]
+    elif args.env:
+        dataset = d4rl.qlearning_dataset(gym.make(args.env))
     train_params = vars(args)
     del train_params['data_path']
     del train_params['pudb']
+    del train_params['env']
     model_params = {}
     model_params['encoder_hidden'] = train_params.pop('encoder_hidden')
     model_params['latent_dim'] = train_params.pop('latent_dim')
@@ -33,6 +38,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--save_dir', type=Path)
     parser.add_argument('--data_path')
+    parser.add_argument('--env')
     parser.add_argument('--epochs', type=int, default=250)
     parser.add_argument('--od_wait', type=int, default=25)
     parser.add_argument('--n_members', type=int, default=7)

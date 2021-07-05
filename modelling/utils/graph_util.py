@@ -6,6 +6,8 @@ import numpy as np
 from tqdm import tqdm
 
 
+ACTION_MAX = 2500000
+
 def make_qlearning_dataset(graph):
     data = {k: [] for k in ['observations', 'actions', 'rewards',
                             'next_observations', 'terminals']}
@@ -44,15 +46,20 @@ def make_boltzmann_policy_dataset(graph, n_collects,
                                   normalize_qs=True,
                                   n_val_collects=0,
                                   val_start_prop=0,
+                                  val_selection_prob=0,
                                   any_state_is_start=False,
                                   only_add_real=False,
+                                  val_only_add_real=False,
                                   get_unique_edges=True,
                                   include_reward_next_obs=False,
                                   starts=None,
                                   threshold_start_val=None,
                                   top_percent_starts=None,
                                   return_threshold=None,
-                                  silent=False):
+                                  all_starts_once=False,
+                                  silent=False,
+                                  include_vertex_numbers=False,
+                                  reward_offset=0):
     """Collect a Q learning dataset by running boltzmann policy in MDP.
     Args:
         graph: The graph object.
@@ -65,14 +72,23 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         n_val_collects: Number of data points to collect for a validation set.
         val_start_prop: [0, 1) percent of of starts to use for the validation
             set.
+        val_selection_prob: Probability that an observed edge will be put
+            into validation dataset.
         only_add_real: Whether to only add real edges.
+        val_only_add_real: Whether to only add real edges to validation
+            set.
         get_unique_edges: Whether to only return unique edges to train on.
         starts: User provided start states. Otherwise will look for vertex
             property "start".
         threshold_start_val: Value to threshold start states to pick.
         top_percent_starts: Percent of start states to take.
         return_threshold: The threshold on return values to place on starts.
+        all_starts_once: Whether to just collect trajectories from all start
+            states once instead of an amount of samples.
         silent: Whether to be silent.
+        include_vertex_numbers: whether to include the numbers of vertices
+            which are used by the policy
+
     """
     data = defaultdict(list)
     # Get the start states.
@@ -88,10 +104,6 @@ def make_boltzmann_policy_dataset(graph, n_collects,
     if threshold_start_val is not None:
         starts = get_value_thresholded_starts(graph, threshold_start_val,
                                               starts=starts)
-    if return_threshold is not None:
-        starts = get_return_thresholded_starts(graph, return_threshold,
-                                               horizon=max_ep_len,
-                                               starts=starts)
     # Get separate into train and validation set starts.
     np.random.shuffle(starts)
     if len(starts) > 1 and val_start_prop > 0 and n_val_collects > 0:
@@ -110,21 +122,37 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         )[0]
         starts = starts[val_size:]
     else:
-        val_data = None
+        val_data = defaultdict(list)
     n_imagined = 0
     n_edges = 0
     returns = []
     upper_returns = []
     if not silent:
-        pbar = tqdm(total=n_collects)
+        if all_starts_once:
+            amt_on_bar = len(starts) * max_ep_len
+        else:
+            amt_on_bar = n_collects
+        pbar = tqdm(total=amt_on_bar)
     # Do Boltzmann rollouts.
     edge_set = set()
-    while n_edges < n_collects:
+    val_edge_set = set()
+    running = True
+    nxt_start_idx = -1
+    while running:
+        currdata = defaultdict(list)
+        currval = defaultdict(list)
+        curredgeset = set()
+        currvalset = set()
         done = False
         t = 0
         ret = 0
         upper_ret = 0
-        currv = np.random.choice(starts)
+        if all_starts_once:
+            nxt_start_idx += 1
+        else:
+            nxt_start_idx = np.random.randint(len(starts))
+        currv = starts[nxt_start_idx]
+        lastact = None
         while not done and t < max_ep_len:
             # bstv = graph.vp.best_child[currv]
             bstv = graph.vp.best_neighbor[currv]
@@ -148,36 +176,66 @@ def make_boltzmann_policy_dataset(graph, n_collects,
             n_imagined += is_imagined
             n_edges += 1
             if not only_add_real or not graph.ep.imagined[edge]:
-                if not get_unique_edges or (currv, nxtv) not in edge_set:
-                    data['observations'].append(np.array(graph.vp.obs[currv]))
-                    data['actions'].append(np.array(graph.ep.action[edge]))
-                    if include_reward_next_obs:
-                        data['next_observations'].append(np.array(graph.vp.obs[nxtv]))
-                        data['rewards'].append(graph.ep.reward[edge])
-
-                edge_set.add((currv, nxtv))
+                edgehash = (currv, nxtv)
+                if edgehash in edge_set or edgehash in curredgeset:
+                    toadd = currdata
+                elif edgehash in val_edge_set or edgehash in currvalset:
+                    toadd = currval
+                else:
+                    if ((not val_only_add_real or not graph.ep.imagined[edge])
+                            and np.random.uniform() < val_selection_prob):
+                        toadd = currval
+                        currvalset.add(edgehash)
+                    else:
+                        toadd = currdata
+                        curredgeset.add(edgehash)
+                toadd['observations'].append(np.array(graph.vp.obs[currv]))
+                toadd['actions'].append(np.array(graph.ep.action[edge]))
+                if include_reward_next_obs:
+                    toadd['next_observations'].append(np.array(graph.vp.obs[nxtv]))
+                    toadd['rewards'].append(graph.ep.reward[edge] - reward_offset)
+                    toadd['terminals'].append(graph.vp.terminal[nxtv])
+                    toadd['infos'].append(dict(
+                        stitch_itr = graph.ep.stitch_itr[edge],
+                        upper_reward = graph.ep.upper_reward[edge] - reward_offset,
+                        t = t,
+                    ))
+                if include_vertex_numbers:
+                    toadd['vertex'].append(nxtv)
+                    toadd['next_vertex'].append(nxtv)
             done = graph.vp.terminal[nxtv]
-            ret += graph.ep.reward[edge]
-            upper_ret += graph.ep.upper_reward[edge]
+            ret += graph.ep.reward[edge] - reward_offset
+            upper_ret += graph.ep.upper_reward[edge] - reward_offset
             currv = nxtv
             t += 1
-            if n_edges >= n_collects:
+            if not all_starts_once and n_edges >= n_collects:
                 break
         if not silent:
             pbar.set_postfix(OrderedDict(
-                Edges=n_edges,
-                Imaginary=(n_imagined / n_edges),
+                TrainEdges=len(edge_set),
+                ValEdges=len(val_edge_set),
+                Imaginary=0 if n_edges == 0 else (n_imagined / n_edges),
                 Return=ret,
                 UpperReturn=upper_ret,
             ))
             pbar.update(t)
-        returns.append(ret)
-        upper_returns.append(upper_ret)
+        if return_threshold is None or ret > return_threshold:
+            for full, curr in [(data, currdata), (val_data, currval)]:
+                for k, v in curr.items():
+                    full[k] += v
+            edge_set = edge_set.union(curredgeset)
+            val_edge_set = val_edge_set.union(currvalset)
+            returns.append(ret)
+            upper_returns.append(upper_ret)
+        running = n_edges < n_collects
+        if all_starts_once:
+            running = nxt_start_idx < len(starts) - 1
     if not silent:
         pbar.close()
         print('Done collecting.')
         print('Proportion imagined edges taken: %f' % (n_imagined / n_edges))
-        print('Unique Edges: %d' % len(edge_set))
+        print('Unique Train Edges: %d' % len(edge_set))
+        print('Unique Validation Edges: %d' % len(val_edge_set))
         print('Returns: %f +- %f' % (np.mean(returns), np.std(returns)))
         print('Upper Returns: %f +- %f' %
                 (np.mean(upper_returns), np.std(upper_returns)))
@@ -189,10 +247,15 @@ def make_boltzmann_policy_dataset(graph, n_collects,
         UpperReturnsStd=np.std(upper_returns),
         UniqueEdges=len(edge_set),
     )
-    data = {k: np.vstack(v) for k, v in data.items()}
-    for k, v in data.items():
-        if len(v.shape) == 1:
-            data[k] = v.reshape(-1, 1)
+    for ds in [data, val_data]:
+        for k, v in ds.items():
+            if k == 'infos':
+                continue
+            elif isinstance(v, list):
+                v = np.vstack(v)
+                if len(v.shape) == 1:
+                    v = v.reshape(-1, 1)
+                ds[k] = v
     return data, val_data, stats
 
 
@@ -200,6 +263,7 @@ def make_graph_consistent(
     graph,
     planning_quantile,
     epsilon_planning,
+    stitch_itr=None,
     silent=False,
 ):
     """Go through the graph and remove any edges that are not consistent with
@@ -209,23 +273,55 @@ def make_graph_consistent(
     # Loop through all of the edges in the graph.
     if not silent:
         pbar = tqdm(total=graph.num_edges())
-    for inv, outv, eidx, im in graph.get_edges([graph.edge_index,
-                                                graph.ep.imagined]):
-        if not im:
-            stats['EdgesKept'] += 1
-        else:
-            errs = graph.ep.model_errors[eidx]
-            if np.quantile(errs, planning_quantile) < epsilon_planning:
-                stats['EdgesKept'] += 1
-            else:
+    for inv, outv, im in graph.get_edges([graph.ep.imagined]):
+        if im:
+            edge = graph.edge(inv, outv)
+            errs = graph.ep.model_errors[edge]
+            should_remove =\
+                    np.quantile(errs, planning_quantile) > epsilon_planning
+            if stitch_itr is not None:
+                should_remove = (should_remove
+                        or graph.ep.stitch_itr[edge] <= stitch_itr)
+            if should_remove:
                 stats['EdgesRemoved'] += 1
-                graph.remove_edge(eidx)
+                graph.remove_edge(graph.edge(inv, outv))
+            else:
+                stats['EdgesKept'] += 1
         if not silent:
             pbar.update(1)
             pbar.set_postfix(stats)
     if not silent:
         pbar.close()
-    return stats
+    return graph, stats
+
+
+def add_penalty_to_graph(
+    graph,
+    disagreement_coef,
+    planning_coef,
+    silent=False,
+):
+    """Go through the graph and remove any edges that are not consistent with
+    the given hyperparameters.
+    """
+    stats = OrderedDict(EdgesRemoved=0, EdgesKept=0)
+    # Loop through all of the edges in the graph.
+    if not silent:
+        pbar = tqdm(total=graph.num_edges())
+    for inv, outv, im in graph.get_edges([graph.ep.imagined]):
+        if im:
+            edge = graph.edge(inv, outv)
+            errs = graph.ep.model_errors[edge]
+            penalty = (disagreement_coef * np.std(errs)
+                        + planning_coef * np.mean(errs))
+            rew = graph.ep.reward[edge]
+            graph.ep.reward[edge] = rew - penalty
+            graph.ep.upper_reward[edge] = rew + penalty
+        if not silent:
+            pbar.update(1)
+    if not silent:
+        pbar.close()
+    return graph, stats
 
 
 def get_best_policy_returns(
@@ -328,13 +424,15 @@ def get_return_thresholded_starts(
     horizon,
     starts=None,
 ):
+    print('Filtering out bad states...')
     if starts is None:
         starts = np.argwhere(graph.get_vertices(
             vprops=[graph.vp.start_node])[:, 1]).flatten()
     best_pol = get_best_policy_returns(graph, starts, horizon=horizon)
     returns = np.array([bp[0] for bp in best_pol])
-    valididxs = np.argwhere(returns >= threshold)
+    valididxs = np.argwhere(returns >= threshold).flatten()
     if len(valididxs) == 0:
         print('No starts meet threshold requirement! Returning all starts!')
         return starts
-    return starts[valididxs]
+    print('Keeping %d/%d states.' % (len(valididxs), len(starts)))
+    return starts[valididxs].flatten()

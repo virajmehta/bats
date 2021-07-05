@@ -52,6 +52,13 @@ class BATSTrainer:
         self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 100)
         self.dynamics_train_params['cuda_device'] = kwargs.get('cuda_device', '')
 
+        self.dynamics_load_params = {}
+        if 'dynamics_encoder_hidden' in kwargs:
+            self.dynamics_load_params['encoder_hidden'] = kwargs['dynamics_encoder_hidden']
+        if 'dynamics_latent_dim' in kwargs:
+            self.dynamics_load_params['latent_dim'] = kwargs['dynamics_latent_dim']
+        self.use_dl_params = len(self.dynamics_load_params) > 0
+
         # set up the parameters for the bisimulation metric space
         self.use_bisimulation = kwargs['use_bisimulation']
         self.penalize_stitches = kwargs['penalize_stitches']
@@ -67,29 +74,34 @@ class BATSTrainer:
         # set up the parameters for behavior cloning
         self.policy = None
         self.bc_params = {}
-        self.bc_params['save_dir'] = str(output_dir)
-        self.bc_params['epochs'] = kwargs.get('bc_epochs', 50)
+        self.bc_params['epochs'] = kwargs['bc_epochs']
         self.bc_params['od_wait'] = kwargs.get('od_wait', 15)
         self.bc_params['cuda_device'] = kwargs.get('cuda_device', '')
         self.bc_params['hidden_sizes'] = kwargs.get('policy_hidden_sizes', '256,256')
         self.bc_params['batch_updates_per_epoch'] =\
             kwargs.get('batch_updates_per_epoch', None)
         self.bc_params['add_entropy_bonus'] =\
-            kwargs.get('add_entropy_bonus', True)
+            kwargs.get('add_entropy_bonus', False)
         self.intermediate_bc_params = deepcopy(self.bc_params)
-        self.intermediate_bc_params['epochs'] = 30
-        self.temperature = kwargs.get('temperature', 0.0)
+        self.temperature = kwargs.get('temperature', 0.25)
         self.rollout_stitch_temperature = kwargs.get('rollout_stitch_temperature', 0.25)
         self.bolt_gather_params = {}
-        self.bolt_gather_params['top_percent_starts'] =\
-            kwargs.get('top_percent_starts', 0.8)
+        self.bolt_gather_params['return_threshold'] =\
+                kwargs.get('return_threshold', -10000000)
+        self.bolt_gather_params['n_collects'] =\
+                kwargs.get('n_collects', 100000)
+        self.bolt_gather_params['val_selection_prob'] =\
+                kwargs.get('val_selection_prob', 0.2)
+        self.bolt_gather_params['temperature'] =\
+                kwargs.get('bc_temperature', 0.1)
         self.bolt_gather_params['silent'] =\
-            kwargs.get('silent', False)
+                kwargs.get('silent', False)
         self.bolt_gather_params['get_unique_edges'] =\
-            kwargs.get('get_unique_edges', False)
+                kwargs.get('get_unique_edges', False)
         self.bolt_gather_params['val_start_prop'] =\
-            kwargs.get('val_start_prop', 0.05)
+                kwargs.get('val_start_prop', 0)
         self.bc_every_iter = kwargs['bc_every_iter']
+        self.reward_offset = kwargs.get('reward_offset', 0)
 
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
@@ -161,8 +173,9 @@ class BATSTrainer:
         # Whether to keep making suboptimal stitches after no positive
         # advantage stitches can be made. This is good for hyper parameter opt.
         self.continue_after_no_advantage =\
-                kwargs.get('continue_after_no_advantage', False)
+            kwargs.get('continue_after_no_advantage', False)
         self.pick_positive_adv = True  # Set to False after no positive adv.
+        self.starts_from_dataset = kwargs.get('starts_from_dataset', False)
 
         # printing parameters
         self.neighbor_print_period = 1000
@@ -238,6 +251,19 @@ class BATSTrainer:
         else:
             return range(n)
 
+    def label_bisimulation(self):
+        # assumes there's already a graph loaded and a bisimulation dynamics model
+        self.bisim_model = load_bisim(self.bisim_model_path)
+        self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
+        self.penalize_stitches = True
+        self.fine_tune_dynamics()
+        self.G.save(str(self.output_dir / 'penalized.gt'))
+        if self.bc_every_iter:
+            self.value_iteration()
+            bc_start_time = time.time()
+            self.train_bc(dir_name='start', intermediate=True)
+            print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
+
     def train(self):
         # add the original dataset into the graph
         self.add_dataset_edges()
@@ -253,6 +279,10 @@ class BATSTrainer:
         self.G.save(str(self.output_dir / 'mdp.gt'))
         processes = None
         self.value_iteration()
+        if self.bc_every_iter:
+            bc_start_time = time.time()
+            self.train_bc(dir_name='start', intermediate=True)
+            print(f"Time for behavior cloning: {time.time() - bc_start_time:.2f}s")
         for i in self.get_iterator(self.num_stitching_iters):
             stitch_start_time = time.time()
             stitches_to_try = self.get_rollout_stitch_chunk()
@@ -271,7 +301,6 @@ class BATSTrainer:
             size = self.G.num_vertices()
             self.neighbors.resize((size, size))
             save_npz(self.output_dir / self.neighbor_name, self.neighbors)
-            print(f"Num vertices: {size}, nn shape: {self.neighbors.shape}")
             print(f"Time to test edges: {time.time() - plan_start_time:.2f}s")
             vi_start_time = time.time()
             self.value_iteration()
@@ -324,8 +353,13 @@ class BATSTrainer:
                 self.bisim_model, self.bisim_trainer = train_bisim(**self.bisim_train_params)
                 self.bisim_model_path = str(self.output_dir)
             self.compute_embeddings()
-        dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
-                                          cuda_device='')
+        if self.use_dl_params:
+            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
+                                              cuda_device='', model_params=self.dynamics_load_params,
+                                              load_model_params=False)
+        else:
+            dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
+                                              cuda_device='', load_model_params=False)
         self.dynamics_unroller = ModelUnroller(self.env_name, dynamics_ensemble)
         nnz = self.find_nearest_neighbors()
         return nnz
@@ -360,29 +394,65 @@ class BATSTrainer:
     def recompute_edge_values(self):
         if len(self.edges_added) == 0:
             return
-        edges_added = np.array(self.edges_added)
-        start_obs = self.neighbor_obs[edges_added[:, 0], :]
-        end_obs = self.neighbor_obs[edges_added[:, 1], :]
-        actions = []
+        stitches1step = []
+        actions1step = []
+        other_starts = []
         for start, end in self.edges_added:
-            edge = self.G.edge(start, end)
-            action = self.G.ep.action[edge]
-            actions.append(action)
-        actions = np.array(actions)
-        conditions = np.concatenate([start_obs, actions], axis=1)
+            if self.G.vp.real_node[start] and self.G.vp.real_node[end]:
+                stitches1step.append((start, end))
+                edge = self.G.edge(start, end)
+                actions1step.append(self.G.ep.action[edge])
+            elif self.G.vp.real_node[start]:
+                other_starts.append((start, end))
+            else:
+                # if the start node isn't real we will find it later in the planning process
+                pass
+        actions1step = np.array(actions1step)
+        stitches1step = np.array(stitches1step)
+        # start_obs1step = stitches1step[:, 0]
+        start_obs1step = self.G.vp.z.get_2d_array(range(self.latent_dim)).T[stitches1step[:, 0]]
+        end_obs1step = self.G.vp.z.get_2d_array(range(self.latent_dim)).T[stitches1step[:, 1]]
+        # end_obs1step = self.G.vp.z[stitches1step[:, 1]]
+        conditions = np.concatenate([start_obs1step, actions1step], axis=1)
         model_outputs = self.bisim_model.get_mean_logvar(conditions)[0]
         state_outputs = model_outputs[:, :, 1:]
         reward_outputs = model_outputs[:, :, 0]
-        displacements = state_outputs + start_obs - end_obs
+        displacements = state_outputs + start_obs1step - end_obs1step
         distances = torch.linalg.norm(displacements, dim=-1, ord=1)
         quantiles = np.quantile(distances, self.planning_quantile, axis=0)
         reward = np.quantile(reward_outputs, 0.3, axis=0)
         low_reward = reward - quantiles * self.gamma
         high_reward = reward + quantiles * self.gamma
-        for i, (start, end) in enumerate(self.edges_added):
+        for i, (start, end) in enumerate(stitches1step):
             edge = self.G.edge(start, end)
             self.G.ep.reward[edge] = low_reward[i]
             self.G.ep.upper_reward[edge] = high_reward[i]
+        # TODO: handle all the non 1 step stitches
+        if len(other_starts) == 0:
+            return
+        bisim_unroller = ModelUnroller(self.env_name, self.bisim_model)
+        for start, end in other_starts:
+            start_obs = self.G.vp.z[start]
+            edge = self.G.edge(start, end)
+            first_edge = edge
+            actions = [self.G.ep.action[edge]]
+            while not self.G.vp.real_node[end]:
+                # assuming there's only one outgoing stitch from a fake vertex
+                next_state = self.G.get_out_neighbors(end)[0]
+                edge = self.G.edge(end, next_state)
+                actions.append(self.G.ep.action[edge])
+                end = next_state
+            actions = torch.Tensor(actions)[None, ...]
+            start_obs = torch.Tensor(start_obs)[None, ...]
+            end_obs = self.G.vp.z[end]
+            model_obs, model_actions, model_rewards, model_terminals = bisim_unroller.model_unroll(start_obs, actions)
+            displacements = model_obs[:, :, -1, :] - end_obs
+            distances = np.linalg.norm(displacements, axis=-1, ord=1)
+            quantile = np.quantile(distances, self.planning_quantile, axis=-1)
+            og_reward = self.G.ep.reward[first_edge]
+            self.G.ep.reward[first_edge] = og_reward - self.gamma * quantile
+            self.G.ep.upper_reward[first_edge] = og_reward + self.gamma * quantile
+        # Viraj: I think this works but probably has bugs, will test when we need to run it
 
     def test_possible_stitches(self, possible_stitches):
         '''
@@ -425,6 +495,10 @@ class BATSTrainer:
                 args.append('-ub')
             if self.use_all_planning_itrs:
                 args.append('-uapi')
+            if self.use_dl_params:
+                for k, v in self.dynamics_load_params.items():
+                    args += [f"--{k}", f"{v}"]
+
             if self.verbose and i == 0:
                 print(' '.join(args))
             process = Popen(args)
@@ -503,7 +577,7 @@ class BATSTrainer:
                 self.edges_added.append((start_v, end_v))
                 self.G.ep.action[e] = action
                 self.G.ep.imagined[e] = True
-                reward = rewards[i]
+                reward = rewards[i] + self.reward_offset
                 self.G.ep.model_errors[e] = model_errs
                 self.G.ep.stitch_itr[e] = iteration
                 self.G.ep.stitch_length[e] = actions.shape[0]
@@ -533,7 +607,7 @@ class BATSTrainer:
             if (self.G.vertex_index[v_from], self.G.vertex_index[v_to]) in self.stitches_tried:  # NOQA
                 continue
             action = self.dataset['actions'][i, :]
-            reward = self.dataset['rewards'][i]
+            reward = self.dataset['rewards'][i] + self.reward_offset
             terminal = self.dataset['terminals'][i]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
@@ -549,7 +623,7 @@ class BATSTrainer:
             self.G.ep.stitch_itr[e] = 0
             if 'q_values' in self.dataset:
                 self.G.vp.value[v_to] = self.dataset['q_values'][i] - reward
-        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name)
+        start_nodes_dense = get_starts_from_graph(self.G, self.env, self.env_name, self.dataset, self.vertices)
         self.G.vp.start_node.get_array()[start_nodes_dense] = 1
 
     def find_nearest_neighbors(self):
@@ -608,7 +682,6 @@ class BATSTrainer:
             #                  the non-zero entries.
             bst_childs = np.asarray((qs + adjmat * 1e4).argmax(axis=0)).flatten()
             values = np.asarray(
-                    # TODO: I hate how I have to make arange here, how do I not?
                     qs[bst_childs, np.arange(self.G.num_vertices())]).flatten()
             old_values = self.G.vp.value.get_array()
             lower_bellman_error = bellman_error = np.max(np.abs(values - old_values))
@@ -667,10 +740,7 @@ class BATSTrainer:
         print("cloning a policy")
         data, val_data, stats = make_boltzmann_policy_dataset(
                 graph=self.G,
-                n_collects=self.G.num_vertices(),
                 max_ep_len=self.env._max_episode_steps,
-                n_val_collects=self.bolt_gather_params['val_start_prop']
-                               * self.G.num_vertices(),
                 starts=self.start_states,
                 **self.bolt_gather_params)
         for k, v in stats.items():
@@ -678,7 +748,9 @@ class BATSTrainer:
         params = deepcopy(self.intermediate_bc_params if intermediate
                           else self.bc_params)
         if dir_name is not None:
-            params['save_dir'] = os.path.join(params['save_dir'], dir_name)
+            params['save_dir'] = self.output_dir / dir_name
+        else:
+            params['save_dir'] = self.output_dir
         self.policy, bc_trainer = behavior_clone(
                 dataset=data,
                 val_dataset=val_data,
