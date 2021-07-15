@@ -46,8 +46,10 @@ def train_ensemble(
             print('=========ENSEMBLE MEMBER %d========' % ens_idx)
         model, optimizer = get_model(obs_dim, act_dim, model_type,
                                      model_params)
+        x_stds = torch.std(x_data, dim=0)
+        x_stds[torch.abs(x_stds) < 1e-6] = 1
         model.set_standardization([
-            (torch.mean(x_data, dim=0), torch.std(x_data, dim=0)),
+            (torch.mean(x_data, dim=0), x_stds),
             # Set y standardization so nothing happens to output space.
             (torch.zeros(y_data.shape[1]), torch.ones(y_data.shape[1])),
         ])
