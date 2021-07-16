@@ -51,6 +51,7 @@ class BATSTrainer:
         self.dynamics_train_params['save_dir'] = str(output_dir)
         self.train_epochs = self.dynamics_train_params['epochs'] = kwargs.get('dynamics_epochs', 100)
         self.dynamics_train_params['cuda_device'] = kwargs.get('cuda_device', '')
+        self.cuda_device = kwargs['cuda_device']
 
         self.dynamics_load_params = {}
         if 'dynamics_encoder_hidden' in kwargs:
@@ -66,9 +67,10 @@ class BATSTrainer:
         self.fine_tune_epochs = kwargs.get('fine_tune_epochs', 20)
         self.bisim_train_params = {}
         self.latent_dim = self.bisim_train_params['latent_dim'] = kwargs['bisim_latent_dim']
-        self.bisim_train_params['epochs'] = kwargs.get('bisim_epochs', 100)
+        self.bisim_train_params['epochs'] = kwargs.get('bisim_epochs', 30)
         self.bisim_train_params['dataset'] = self.dataset
         self.bisim_n_members = self.bisim_train_params['n_members'] = kwargs.get('bisim_n_members', 5)
+        self.bisim_train_params['n_members'] = self.bisim_n_members
         self.bisim_train_params['save_dir'] = self.output_dir
 
         # set up the parameters for behavior cloning
@@ -210,18 +212,22 @@ class BATSTrainer:
         if kwargs['load_policy'] is not None:
             self.policy = load_policy(str(kwargs['load_policy']), self.obs_dim, self.action_dim,
                                       cuda_device=self.bc_params['cuda_device'])
-            return
+
         if kwargs['load_value_iteration'] is not None:
             graph_path = kwargs['load_value_iteration'] / 'vi.gt'
             self.G = load_graph(str(graph_path))
             self.value_iteration_done = True
             self.graph_stitching_done = True
-            return
+
         if kwargs['load_graph'] is not None:
             graph_path = kwargs['load_graph'] / 'mdp.gt'
-            self.G = load_graph(str(graph_path))
+            try:
+                self.G = load_graph(str(graph_path))
+            except:
+                graph_path = kwargs['load_graph'] / 'vi.gt'
+                self.G = load_graph(str(graph_path))
             self.graph_stitching_done = True
-            return
+
         self.neighbor_name = 'neighbors.npz'
         if kwargs['load_neighbors'] is not None:
             neighbors_path = kwargs['load_neighbors'] / self.neighbor_name
@@ -230,10 +236,12 @@ class BATSTrainer:
             save_npz(our_neighbor_path, self.neighbors)
         self.dynamics_ensemble_path = None
         self.dynamics_unroller = None
+        self.bisim_model_path = None
         if kwargs['load_model'] is not None:
             self.dynamics_ensemble_path = Path(kwargs['load_model'])
         if kwargs['load_bisim_model'] is not None:
             self.bisim_model_path = Path(kwargs['load_bisim_model'])
+
 
     def save_stats(self):
         np.savez(self.stats_path, **self.stats)
@@ -252,18 +260,28 @@ class BATSTrainer:
             return range(n)
 
     def label_bisimulation(self):
-        # assumes there's already a graph loaded and a bisimulation dynamics model
+        if self.G.num_edges() == 0:
+            graph_path = self.output_dir / 'vi.gt'
+            self.G = load_graph(str(graph_path))
+        self.G.vp.z = self.G.new_vertex_property('vector<float>')
+
         if self.bisim_model_path:
             self.bisim_model = load_bisim(self.bisim_model_path)
+            self.trainer = make_trainer(self.bisim_model,
+                                        self.bisim_n_members,
+                                        self.output_dir)
         else:
+            print('No bisimulation model found, training a new one')
             train_params = deepcopy(self.bisim_train_params)
             train_params['save_dir'] = self.output_dir
             train_params['latent_dim'] = self.latent_dim
-            train_params['bisim_params']['latent_dim'] = self.latent_dim
-            self.bisim_model = train_bisim(dataset=self.dataset, **train_params)
+            bisim_params = {}
+            train_params['bisim_params'] = bisim_params
+            train_params['cuda_device'] = self.cuda_device
+            self.bisim_model, self.trainer = train_bisim(**train_params)
         self.start_states = np.argwhere(self.G.vp.start_node.get_array()).flatten()
         self.penalize_stitches = True
-        self.fine_tune_dynamics()
+        self.fine_tune_dynamics(skip_neighbors=True)
         self.G.save(str(self.output_dir / 'penalized.gt'))
         if self.bc_every_iter:
             self.value_iteration()
@@ -332,7 +350,7 @@ class BATSTrainer:
 
     def compute_embeddings(self):
         print("computing embeddings")
-        embeddings = np.array(self.bisim_model.get_encoding(self.unique_obs))
+        embeddings = np.array(self.bisim_model.get_encoding(self.unique_obs).cpu())
         self.neighbor_obs = embeddings
         self.G.vp.z.set_2d_array(embeddings.copy().T)
         self.vertices = {obs.tobytes(): i for i, obs in enumerate(self.neighbor_obs)}
@@ -371,7 +389,7 @@ class BATSTrainer:
         nnz = self.find_nearest_neighbors()
         return nnz
 
-    def fine_tune_dynamics(self):
+    def fine_tune_dynamics(self, skip_neighbors=False):
         if not self.use_bisimulation:
             raise NotImplementedError()
         print("fine-tuning bisimulation model")
@@ -394,9 +412,12 @@ class BATSTrainer:
         self.compute_embeddings()
         if self.penalize_stitches:
             self.recompute_edge_values()
-        self.neighbors = None
-        nnz = self.find_nearest_neighbors()
-        return nnz
+        if not skip_neighbors:
+            self.neighbors = None
+            nnz = self.find_nearest_neighbors()
+            return nnz
+        else:
+            return None
 
     def recompute_edge_values(self):
         if len(self.edges_added) == 0:
