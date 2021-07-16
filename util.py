@@ -22,7 +22,7 @@ def get_output_dir(name):
 def make_output_dir(name, overwrite, args, dir_path=None, ignore_exists=False):
     if dir_path is None:
         dir_path = get_output_dir(name)
-    if ignore_exists:
+    if ignore_exists and dir_path.exists():
         return dir_path
     if dir_path.exists():
         if overwrite:

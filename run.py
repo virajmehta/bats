@@ -73,6 +73,9 @@ def main(args):
                                         args.dataset_fraction,
                                         data_path=args.offline_dataset_path)
     args_dict = vars(args)
+    if args.relabel:
+        args_dict['use_bisimulation'] = True
+        args_dict['penalize_stitches'] = True
     bats = BATSTrainer(dataset, env, output_dir, **args_dict)
     if args.relabel:
         bats.label_bisimulation()
