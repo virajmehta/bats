@@ -5,6 +5,7 @@ from bats import BATSTrainer
 import util
 from pathlib import Path
 from copy import deepcopy
+import h5py
 
 from configs import CONFIGS
 
@@ -55,6 +56,10 @@ def parse_arguments():
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('-pc', '--penalty_coefficient', type=float, default=1.0)
     parser.add_argument('-msl', '--max_stitch_length', type=int, default=1)
+    parser.add_argument('--warm_q_vals_path',
+        help='Path to hdf5 file containing "q_values" estimates corresponding'
+             'to edges in the dataset. If provided, initialize the graph'
+             'with these values.')
     parser.add_argument('-rl', '--relabel', action='store_true', help="Don't train but compute all the new edge penalties")
     parser.add_argument('--starts_from_dataset', action='store_true')
     parser.add_argument('--reward_offset', type=float, default=0)
@@ -67,11 +72,19 @@ def parse_arguments():
     return args
 
 
+def pretrain_value(args, dataset):
+    pass
+
+
 def main(args):
     output_dir = util.make_output_dir(args.name, args.overwrite, deepcopy(args), ignore_exists=args.relabel)
     env, dataset = util.get_offline_env(args.env_name,
                                         args.dataset_fraction,
                                         data_path=args.offline_dataset_path)
+    if args.warm_q_vals_path is not None:
+        with h5py.File(args.warm_q_vals_path, 'r') as hdata:
+            for k, v in hdata.items():
+                dataset[k] = v[()]
     args_dict = vars(args)
     bats = BATSTrainer(dataset, env, output_dir, **args_dict)
     if args.relabel:
