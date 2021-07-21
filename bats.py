@@ -193,6 +193,7 @@ class BATSTrainer:
         elif kwargs['normalize_obs']:
             self.mean = all_obs.mean(axis=0, keepdims=True)
             self.std = all_obs.std(axis=0, keepdims=True)
+            self.std[self.std < 1e-7] = 1
             self.neighbor_obs = (self.unique_obs - self.mean) / self.std
             self.mean_file = self.output_dir / 'mean.npy'
             np.save(self.mean_file, self.mean)

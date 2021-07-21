@@ -223,6 +223,7 @@ class Standardizer(nn.Module):
             data_loc: int,
     ):
         mu, sigma = self.get_stats(data_loc)
+        sigma[sigma < 1e-6] = 1
         return (data - mu) / sigma
 
     def unstandardize(
