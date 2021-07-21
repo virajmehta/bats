@@ -256,7 +256,7 @@ def get_starts_from_graph(graph, env, env_name, dataset, vertices):
         return np.argwhere(is_starts).flatten()
     elif env_name.startswith('Pendulum'):
         return np.arange(dataset['rewards'].shape[0]).astype(int)
-    elif env_name.startswith('Mountain'):
+    elif env_name.startswith('Mountain') or env_name.startswith('halfcheetah'):
         starts = []
         nelem = dataset['rewards'].shape[0]
         last_obs = None

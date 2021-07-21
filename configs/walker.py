@@ -32,6 +32,12 @@ WALKER_CONFIGS['walker-mixed']['env_name'] =\
     'walker2d-medium-replay-v0'
 WALKER_CONFIGS['walker-mixed']['load_model'] = Path('~/bats/models/wkv0-mixed').expanduser()
 
+WALKER_CONFIGS['walker-adv'] = deepcopy(base_config)
+WALKER_CONFIGS['walker-adv']['env_name'] =\
+    'walker2d-medium-replay-v0'
+WALKER_CONFIGS['walker-adv']['load_model'] = Path('~/bats/models/walker_adv').expanduser()
+WALKER_CONFIGS['walker-adv']['offline_dataset_path'] = Path('~/.d4rl/datasets/walker-adv-mixed.hdf5').expanduser()
+
 WALKER_CONFIGS['walker-medium'] = deepcopy(base_config)
 WALKER_CONFIGS['walker-medium']['env_name'] = 'walker2d-medium-v0'
 

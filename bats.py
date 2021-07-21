@@ -358,10 +358,11 @@ class BATSTrainer:
             self.compute_embeddings()
         if self.use_dl_params:
             dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
-                                               cuda_device='', model_params=self.dynamics_load_params)
+                                              cuda_device='', model_params=self.dynamics_load_params,
+                                              load_model_params=False)
         else:
             dynamics_ensemble = load_ensemble(self.dynamics_ensemble_path, self.obs_dim, self.action_dim,
-                                              cuda_device='')
+                                              cuda_device='', load_model_params=False)
         self.dynamics_unroller = ModelUnroller(self.env_name, dynamics_ensemble)
         nnz = self.find_nearest_neighbors()
         return nnz
