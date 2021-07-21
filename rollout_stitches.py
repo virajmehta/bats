@@ -66,7 +66,7 @@ def get_future_stitches(G,
                         max_stitches,
                         depth_remaining,
                         pick_positive_adv=True,
-):
+                        ):
     if depth_remaining == 0 or max_stitches <= 0:
         return [], np.array([])
     possible_stitches = []
@@ -95,7 +95,7 @@ def get_future_stitches(G,
     for neigh, edge, advantage in zip(neighbors, edges, all_advantages):
         # how to calculate advantage / propagate rewards?
         adv_crit_met = advantage > 0 or not pick_positive_adv
-        if adv_crit_met and (startv, nidx) not in stitches_tried and G.vp.real_node[startv] and G.vp.real_node[nidx]:
+        if adv_crit_met and (startv, nidx) not in stitches_tried and G.vp.real_node[startv] and G.vp.real_node[nidx] and (G.vp.traj_num[startv] != G.vp.traj_num[nidx] or G.vp.traj_num[startv] == -1):
             possible_stitches += [(startv, nidx, start_obs, n_obs, actions)]
             advantages.append(advantage)
             max_stitches -= 1
@@ -301,7 +301,6 @@ def main(args):
             advantages += list(new_advantages)
             total_stitches += len(new_advantages)
             currv_obs_Q = []
-
 
         neps += 1
     advantages = np.array(advantages)
