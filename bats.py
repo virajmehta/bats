@@ -105,6 +105,8 @@ class BATSTrainer:
         self.bc_every_iter = kwargs['bc_every_iter']
         self.reward_offset = kwargs.get('reward_offset', 0)
 
+        self.stitch_only_between_trajs = kwargs['stitch_only_between_trajs']
+
         # could do it this way or with knn, this is simpler to implement for now
         self.epsilon_neighbors = kwargs.get('epsilon_neighbors', 0.05)  # no idea what this should be
         self.k_neighbors = kwargs['k_neighbors']
@@ -129,6 +131,7 @@ class BATSTrainer:
         self.G.vp.obs.set_2d_array(self.unique_obs.copy().T)
         self.G.vp.start_node = self.G.new_vertex_property('bool')
         self.G.vp.real_node = self.G.new_vertex_property('bool')
+        self.G.vp.traj_num = self.G.new_vertex_property('int')
         self.G.vp.real_node.get_array()[:] = True
         self.G.vp.terminal = self.G.new_vertex_property('bool')
         self.start_states = None
@@ -600,6 +603,7 @@ class BATSTrainer:
                         # need to get the real obs and bisim obs from somewhere and pass them
                     else:
                         end_v = self.add_vertex(end_obs)
+                self.G.vp.traj_num[end_v] = self.G.vp.traj_num[start]
                 if self.G.vp.terminal[start] or self.G.edge(start, end) is not None:
                     break
                 e = self.G.add_edge(start_v, end_v)
@@ -628,11 +632,18 @@ class BATSTrainer:
             return
         print(f"Adding {self.dataset_size} initial edges to our graph")
         iterator = self.get_iterator(self.dataset_size)
+        trajnum = -1
+        prev_next_obs = None
         for i in iterator:
+            if not np.allclose(prev_next_obs, obs) and self.stitch_only_between_trajs:
+                print(f"new trajnum {trajnum}")
+                trajnum += 1
+            prev_next_obs = next_obs
             obs = self.dataset['observations'][i, :]
             next_obs = self.dataset['next_observations'][i, :]
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
+            self.G.vp.
             if (self.G.vertex_index[v_from], self.G.vertex_index[v_to]) in self.stitches_tried:  # NOQA
                 continue
             action = self.dataset['actions'][i, :]

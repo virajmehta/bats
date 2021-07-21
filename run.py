@@ -58,6 +58,7 @@ def parse_arguments():
     parser.add_argument('-rl', '--relabel', action='store_true', help="Don't train but compute all the new edge penalties")
     parser.add_argument('--starts_from_dataset', action='store_true')
     parser.add_argument('--reward_offset', type=float, default=0)
+    parser.add_argument('-sobt', '--stitch_only_between_trajs', action='store_true', help="Disallow stitches that go between the same trajectory")
     if defaults is not None:
         parser.set_defaults(**defaults)
     args = parser.parse_args(remaining)
