@@ -24,6 +24,7 @@ def parse_arguments():
     parser.add_argument('-ub', '--use_bisimulation', action='store_true')
     parser.add_argument('-ppa', '--pick_positive_adv',
                         action='store_true')
+    parser.add_argument('--temp', type=float)
     return parser.parse_args()
 
 
@@ -227,10 +228,16 @@ def main(args):
     # max_eps = 1000
     neps = 0
     total_stitches = 0
+    if args.temp is not None:
+        vals = G.vp.value[start_states]
+        vals /= args.temp
+        probs = np.exp(vals) / np.sum(np.exp(vals))
+    else:
+        probs = np.ones_like(start_states) / len(start_states)
     currv_obs_Q = []
     while total_stitches < args.rollout_chunk_size and neps < max_eps:
         t = 0
-        currv = int(np.random.choice(start_states))
+        currv = int(np.random.choice(start_states, p=probs))
         while t < max_ep_len:
             # do a Boltzmann rollout
             assert args.temperature > 0
