@@ -635,15 +635,16 @@ class BATSTrainer:
         trajnum = -1
         prev_next_obs = None
         for i in iterator:
-            if not np.allclose(prev_next_obs, obs) and self.stitch_only_between_trajs:
-                print(f"new trajnum {trajnum}")
-                trajnum += 1
-            prev_next_obs = next_obs
             obs = self.dataset['observations'][i, :]
             next_obs = self.dataset['next_observations'][i, :]
+            if (prev_next_obs is None or not np.allclose(prev_next_obs, obs)) and self.stitch_only_between_trajs:
+                trajnum += 1
+                print(f"new trajnum {trajnum}")
+            prev_next_obs = next_obs
             v_from = self.get_vertex(obs)
             v_to = self.get_vertex(next_obs)
-            self.G.vp.
+            self.G.vp.traj_num[v_from] = trajnum
+            self.G.vp.traj_num[v_to] = trajnum
             if (self.G.vertex_index[v_from], self.G.vertex_index[v_to]) in self.stitches_tried:  # NOQA
                 continue
             action = self.dataset['actions'][i, :]
