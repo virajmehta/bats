@@ -49,6 +49,7 @@ def parse_args():
     parser.add_argument('--latent_dim', type=int, default=200)
     parser.add_argument('--model_type', type=str, default='PNN',
                         choices=['PNN', 'NN'])
+    parser.add_argument('--normalize_labels', action='store_true')
     parser.add_argument('--cuda_device', type=str, default='')
     parser.add_argument('--pudb', action='store_true')
     return parser.parse_args()

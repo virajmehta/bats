@@ -28,6 +28,7 @@ def train_ensemble(
         weight_decay=0,
         model_type='PNN',
         model_params={},
+        normalize_labels=False,
         cuda_device='',
         silent=False,
 ):
@@ -48,10 +49,17 @@ def train_ensemble(
                                      model_params)
         x_stds = torch.std(x_data, dim=0)
         x_stds[torch.abs(x_stds) < 1e-6] = 1
+        if normalize_labels:
+            y_mean = torch.mean(y_data, dim=0)
+            y_stds = torch.std(y_data, dim=0)
+            y_stds[torch.abs(y_stds) < 1e-6] = 1
+        else:
+            y_mean = torch.zeros(y_data.shape[1])
+            y_stds = torch.ones(y_data.shape[1])
         model.set_standardization([
             (torch.mean(x_data, dim=0), x_stds),
             # Set y standardization so nothing happens to output space.
-            (torch.zeros(y_data.shape[1]), torch.ones(y_data.shape[1])),
+            (y_mean, y_stds),
         ])
         model_save = os.path.join(save_dir, 'member_%d' % ens_idx)
         tune_metric = 'MSE' if model_type == 'PNN' else 'Loss'
